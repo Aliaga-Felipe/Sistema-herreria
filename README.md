@@ -1,6 +1,6 @@
 # El Atelier — Hub de producción
 
-Sistema de gestión para herrería, construido con React, Express y PostgreSQL. La interfaz está en español e incorpora el lenguaje visual oscuro y cálido de las referencias.
+Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC y producción por productos con etapas configurables.
 
 ## Puesta en marcha
 
@@ -9,11 +9,16 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 3. Instale las dependencias con `npm install`.
 4. En una terminal ejecute `npm run server` y en otra `npm run dev`.
 
-## Alcance incluido
+## Autenticación y roles
 
-- Panel operativo y producción mensual responsivos.
-- Alta visual de productos con etapas dinámicas.
-- Modelo relacional para usuarios, equipos, productos, etapas, pedidos y recompensas.
-- API con autenticación JWT, control de rol administrador y recuperación de contraseña de un solo uso (15 minutos).
+- El registro público (`/registro`) crea exclusivamente usuarios con rol `empleado`.
+- Para crear el primer administrador, registre una cuenta y ejecute en PostgreSQL:
 
-> Para producción, conecte el envío de correo en `POST /api/auth/recuperar`, use HTTPS, una clave JWT segura y un proveedor de correo transaccional.
+  ```sql
+  UPDATE usuarios SET rol = 'admin' WHERE email = 'tu-correo@ejemplo.com';
+  ```
+
+- El administrador accede a `/admin`: crea productos, define sus etapas y tiempos, los asigna a operarios y gestiona roles.
+- El empleado accede a `/mis-tareas`: solo ve los productos asignados, controla etapas y actualiza su estado.
+
+Un producto asignado se convierte directamente en una tarea de producción. El administrador puede agregar las etapas que necesite y establecer los minutos estimados de cada una antes de crearlo.
