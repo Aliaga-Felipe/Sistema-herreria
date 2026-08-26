@@ -12,10 +12,12 @@ const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecuci
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)
-const sign = user => jwt.sign({ id: user.id, rol: user.rol, nombre: user.nombre }, secret, { expiresIn: '8h' })
+const normalizedRole = rol => String(rol).toLowerCase()
+const sign = user => jwt.sign({ id: user.id, rol: normalizedRole(user.rol), nombre: user.nombre }, secret, { expiresIn: '8h' })
 const auth = (roles = []) => (req, res, next) => {
   try {
     const user = jwt.verify(req.headers.authorization?.replace('Bearer ', ''), secret)
+    user.rol = normalizedRole(user.rol)
     if (roles.length && !roles.includes(user.rol)) return res.status(403).json({ error: 'No tenés permisos para esta acción.' })
     req.user = user; next()
   } catch { res.status(401).json({ error: 'Sesión no válida o vencida.' }) }
@@ -25,30 +27,33 @@ app.post('/api/auth/registro', asyncRoute(async (req, res) => {
   const { nombre, email, contrasena } = req.body
   if (!nombre?.trim() || !email?.trim() || !contrasena || contrasena.length < 8) return res.status(400).json({ error: 'Completá nombre, correo y una contraseña de al menos 8 caracteres.' })
   const hash = await bcrypt.hash(contrasena, 12)
-  const { rows } = await pool.query("INSERT INTO usuarios (nombre, email, contrasena_hash, rol) VALUES ($1, LOWER($2), $3, 'empleado') RETURNING id, nombre, email, rol", [nombre.trim(), email.trim(), hash])
+  const { rows } = await pool.query(`INSERT INTO usuarios (nombre, email, contrasena_hash, rol)
+    VALUES ($1, LOWER($2), $3, (SELECT enumlabel::rol_usuario FROM pg_enum WHERE enumtypid = 'rol_usuario'::regtype AND LOWER(enumlabel) = 'empleado'))
+    RETURNING id, nombre, email, LOWER(rol::text) AS rol`, [nombre.trim(), email.trim(), hash])
   res.status(201).json({ usuario: rows[0], mensaje: 'Cuenta creada como empleado.' })
 }))
 app.post('/api/auth/iniciar-sesion', asyncRoute(async (req, res) => {
   const { email, contrasena } = req.body
-  const { rows } = await pool.query('SELECT id, nombre, email, contrasena_hash, rol, activo FROM usuarios WHERE email = LOWER($1)', [email || ''])
+  const { rows } = await pool.query('SELECT id, nombre, email, contrasena_hash, LOWER(rol::text) AS rol, activo FROM usuarios WHERE email = LOWER($1)', [email || ''])
   const usuario = rows[0]
   if (!usuario?.activo || !(await bcrypt.compare(contrasena || '', usuario.contrasena_hash))) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' })
   res.json({ token: sign(usuario), usuario: { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol } })
 }))
 app.get('/api/auth/sesion', auth(), asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('SELECT id, nombre, email, rol FROM usuarios WHERE id = $1 AND activo', [req.user.id])
+  const { rows } = await pool.query('SELECT id, nombre, email, LOWER(rol::text) AS rol FROM usuarios WHERE id = $1 AND activo', [req.user.id])
   if (!rows[0]) return res.status(401).json({ error: 'La cuenta ya no está activa.' })
   res.json({ usuario: rows[0] })
 }))
 
 app.get('/api/usuarios', auth(['admin']), asyncRoute(async (_, res) => {
-  const { rows } = await pool.query('SELECT id, nombre, email, rol, activo, creado_en FROM usuarios ORDER BY creado_en DESC')
+  const { rows } = await pool.query('SELECT id, nombre, email, LOWER(rol::text) AS rol, activo, creado_en FROM usuarios ORDER BY creado_en DESC')
   res.json(rows)
 }))
 app.patch('/api/usuarios/:id/rol', auth(['admin']), asyncRoute(async (req, res) => {
   const { rol } = req.body
   if (!['admin', 'empleado'].includes(rol)) return res.status(400).json({ error: 'Rol inválido.' })
-  const { rows } = await pool.query('UPDATE usuarios SET rol = $1, actualizado_en = NOW() WHERE id = $2 RETURNING id, nombre, email, rol, activo', [rol, req.params.id])
+  const { rows } = await pool.query(`UPDATE usuarios SET rol = (SELECT enumlabel::rol_usuario FROM pg_enum WHERE enumtypid = 'rol_usuario'::regtype AND LOWER(enumlabel) = $1), actualizado_en = NOW()
+    WHERE id = $2 RETURNING id, nombre, email, LOWER(rol::text) AS rol, activo`, [rol, req.params.id])
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado.' })
   res.json(rows[0])
 }))
@@ -64,17 +69,18 @@ app.get('/api/tareas', auth(), asyncRoute(async (req, res) => {
   res.json(result.rows)
 }))
 app.post('/api/tareas', auth(['admin']), asyncRoute(async (req, res) => {
-  const { titulo, descripcion = '', asignado_a, tiempos = [] } = req.body
+  const { titulo, descripcion = '', asignado_a, etapas = [] } = req.body
   if (!titulo?.trim() || !asignado_a) return res.status(400).json({ error: 'Indicá el título y el empleado asignado.' })
+  const etapasProducto = etapas.length ? etapas : etapasFijas.map(etapa => ({ nombre: etapa.nombre, minutos_estimados: etapa.minutos }))
+  if (!etapasProducto.length || etapasProducto.some(etapa => !etapa?.nombre?.trim() || !Number.isFinite(Number(etapa.minutos_estimados)) || Number(etapa.minutos_estimados) <= 0)) return res.status(400).json({ error: 'Cada etapa debe tener nombre y un tiempo estimado mayor a cero.' })
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const employee = await client.query("SELECT id FROM usuarios WHERE id = $1 AND rol = 'empleado' AND activo", [asignado_a])
+    const employee = await client.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [asignado_a])
     if (!employee.rows[0]) throw Object.assign(new Error('El usuario asignado debe ser un empleado activo.'), { status: 400 })
     const task = await client.query("INSERT INTO tareas (titulo, descripcion, asignado_a, creado_por, estado) VALUES ($1, $2, $3, $4, 'PENDIENTE') RETURNING id", [titulo.trim(), descripcion.trim(), asignado_a, req.user.id])
-    for (const [index, etapa] of etapasFijas.entries()) {
-      const minutes = Number(tiempos[index])
-      await client.query('INSERT INTO tarea_etapas (tarea_id, nombre, orden, minutos_estimados) VALUES ($1, $2, $3, $4)', [task.rows[0].id, etapa.nombre, index + 1, Number.isFinite(minutes) && minutes > 0 ? minutes : etapa.minutos])
+    for (const [index, etapa] of etapasProducto.entries()) {
+      await client.query('INSERT INTO tarea_etapas (tarea_id, nombre, orden, minutos_estimados) VALUES ($1, $2, $3, $4)', [task.rows[0].id, etapa.nombre.trim(), index + 1, Number(etapa.minutos_estimados)])
     }
     await client.query('COMMIT')
     res.status(201).json({ id: task.rows[0].id })
