@@ -1,2 +1,521 @@
-.stage-time-input{display:grid;grid-template-columns:24px minmax(0,1fr) 65px 24px 20px;gap:6px;align-items:center;margin-top:8px}.stage-time-input small{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#5b3e2e}.stage-time-input input{width:100%;background:#121110;border:1px solid #46403a;color:#fff;padding:8px;font:10px Manrope}.stage-time-input span{font-size:9px;color:#b8a499}.stage-time-input button{background:transparent;border:0;color:#eeb095;font-size:18px;cursor:pointer}
-.auth-page{min-height:100vh;background:radial-gradient(circle at 85% 20%,#674532 0,#100d0b 48%);display:grid;place-items:center;padding:24px}.auth-card{width:min(440px,100%);background:#1c1917;border:1px solid #4e423b;padding:36px}.auth-brand{font:700 19px 'Libre Baskerville',serif;color:#ffe8d6;margin-bottom:40px}.auth-brand span{font:700 8px Manrope;display:block;letter-spacing:.6px;margin-top:6px}.auth-card h1{font:700 25px 'Libre Baskerville',serif;margin:5px 0 8px}.auth-form{display:grid;gap:13px;margin-top:26px}.auth-form label,.task-form label{font-size:10px;font-weight:800;display:grid;gap:7px}.auth-form input,.task-form input,.task-form textarea,.task-form select,.users-table select,.status-control select{background:#121110;border:1px solid #48403a;color:#fff;padding:10px;font:11px Manrope;outline-color:#e5a184}.auth-form small{color:#ad9c91;font-weight:400}.full{width:100%;margin-top:5px}.auth-foot{color:#b7a59a;margin:22px 0 0;text-align:center;font-size:10px}.auth-foot a{color:#f3ad8e;font-weight:800}.form-error{color:#f4a08d;font-size:10px;margin:0}.form-success{color:#9cd5a6;font-size:10px;margin:0}.auth-shell{min-height:100vh}.auth-shell .sidebar nav a{display:block;color:#f8eee5;text-decoration:none;padding:9px 10px;border-radius:2px;font:700 11px Manrope}.auth-shell .sidebar nav a.active{background:#2a2623}.role-badge{border:1px solid #8d654e;color:#f2b292;padding:4px 8px;text-transform:uppercase;font-size:8px;font-weight:800}.auth-content{max-width:1160px}.page-heading{margin-bottom:25px}.page-heading h1{font:700 27px 'Libre Baskerville',serif;margin:3px 0 6px}.admin-layout{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}.list-panel{background:#1e1b19;border:1px solid #3d3530;padding:18px}.task-form h2{margin:5px 0 20px;font-size:16px}.task-form form{display:grid;gap:12px}.task-form textarea{min-height:68px;resize:vertical}.fixed-stages{border-top:1px solid #3e3530;padding-top:13px;display:grid;gap:7px}.fixed-stages>b{font-size:10px}.fixed-stages label{grid-template-columns:1fr auto;align-items:center}.fixed-stages span{display:flex;align-items:center;gap:5px;color:#b9a69a;font-size:9px}.fixed-stages input{width:60px;padding:6px}.users-panel{margin-top:16px}.users-table>div{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #342e2a}.users-table>div:last-child{border:0}.users-table span{display:grid;gap:3px}.users-table b{font-size:11px}.users-table small{color:#ad9d91;font-size:9px}.users-table select{padding:6px;font-size:9px}.task-list{display:grid;gap:12px}.task-card{background:#1e1b19;border:1px solid #3d3530;padding:17px}.task-card-head{display:flex;justify-content:space-between;gap:16px}.task-card h3{margin:7px 0 4px;font-size:14px}.task-card p{color:#ad9d91;font-size:10px;margin:0}.task-status{display:inline-block;padding:4px 6px;font:800 8px Manrope;background:#39322d;color:#f9c19f;text-transform:uppercase}.task-status.en_progreso{background:#4c3a2c}.task-status.realizada{background:#294235;color:#b5e3bf}.assigned{color:#f4b092;font-size:10px;font-weight:800}.task-card .progress{margin-top:15px}.stage-count{margin:6px 0 13px!important}.stage-list{border-top:1px solid #37312d}.stage-list label{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid #302b27;cursor:pointer}.stage-list input{accent-color:#efaa8c}.stage-list label>span{display:grid;gap:2px;font-size:10px;font-weight:700}.stage-list small{font-size:9px;color:#a99990;font-weight:400}.stage-list label>b{margin-left:auto;color:#a9dfba}.stage-list .completed>span{text-decoration:line-through;color:#b7a69a}.status-control{display:flex;align-items:center;gap:8px;margin-top:13px;color:#c9b8ad;font-size:10px;font-weight:800}.status-control select{padding:6px}.compact{min-height:160px}.notice{font-size:10px}@media(max-width:800px){.admin-layout{grid-template-columns:1fr}.auth-shell{display:block}.auth-shell .sidebar{display:none}.auth-content{padding:24px 14px}.page-heading h1{font-size:22px}.task-card-head{display:block}.assigned{display:block;margin-top:9px}}
+/* =========================
+   ETAPAS - TIEMPO
+   ========================= */
+
+.stage-time-input {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 65px 24px 20px;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.stage-time-input span{
+    margin-left: 10px;
+}
+
+.stage-time-input small {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #5b3e2e;
+}
+
+.stage-time-input input {
+    width: 100%;
+    background: #121110;
+    border: 1px solid #46403a;
+    color: #fff;
+    padding: 8px;
+    font: 10px Manrope;
+}
+
+.stage-time-input span {
+    font-size: 9px;
+    color: #b8a499;
+}
+
+.stage-time-input button {
+    background: transparent;
+    border: 0;
+    color: #eeb095;
+    font-size: 18px;
+    cursor: pointer;
+}
+/* ----- PANEL DE NUEVO PRODUCTO-------- */
+
+.product-editor 
+input,
+select,
+textarea {
+    margin-left: 10px;
+    margin-right:30px;
+    background: #35312d;;
+    border: none;
+    color:white;
+    border-radius: 8px;
+}
+
+.product-editor input:focus{
+    outline: none;
+}
+/* =========================
+   AUTENTICACIÓN
+   ========================= */
+
+.auth-page {
+    min-height: 100vh;
+    background: radial-gradient(
+        circle at 85% 20%,
+        #674532 0,
+        #100d0b 48%
+    );
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.auth-card {
+    width: min(440px, 100%);
+    background: #1c1917;
+    border: 1px solid #4e423b;
+    padding: 36px;
+}
+
+.auth-brand {
+    font: 700 19px 'Libre Baskerville', serif;
+    color: #ffe8d6;
+    margin-bottom: 40px;
+}
+
+.auth-brand span {
+    display: block;
+    font: 700 8px Manrope;
+    letter-spacing: 0.6px;
+    margin-top: 6px;
+}
+
+.auth-card h1 {
+    font: 700 25px 'Libre Baskerville', serif;
+    margin: 5px 0 8px;
+}
+
+.auth-form {
+    display: grid;
+    gap: 13px;
+    margin-top: 26px;
+}
+
+.auth-form label,
+.task-form label {
+    display: grid;
+    gap: 7px;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.auth-form input,
+.task-form input,
+.task-form textarea,
+.task-form select,
+.users-table select,
+.status-control select {
+    background: #121110;
+    border: 1px solid #48403a;
+    color: #fff;
+    padding: 10px;
+    font: 11px Manrope;
+    outline-color: #e5a184;
+}
+
+.auth-form small {
+    color: #ad9c91;
+    font-weight: 400;
+}
+
+.full {
+    width: 100%;
+    margin-top: 5px;
+}
+
+.auth-foot {
+    color: #b7a59a;
+    margin: 22px 0 0;
+    text-align: center;
+    font-size: 10px;
+}
+
+.auth-foot a {
+    color: #f3ad8e;
+    font-weight: 800;
+}
+
+.form-error {
+    color: #f4a08d;
+    font-size: 10px;
+    margin: 0;
+}
+
+.form-success {
+    color: #9cd5a6;
+    font-size: 10px;
+    margin: 0;
+}
+
+
+/* =========================
+   ESTRUCTURA DE AUTENTICACIÓN
+   ========================= */
+
+.auth-shell {
+    min-height: 100vh;
+}
+
+.auth-shell .sidebar nav a {
+    display: block;
+    color: #f8eee5;
+    text-decoration: none;
+    padding: 9px 10px;
+    border-radius: 2px;
+    font: 700 11px Manrope;
+}
+
+.auth-shell .sidebar nav a.active {
+    background: #2a2623;
+}
+
+.auth-content {
+    max-width: 1160px;
+    background-color:#100d0b;
+    margin-top: 60px;;
+}
+
+
+/* =========================
+   ENCABEZADO DE PÁGINA
+   ========================= */
+
+.page-heading {
+    margin-bottom: 25px;
+}
+
+.page-heading h1 {
+    font: 700 27px 'Libre Baskerville', serif;
+    margin: 3px 0 6px;
+}
+
+
+/* =========================
+   ROLES
+   ========================= */
+
+.role-badge {
+    border: 1px solid #8d654e;
+    color: #f2b292;
+    padding: 4px 8px;
+    text-transform: uppercase;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+
+/* =========================
+   ADMINISTRACIÓN
+   ========================= */
+
+.admin-layout {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+.list-panel {
+    background: #1e1b19;
+    border: 1px solid #3d3530;
+    padding: 18px;
+}
+
+
+/* =========================
+   FORMULARIO DE TAREAS
+   ========================= */
+
+.task-form h2 {
+    margin: 5px 0 20px;
+    font-size: 16px;
+}
+
+.task-form form {
+    display: grid;
+    gap: 12px;
+}
+
+.task-form textarea {
+    min-height: 68px;
+    resize: vertical;
+}
+
+
+/* =========================
+   ETAPAS FIJAS
+   ========================= */
+
+.fixed-stages {
+    border-top: 1px solid #3e3530;
+    padding-top: 13px;
+    display: grid;
+    gap: 7px;
+}
+
+.fixed-stages > b {
+    font-size: 10px;
+}
+
+.fixed-stages label {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+}
+
+.fixed-stages span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #b9a69a;
+    font-size: 9px;
+}
+
+.fixed-stages input {
+    width: 60px;
+    padding: 6px;
+}
+
+
+/* =========================
+   USUARIOS
+   ========================= */
+
+.users-panel {
+    margin-top: 16px;
+}
+
+.users-table > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #342e2a;
+}
+
+.users-table > div:last-child {
+    border: 0;
+}
+
+.users-table span {
+    display: grid;
+    gap: 3px;
+}
+
+.users-table b {
+    font-size: 11px;
+}
+
+.users-table small {
+    color: #ad9d91;
+    font-size: 9px;
+}
+
+.users-table select {
+    padding: 6px;
+    font-size: 9px;
+}
+
+
+/* =========================
+   LISTA DE TAREAS
+   ========================= */
+
+.task-list {
+    display: grid;
+    gap: 12px;
+}
+
+.task-card {
+    background: #1e1b19;
+    border: 1px solid #3d3530;
+    padding: 17px;
+}
+
+.task-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.task-card h3 {
+    margin: 7px 0 4px;
+    font-size: 14px;
+}
+
+.task-card p {
+    color: #ad9d91;
+    font-size: 10px;
+    margin: 0;
+}
+
+
+/* =========================
+   ESTADO DE TAREA
+   ========================= */
+
+.task-status {
+    display: inline-block;
+    padding: 4px 6px;
+    font: 800 8px Manrope;
+    background: #39322d;
+    color: #f9c19f;
+    text-transform: uppercase;
+}
+
+.task-status.en_progreso {
+    background: #4c3a2c;
+}
+
+.task-status.realizada {
+    background: #294235;
+    color: #b5e3bf;
+}
+
+.assigned {
+    color: #f4b092;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+
+/* =========================
+   PROGRESO
+   ========================= */
+
+.task-card .progress {
+    margin-top: 15px;
+}
+
+.stage-count {
+    margin: 6px 0 13px !important;
+}
+
+
+/* =========================
+   LISTA DE ETAPAS
+   ========================= */
+
+.stage-list {
+    border-top: 1px solid #37312d;
+}
+
+.stage-list label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 0;
+    border-bottom: 1px solid #302b27;
+    cursor: pointer;
+}
+
+.stage-list input {
+    accent-color: #efaa8c;
+}
+
+.stage-list label > span {
+    display: grid;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.stage-list small {
+    font-size: 9px;
+    color: #a99990;
+    font-weight: 400;
+}
+
+.stage-list label > b {
+    margin-left: auto;
+    color: #a9dfba;
+}
+
+.stage-list .completed > span {
+    text-decoration: line-through;
+    color: #b7a69a;
+}
+
+
+/* =========================
+   CONTROL DE ESTADO
+   ========================= */
+
+.status-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 13px;
+    color: #c9b8ad;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.status-control select {
+    padding: 6px;
+}
+
+
+/* =========================
+   UTILIDADES
+   ========================= */
+
+.compact {
+    min-height: 160px;
+}
+
+.notice {
+    font-size: 10px;
+}
+
+
+/* =========================
+   RESPONSIVE
+   ========================= */
+
+@media (max-width: 800px) {
+    .admin-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-shell {
+        display: block;
+    }
+
+    .auth-shell .sidebar {
+        display: none;
+    }
+
+    .auth-content {
+        padding: 24px 14px;
+    }
+
+    .page-heading h1 {
+        font-size: 22px;
+    }
+
+    .task-card-head {
+        display: block;
+    }
+
+    .assigned {
+        display: block;
+        margin-top: 9px;
+    }
+}

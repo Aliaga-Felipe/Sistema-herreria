@@ -8,7 +8,7 @@ CREATE TABLE usuarios (
   contrasena_hash TEXT NOT NULL,
   rol rol_usuario NOT NULL DEFAULT 'empleado',
   activo BOOLEAN NOT NULL DEFAULT TRUE,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(), 
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -39,3 +39,6 @@ CREATE INDEX idx_tarea_etapas_tarea ON tarea_etapas(tarea_id, orden);
 
 -- El registro público siempre crea empleados. Para otorgar el primer admin:
 -- UPDATE usuarios SET rol = 'admin' WHERE email = 'tu-correo@ejemplo.com';
+
+
+
