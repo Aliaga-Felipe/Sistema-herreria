@@ -39,3 +39,6 @@ CREATE INDEX idx_tarea_etapas_tarea ON tarea_etapas(tarea_id, orden);
 
 -- El registro público siempre crea empleados. Para otorgar el primer admin:
 -- UPDATE usuarios SET rol = 'admin' WHERE email = 'tu-correo@ejemplo.com';
+
+
+
