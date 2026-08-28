@@ -58,6 +58,14 @@ textarea {
     border-radius: 8px;
 }
 
+.product-editor label {
+    background: #4d3424;
+    margin-left: 10px;
+    margin-right:30px;
+    border-radius: 8px;
+}
+
+
 .product-editor input:focus{
     outline: none;
 }
