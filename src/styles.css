@@ -210,7 +210,8 @@ header {
 }
 
 /* =========================
-   CONTENT
+    CONTENT
+    ========================= */
 
 .content {
     /* max-width: 1030px; */
@@ -219,7 +220,8 @@ header {
 }
 
 /* =========================
-   HEADLINE
+    HEADLINE
+    ========================= */
 
 .headline {
     display: flex;
