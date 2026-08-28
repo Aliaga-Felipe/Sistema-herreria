@@ -14,7 +14,7 @@
 
 /* =========================
    RESET / BASE
-
+*/
 * {
     box-sizing: border-box;
 }
@@ -29,7 +29,7 @@ body {
 
 /* =========================
    APP LAYOUT
-
+*/
 .app-shell {
     min-height: 100vh;
     display: grid;
@@ -39,7 +39,7 @@ body {
 
 /* =========================
    SIDEBAR
-
+*/
 .sidebar {
     border-right: 1px solid var(--line);
     display: flex;
@@ -94,7 +94,7 @@ body {
 
 /* =========================
    SIDEBAR USER
-
+*/
 .side-bottom {
     margin-top: auto;
     border-top: 1px solid #302d2a;
@@ -133,7 +133,7 @@ body {
 
 /* =========================
    MAIN
-
+*/
 main {
     min-width: 0;
     background: #4a3324;
@@ -141,7 +141,7 @@ main {
 
 /* =========================
    HEADER
-
+*/
 header {
     height: 80px;
     background: #0c0b0a;
@@ -166,7 +166,7 @@ header {
 
 /* =========================
    SEARCH
-
+*/
 .search {
     width: 218px;
     height: 28px;
@@ -190,7 +190,7 @@ header {
 
 /* =========================
    HEADER ACTIONS
-
+*/
 .bell,
 .profile {
     border: 0;
