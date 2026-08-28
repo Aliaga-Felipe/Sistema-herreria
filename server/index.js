@@ -13,7 +13,7 @@ const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecuci
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)
-const normalizedRole = rnodemodulenew URLol => String(rol).toLowerCase()
+const normalizedRole = rol => String(rol).toLowerCase()
 const sign = user => jwt.sign({ id: user.id, rol: normalizedRole(user.rol), nombre: user.nombre }, secret, { expiresIn: '8h' })
 const auth = (roles = []) => (req, res, next) => {
   try {

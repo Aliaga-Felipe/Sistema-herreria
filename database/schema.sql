@@ -8,7 +8,7 @@ CREATE TABLE usuarios (
   contrasena_hash TEXT NOT NULL,
   rol rol_usuario NOT NULL DEFAULT 'empleado',
   activo BOOLEAN NOT NULL DEFAULT TRUE,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(), 
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
