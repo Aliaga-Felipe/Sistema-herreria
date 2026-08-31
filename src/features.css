@@ -82,7 +82,7 @@
 .employee-card h3,
 .settings-grid h3 {
   font-size: 13px;
-  margin: 0 0 5px;
+  margin: 0 0 2px;
 }
 
 .product-info p,
@@ -92,7 +92,7 @@
 .operator-summary p,
 .subdued p {
   color: #aa9d92;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   margin: 0;
 }
@@ -131,6 +131,7 @@
   padding: 5px 7px;
   font: 700 8px Manrope;
   cursor: pointer;
+  font-size: 10px;
 }
 
 .done {
@@ -214,14 +215,14 @@
 
 .avatar {
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 800;
   background: #e8dfd5;
   color: #332119;
 }
 
 .employee-card small {
-  font-size: 8px;
+  font-size: 10px;
   color: #e9ae91;
 }
 

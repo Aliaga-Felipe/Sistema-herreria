@@ -391,7 +391,9 @@ header {
     align-items: center;
     gap: 10px;
     margin-left: 10px;
+    font-size: 14px;
 }
+
 
 .product-thumb {
     width: 27px;
