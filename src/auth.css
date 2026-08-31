@@ -63,6 +63,13 @@ textarea {
     margin-left: 45px;
 }
 
+.product-editor>label>input::placeholder, 
+.product-editor>label>textarea::placeholder {
+    color: rgba(255, 253, 253, 0.801);
+}
+
+
+
 .product-editor>label>textarea {
     margin-left: 95px;
     width: 600px;
@@ -88,6 +95,7 @@ textarea {
     margin-top: 10px;
     width: 900px;
     height: 30px;
+    font-family: 'Libre Baskerville';
 }
 
 

@@ -437,6 +437,13 @@ header {
 
 .high {
     color: #ffb09b !important;
+    display: flex;
+    margin-top: 10px;
+}
+small.high {
+    color: #ffb09b !important;
+    display: flex;
+    margin-top: 8px;
 }
 
 .progress-cell b {
@@ -811,6 +818,10 @@ header {
     color: #f0ab8d;
     font: 700 10px Manrope;
     cursor: pointer;
+}
+
+em.stage{
+    margin-top: 10px;
 }
 
 /* =========================
