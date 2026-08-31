@@ -1,50 +1,905 @@
 import React, { useState } from 'react'
 import './features.css'
 
-const initials = name => (name || '?').split(' ').filter(Boolean).map(part => part[0]).slice(0, 2).join('').toUpperCase()
-const Stat = ({ label, value }) => <article className="stat-card"><span>{label}</span><strong>{value}</strong></article>
-const Progress = ({ value }) => <div className="progress"><i style={{ width: `${value}%` }} /></div>
-const Heading = ({ kicker, title, text, children }) => <section className="headline"><div><p className="eyebrow">{kicker}</p><h1>{title}</h1><p className="muted">{text}</p></div>{children}</section>
-const Empty = ({ title, text, action, label = 'Crear producto' }) => <section className="empty"><span>◇</span><h3>{title}</h3><p>{text}</p>{action && <button className="primary" onClick={action}>{label}</button>}</section>
+const initials = name =>
+  (name || '?')
+    .split(' ')
+    .filter(Boolean)
+    .map(part => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
 
-export default function WorkshopPanels({ section, setSection, users, tasks, onCreateProduct, onUpdateStage, onUpdateStatus, administration }) {
+const Stat = ({ label, value }) => (
+  <article className="stat-card">
+    <span>{label}</span>
+    <strong>{value}</strong>
+  </article>
+)
+
+const Progress = ({ value }) => (
+  <div className="progress">
+    <i style={{ width: `${value}%` }} />
+  </div>
+)
+
+const Heading = ({ kicker, title, text, children }) => (
+  <section className="headline">
+    <div>
+      <p className="eyebrow">{kicker}</p>
+      <h1>{title}</h1>
+      <p className="muted">{text}</p>
+    </div>
+    {children}
+  </section>
+)
+
+const Empty = ({
+  title,
+  text,
+  action,
+  label = 'Crear producto'
+}) => (
+  <section className="empty">
+    <span>◇</span>
+    <h3>{title}</h3>
+    <p>{text}</p>
+    {action && (
+      <button className="primary" onClick={action}>
+        {label}
+      </button>
+    )}
+  </section>
+)
+
+export default function WorkshopPanels({
+  section,
+  setSection,
+  users,
+  tasks,
+  onCreateProduct,
+  onUpdateStage,
+  onUpdateStatus,
+  administration
+}) {
   const [notice, setNotice] = useState('')
-  const show = message => { setNotice(message); window.setTimeout(() => setNotice(''), 2600) }
+
+  const show = message => {
+    setNotice(message)
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
   const active = tasks.filter(task => task.estado !== 'REALIZADA')
   const finished = tasks.filter(task => task.estado === 'REALIZADA')
+
   const completeCurrent = async task => {
     const current = task.etapas.find(stage => !stage.realizada)
+
     if (!current) return
+
     try {
       await onUpdateStage(task.id, current.id, true)
-      if (task.etapas.filter(stage => !stage.realizada).length === 1) await onUpdateStatus(task.id, 'REALIZADA')
-      else if (task.estado === 'PENDIENTE') await onUpdateStatus(task.id, 'EN_PROGRESO')
+
+      if (
+        task.etapas.filter(stage => !stage.realizada).length === 1
+      ) {
+        await onUpdateStatus(task.id, 'REALIZADA')
+      } else if (task.estado === 'PENDIENTE') {
+        await onUpdateStatus(task.id, 'EN_PROGRESO')
+      }
+
       show('Etapa completada. La producción fue actualizada.')
-    } catch (error) { show(error.message) }
+    } catch (error) {
+      show(error.message)
+    }
   }
+
   const view = {
-    'Panel de control': <Dashboard active={active} finished={finished} users={users} onNew={() => setSection('Nuevo producto')} onAdvance={completeCurrent}/>,
-    'Nuevo producto': <ProductForm employees={users.filter(user => user.rol === 'empleado' && user.activo)} onSave={async product => { try { await onCreateProduct(product); setSection('Producción'); show('Producto creado, asignado y enviado a producción.') } catch (error) { show(error.message) } }} />,
-    Producción: <Production tasks={active} users={users} onNew={() => setSection('Nuevo producto')} onAdvance={completeCurrent}/>,
-    'Tareas finalizadas': <Finished tasks={finished} users={users}/>,
-    'Producción mensual': <Monthly tasks={tasks}/>,
-    Recompensas: <Rewards finished={finished}/>,
-    Operarios: <Operators users={users} openAdmin={() => setSection('Administración')} />,
+    'Panel de control': (
+      <Dashboard
+        active={active}
+        finished={finished}
+        users={users}
+        onNew={() => setSection('Nuevo producto')}
+        onAdvance={completeCurrent}
+      />
+    ),
+
+    'Nuevo producto': (
+      <ProductForm
+        employees={users.filter(
+          user => user.rol === 'empleado' && user.activo
+        )}
+        onSave={async product => {
+          try {
+            await onCreateProduct(product)
+            setSection('Producción')
+            show(
+              'Producto creado, asignado y enviado a producción.'
+            )
+          } catch (error) {
+            show(error.message)
+          }
+        }}
+      />
+    ),
+
+    Producción: (
+      <Production
+        tasks={active}
+        users={users}
+        onNew={() => setSection('Nuevo producto')}
+        onAdvance={completeCurrent}
+      />
+    ),
+
+    'Tareas finalizadas': (
+      <Finished
+        tasks={finished}
+        users={users}
+      />
+    ),
+
+    'Producción mensual': (
+      <Monthly tasks={tasks} />
+    ),
+
+    Recompensas: (
+      <Rewards finished={finished} />
+    ),
+
+    Operarios: (
+      <Operators
+        users={users}
+        openAdmin={() => setSection('Administración')}
+      />
+    ),
+
     Administración: administration,
+
     Configuración: <Settings />
   }[section]
-  return <>{notice && <p className="notice">{notice}</p>}{view}</>
+
+  return (
+    <>
+      {notice && <p className="notice">{notice}</p>}
+      {view}
+    </>
+  )
 }
 
-function Dashboard({ active, finished, users, onNew, onAdvance }) { return <><Heading kicker="Resumen de operaciones" title="Panel de producción" text="Cada producto asignado se convierte directamente en una tarea de producción."><button className="primary" onClick={onNew}>+ Nuevo producto</button></Heading><section className="stats-grid dashboard-stats"><Stat label="Productos en curso" value={active.length}/><Stat label="Pendientes" value={active.filter(task => task.estado === 'PENDIENTE').length}/><Stat label="Terminados" value={finished.length}/><Stat label="Etapas en proceso" value={active.flatMap(task => task.etapas).filter(stage => !stage.realizada).length}/><Stat label="Operarios" value={users.filter(user => user.rol === 'empleado').length}/></section><TaskOrders tasks={active} users={users} onAdvance={onAdvance} emptyAction={onNew}/></> }
-function Production({ tasks, users, onNew, onAdvance }) { return <><Heading kicker="Flujo de trabajo" title="Producción" text="Productos actualmente asignados a los operarios y sus etapas."><button className="primary" onClick={onNew}>+ Nuevo producto</button></Heading><TaskOrders tasks={tasks} users={users} onAdvance={onAdvance} emptyAction={onNew}/></> }
-function Finished({ tasks, users }) { return <><Heading kicker="Historial de producción" title="Tareas finalizadas" text="Productos con todas sus etapas realizadas."/><TaskOrders tasks={tasks} users={users}/></> }
-function TaskOrders({ tasks, users, onAdvance, emptyAction }) {
-  if (!tasks.length) return <Empty title="No hay productos en esta sección" text="Creá un producto, agregá sus etapas y asignalo a un operario para iniciar la producción." action={emptyAction}/>
-  return <section className="orders-card"><div className="order-head"><span>Producto</span><span>Descripción</span><span>Etapa actual</span><span>Progreso</span><span>Responsable</span><span>Acción</span></div>{tasks.map(task => { const current = task.etapas.find(stage => !stage.realizada); const progress = Math.round(task.etapas.filter(stage => stage.realizada).length / task.etapas.length * 100); const employee = users.find(user => String(user.id) === String(task.asignado_a)); return <div className="order-row" key={task.id}><div className="product"><div className="product-thumb">▦</div><div><b>{task.titulo}</b><small>Producto #{task.id}</small></div></div><div className="client"><b>{task.descripcion || 'Sin descripción'}</b><small>{task.etapas.length} etapas</small></div><div><em className="stage">• {current?.nombre || 'Finalizado'}</em>{current && <small className="high">{current.minutos_estimados} min</small>}</div><div className="progress-cell"><b>{progress}%</b><Progress value={progress}/></div><div className="worker">{employee ? <><span>{initials(employee.nombre)}</span>{employee.nombre}</> : <small>Sin asignar</small>}</div><div>{current && onAdvance ? <button className="row-action" onClick={() => onAdvance(task)}>Completar etapa</button> : <span className="done">✓ Listo</span>}</div></div> })}</section>
+function Dashboard({
+  active,
+  finished,
+  users,
+  onNew,
+  onAdvance
+}) {
+  return (
+    <>
+      <Heading
+        kicker="Resumen de operaciones"
+        title="Panel de producción"
+        text="Cada producto asignado se convierte directamente en una tarea de producción."
+      >
+        <button className="primary" onClick={onNew}>
+          + Nuevo producto
+        </button>
+      </Heading>
+
+      <section className="stats-grid dashboard-stats">
+        <Stat
+          label="Productos en curso"
+          value={active.length}
+        />
+
+        <Stat
+          label="Pendientes"
+          value={
+            active.filter(
+              task => task.estado === 'PENDIENTE'
+            ).length
+          }
+        />
+
+        <Stat
+          label="Terminados"
+          value={finished.length}
+        />
+
+        <Stat
+          label="Etapas en proceso"
+          value={
+            active
+              .flatMap(task => task.etapas)
+              .filter(stage => !stage.realizada)
+              .length
+          }
+        />
+
+        <Stat
+          label="Operarios"
+          value={
+            users.filter(
+              user => user.rol === 'empleado'
+            ).length
+          }
+        />
+      </section>
+
+      <TaskOrders
+        tasks={active}
+        users={users}
+        onAdvance={onAdvance}
+        emptyAction={onNew}
+      />
+    </>
+  )
 }
-function Monthly({ tasks }) { if (!tasks.length) return <><Heading kicker="Métricas analíticas" title="Producción mensual" text="Las métricas se generan con los productos registrados."/><Empty title="Aún no hay datos de producción" text="Creá un producto para comenzar a medir la producción."/></>; const stages = tasks.flatMap(task => task.etapas); const complete = stages.filter(stage => stage.realizada).length; const pending = stages.length - complete; const max = Math.max(complete, pending, 1); return <><Heading kicker="Métricas analíticas" title="Producción mensual" text="Avance consolidado de todos los productos."/><section className="stats-grid monthly-stats"><Stat label="Productos iniciados" value={tasks.length}/><Stat label="Terminados" value={tasks.filter(task => task.estado === 'REALIZADA').length}/><Stat label="En producción" value={tasks.filter(task => task.estado !== 'REALIZADA').length}/><Stat label="Etapas pendientes" value={pending}/></section><section className="analytics"><article className="chart-card"><div className="card-title">Avance de etapas</div><div className="chart"><div className="bar-wrap"><i className="active-bar" style={{ height: `${Math.max(8, complete / max * 100)}%` }}/><small>Completadas</small></div><div className="bar-wrap"><i style={{ height: `${Math.max(8, pending / max * 100)}%` }}/><small>Pendientes</small></div></div></article><article className="operator-summary"><div className="card-title">Tiempo estimado</div><strong className="large-number">{stages.reduce((total, stage) => total + Number(stage.minutos_estimados), 0)} min</strong><p>Total de tiempo planificado para todas las etapas.</p></article></section></> }
-function Rewards({ finished }) { return <><Heading kicker="Reconocimiento al equipo" title="Recompensas" text="Los productos terminados quedan disponibles para asignar recompensas."/>{finished.length ? <section className="simple-list">{finished.map(task => <article key={task.id}><span className="medal">♛</span><div><b>{task.titulo}</b><p>Producto terminado · listo para reconocer al equipo.</p></div></article>)}</section> : <Empty title="No hay productos finalizados" text="Cuando un producto complete todas sus etapas, aparecerá aquí."/>}</> }
-function Operators({ users, openAdmin }) { const employees = users.filter(user => user.rol === 'empleado'); return <><Heading kicker="Personas de producción" title="Operarios" text="Personal que puede recibir productos para fabricar."><button className="primary" onClick={openAdmin}>Administrar usuarios</button></Heading>{employees.length ? <section className="employee-grid">{employees.map(user => <article className="employee-card" key={user.id}><span className="avatar">{initials(user.nombre)}</span><div><h3>{user.nombre}</h3><p>{user.email}</p><small>Operario</small></div></article>)}</section> : <Empty title="No hay operarios disponibles" text="Registrá usuarios con rol empleado desde Administración." action={openAdmin} label="Administrar usuarios"/>}</> }
-function Settings() { return <><Heading kicker="Administración" title="Configuración" text="Configuración general del taller."/><section className="settings-grid"><article><span>🔐</span><h3>Acceso y roles</h3><p>Gestioná usuarios y roles desde Administración.</p></article><article><span>▣</span><h3>Producción</h3><p>Los productos se crean con etapas, tiempos estimados y un operario responsable.</p></article></section></> }
-function ProductForm({ employees, onSave }) { const [name, setName] = useState(''); const [description, setDescription] = useState(''); const [employee, setEmployee] = useState(''); const [stages, setStages] = useState([{ nombre: 'Diseño y medidas', minutos_estimados: 30 }, { nombre: 'Corte de material', minutos_estimados: 60 }, { nombre: 'Soldadura', minutos_estimados: 120 }]); const [error, setError] = useState(''); const submit = async event => { event.preventDefault(); if (!employee) return setError('Seleccioná el operario responsable.'); if (stages.some(stage => !stage.nombre.trim() || Number(stage.minutos_estimados) <= 0)) return setError('Completá cada etapa y su tiempo estimado.'); setError(''); await onSave({ titulo: name, descripcion: description, asignado_a: employee, etapas: stages }) }; return <><Heading kicker="Alta de producto" title="Nuevo producto" text="Definí sus etapas, tiempos y responsable. Se creará directamente en Producción."/>{employees.length ? <form className="product-editor" onSubmit={submit}><label>Nombre del producto<input required value={name} onChange={event => setName(event.target.value)} placeholder="Ej. Portón de hierro"/></label><label>Descripción<textarea value={description} onChange={event => setDescription(event.target.value)} placeholder="Medidas, materiales o notas"/></label><label>Operario responsable<select required value={employee} onChange={event => setEmployee(event.target.value)}><option value="">Seleccionar operario</option>{employees.map(user => <option value={user.id} key={user.id}>{user.nombre}</option>)}</select></label><div className="stage-edit"><div><b>Etapas y tiempo estimado</b><span>Cada etapa es parte del producto.</span></div>{stages.map((stage, index) => <div className="stage-time-input" key={index}><small>{index + 1}</small><input required value={stage.nombre} onChange={event => setStages(stages.map((item, itemIndex) => itemIndex === index ? { ...item, nombre: event.target.value } : item))}/><input required min="1" type="number" value={stage.minutos_estimados} onChange={event => setStages(stages.map((item, itemIndex) => itemIndex === index ? { ...item, minutos_estimados: event.target.value } : item))}/><span>min</span><button type="button" onClick={() => setStages(stages.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}<button type="button" className="add-stage" onClick={() => setStages([...stages, { nombre: '', minutos_estimados: 30 }])}>+ Agregar etapa</button></div>{error && <p className="form-error">{error}</p>}<div className="form-actions"><button className="primary">Crear y asignar producto</button></div></form> : <Empty title="No hay operarios disponibles" text="Primero registrá un usuario y mantenelo con rol empleado para poder asignarle productos."/>}</> }
+
+function Production({
+  tasks,
+  users,
+  onNew,
+  onAdvance
+}) {
+  return (
+    <>
+      <Heading
+        kicker="Flujo de trabajo"
+        title="Producción"
+        text="Productos actualmente asignados a los operarios y sus etapas."
+      >
+        <button className="primary" onClick={onNew}>
+          + Nuevo producto
+        </button>
+      </Heading>
+
+      <TaskOrders
+        tasks={tasks}
+        users={users}
+        onAdvance={onAdvance}
+        emptyAction={onNew}
+      />
+    </>
+  )
+}
+
+function Finished({ tasks, users }) {
+  return (
+    <>
+      <Heading
+        kicker="Historial de producción"
+        title="Tareas finalizadas"
+        text="Productos con todas sus etapas realizadas."
+      />
+
+      <TaskOrders
+        tasks={tasks}
+        users={users}
+      />
+    </>
+  )
+}
+
+function TaskOrders({
+  tasks,
+  users,
+  onAdvance,
+  emptyAction
+}) {
+  if (!tasks.length) {
+    return (
+      <Empty
+        title="No hay productos en esta sección"
+        text="Creá un producto, agregá sus etapas y asignalo a un operario para iniciar la producción."
+        action={emptyAction}
+      />
+    )
+  }
+
+  return (
+    <section className="orders-card">
+      <div className="order-head">
+        <span>Producto</span>
+        <span>Descripción</span>
+        <span>Etapa actual</span>
+        <span>Progreso</span>
+        <span>Responsable</span>
+        <span>Acción</span>
+      </div>
+
+      {tasks.map(task => {
+        const current = task.etapas.find(
+          stage => !stage.realizada
+        )
+
+        const progress = Math.round(
+          task.etapas.filter(
+            stage => stage.realizada
+          ).length /
+            task.etapas.length *
+            100
+        )
+
+        const employee = users.find(
+          user =>
+            String(user.id) ===
+            String(task.asignado_a)
+        )
+
+        return (
+          <div
+            className="order-row"
+            key={task.id}
+          >
+            <div className="product">
+              <div className="product-thumb">
+                ▦
+              </div>
+
+              <div>
+                <b>{task.titulo}</b>
+                <small>
+                  Producto #{task.id}
+                </small>
+              </div>
+            </div>
+
+            <div className="client">
+              <b>
+                {task.descripcion ||
+                  'Sin descripción'}
+              </b>
+
+              <small>
+                {task.etapas.length} etapas
+              </small>
+            </div>
+
+            <div>
+              <em className="stage">
+                • {current?.nombre || 'Finalizado'}
+              </em>
+
+              {current && (
+                <small className="high">
+                  {current.minutos_estimados} min
+                </small>
+              )}
+            </div>
+
+            <div className="progress-cell">
+              <b>{progress}%</b>
+              <Progress value={progress} />
+            </div>
+
+            <div className="worker">
+              {employee ? (
+                <>
+                  <span>
+                    {initials(employee.nombre)}
+                  </span>
+
+                  {employee.nombre}
+                </>
+              ) : (
+                <small>Sin asignar</small>
+              )}
+            </div>
+
+            <div>
+              {current && onAdvance ? (
+                <button
+                  className="row-action"
+                  onClick={() => onAdvance(task)}
+                >
+                  Completar etapa
+                </button>
+              ) : (
+                <span className="done">
+                  ✓ Listo
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+function Monthly({ tasks }) {
+  if (!tasks.length) {
+    return (
+      <>
+        <Heading
+          kicker="Métricas analíticas"
+          title="Producción mensual"
+          text="Las métricas se generan con los productos registrados."
+        />
+
+        <Empty
+          title="Aún no hay datos de producción"
+          text="Creá un producto para comenzar a medir la producción."
+        />
+      </>
+    )
+  }
+
+  const stages = tasks.flatMap(
+    task => task.etapas
+  )
+
+  const complete = stages.filter(
+    stage => stage.realizada
+  ).length
+
+  const pending = stages.length - complete
+
+  const max = Math.max(
+    complete,
+    pending,
+    1
+  )
+
+  return (
+    <>
+      <Heading
+        kicker="Métricas analíticas"
+        title="Producción mensual"
+        text="Avance consolidado de todos los productos."
+      />
+
+      <section className="stats-grid monthly-stats">
+        <Stat
+          label="Productos iniciados"
+          value={tasks.length}
+        />
+
+        <Stat
+          label="Terminados"
+          value={
+            tasks.filter(
+              task => task.estado === 'REALIZADA'
+            ).length
+          }
+        />
+
+        <Stat
+          label="En producción"
+          value={
+            tasks.filter(
+              task => task.estado !== 'REALIZADA'
+            ).length
+          }
+        />
+
+        <Stat
+          label="Etapas pendientes"
+          value={pending}
+        />
+      </section>
+
+      <section className="analytics">
+        <article className="chart-card">
+          <div className="card-title">
+            Avance de etapas
+          </div>
+
+          <div className="chart">
+            <div className="bar-wrap">
+              <i
+                className="active-bar"
+                style={{
+                  height: `${Math.max(
+                    8,
+                    complete / max * 100
+                  )}%`
+                }}
+              />
+
+              <small>Completadas</small>
+            </div>
+
+            <div className="bar-wrap">
+              <i
+                style={{
+                  height: `${Math.max(
+                    8,
+                    pending / max * 100
+                  )}%`
+                }}
+              />
+
+              <small>Pendientes</small>
+            </div>
+          </div>
+        </article>
+
+        <article className="operator-summary">
+          <div className="card-title">
+            Tiempo estimado
+          </div>
+
+          <strong className="large-number">
+            {stages.reduce(
+              (total, stage) =>
+                total +
+                Number(stage.minutos_estimados),
+              0
+            )}{' '}
+            min
+          </strong>
+
+          <p>
+            Total de tiempo planificado para
+            todas las etapas.
+          </p>
+        </article>
+      </section>
+    </>
+  )
+}
+
+function Rewards({ finished }) {
+  return (
+    <>
+      <Heading
+        kicker="Reconocimiento al equipo"
+        title="Recompensas"
+        text="Los productos terminados quedan disponibles para asignar recompensas."
+      />
+
+      {finished.length ? (
+        <section className="simple-list">
+          {finished.map(task => (
+            <article key={task.id}>
+              <span className="medal">
+                ♛
+              </span>
+
+              <div>
+                <b>{task.titulo}</b>
+                <p>
+                  Producto terminado · listo
+                  para reconocer al equipo.
+                </p>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <Empty
+          title="No hay productos finalizados"
+          text="Cuando un producto complete todas sus etapas, aparecerá aquí."
+        />
+      )}
+    </>
+  )
+}
+
+function Operators({
+  users,
+  openAdmin
+}) {
+  const employees = users.filter(
+    user => user.rol === 'empleado'
+  )
+
+  return (
+    <>
+      <Heading
+        kicker="Personas de producción"
+        title="Operarios"
+        text="Personal que puede recibir productos para fabricar."
+      >
+        <button
+          className="primary"
+          onClick={openAdmin}
+        >
+          Administrar usuarios
+        </button>
+      </Heading>
+
+      {employees.length ? (
+        <section className="employee-grid">
+          {employees.map(user => (
+            <article
+              className="employee-card"
+              key={user.id}
+            >
+              <span className="avatar">
+                {initials(user.nombre)}
+              </span>
+
+              <div>
+                <h3>{user.nombre}</h3>
+                <p>{user.email}</p>
+                <small>Operario</small>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <Empty
+          title="No hay operarios disponibles"
+          text="Registrá usuarios con rol empleado desde Administración."
+          action={openAdmin}
+          label="Administrar usuarios"
+        />
+      )}
+    </>
+  )
+}
+
+function Settings() {
+  return (
+    <>
+      <Heading
+        kicker="Administración"
+        title="Configuración"
+        text="Configuración general del taller."
+      />
+
+      <section className="settings-grid">
+        <article>
+          <span>🔐</span>
+          <h3>Acceso y roles</h3>
+          <p>
+            Gestioná usuarios y roles desde
+            Administración.
+          </p>
+        </article>
+
+        <article>
+          <span>▣</span>
+          <h3>Producción</h3>
+          <p>
+            Los productos se crean con etapas,
+            tiempos estimados y un operario
+            responsable.
+          </p>
+        </article>
+      </section>
+    </>
+  )
+}
+
+function ProductForm({
+  employees,
+  onSave
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [employee, setEmployee] = useState('')
+
+  const [stages, setStages] = useState([
+    {
+      nombre: 'Diseño y medidas',
+      minutos_estimados: 30
+    },
+    {
+      nombre: 'Corte de material',
+      minutos_estimados: 60
+    },
+    {
+      nombre: 'Soldadura',
+      minutos_estimados: 120
+    }
+  ])
+
+  const [error, setError] = useState('')
+
+  const submit = async event => {
+    event.preventDefault()
+
+    if (!employee) {
+      return setError(
+        'Seleccioná el operario responsable.'
+      )
+    }
+
+    if (
+      stages.some(
+        stage =>
+          !stage.nombre.trim() ||
+          Number(stage.minutos_estimados) <= 0
+      )
+    ) {
+      return setError(
+        'Completá cada etapa y su tiempo estimado.'
+      )
+    }
+
+    setError('')
+
+    await onSave({
+      titulo: name,
+      descripcion: description,
+      asignado_a: employee,
+      etapas: stages
+    })
+  }
+
+  return (
+    <>
+      <Heading
+        kicker="Alta de producción"
+        title="Nuevo producto"
+        text="Definí sus etapas, tiempos y responsable. Se creará directamente en Producción."
+      />
+
+      {employees.length ? (
+        <form
+          className="product-editor"
+          onSubmit={submit}
+        >
+          <label>
+            Nombre del producto
+
+            <input
+              required
+              value={name}
+              onChange={event =>
+                setName(event.target.value)
+              }
+              placeholder="Ej. Portón de hierro"
+            />
+          </label>
+
+          <label>
+            Descripción
+
+            <textarea
+              value={description}
+              onChange={event =>
+                setDescription(event.target.value)
+              }
+              placeholder="Medidas, materiales o notas"
+            />
+          </label>
+
+          <label>
+            Operario responsable
+
+            <select
+              required
+              value={employee}
+              onChange={event =>
+                setEmployee(event.target.value)
+              }
+            >
+              <option value="">
+                Seleccionar operario
+              </option>
+
+              {employees.map(user => (
+                <option
+                  value={user.id}
+                  key={user.id}
+                >
+                  {user.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="stage-edit">
+            <div>
+              <b>
+                Etapas y tiempo estimado
+              </b>
+
+              <span>
+                Cada etapa es parte del producto.
+              </span>
+            </div>
+
+            {stages.map((stage, index) => (
+              <div
+                className="stage-time-input"
+                key={index}
+              >
+                <small>
+                  {index + 1}
+                </small>
+
+                <input
+                  required
+                  value={stage.nombre}
+                  onChange={event =>
+                    setStages(
+                      stages.map(
+                        (item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                nombre:
+                                  event.target.value
+                              }
+                            : item
+                      )
+                    )
+                  }
+                />
+
+                <input
+                  required
+                  min="1"
+                  type="number"
+                  value={
+                    stage.minutos_estimados
+                  }
+                  onChange={event =>
+                    setStages(
+                      stages.map(
+                        (item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                minutos_estimados:
+                                  event.target.value
+                              }
+                            : item
+                      )
+                    )
+                  }
+                />
+
+                <span>min</span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStages(
+                      stages.filter(
+                        (_, itemIndex) =>
+                          itemIndex !== index
+                      )
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="add-stage"
+              onClick={() =>
+                setStages([
+                  ...stages,
+                  {
+                    nombre: '',
+                    minutos_estimados: 30
+                  }
+                ])
+              }
+            >
+              + Agregar etapa
+            </button>
+          </div>
+
+          {error && (
+            <p className="form-error">
+              {error}
+            </p>
+          )}
+
+          <div className="form-actions">
+            <button className="primary">
+              Crear y asignar producto
+            </button>
+          </div>
+        </form>
+      ) : (
+        <Empty
+          title="No hay operarios disponibles"
+          text="Primero registrá un usuario y mantenelo con rol empleado para poder asignarle productos."
+        />
+      )}
+    </>
+  )
+}
