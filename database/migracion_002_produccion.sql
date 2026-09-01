@@ -1,74 +1,44 @@
 -- =====================================================================
--- El Atelier - Hub de produccion (herreria)
--- Esquema completo de PostgreSQL. El script es IDEMPOTENTE: se puede
--- ejecutar sobre una base vacia o sobre una base ya en uso sin perder
--- datos. Para una instalacion existente tambien existe el delta en
--- database/migracion_002_produccion.sql
+-- Migracion 002 - Produccion, pedidos, semaforo y recompensas
+--
+-- Delta para bases que ya tienen el esquema anterior (usuarios, tareas,
+-- tarea_etapas y las tablas sueltas de productos/pedidos que nunca se
+-- usaron desde la API). No borra ni reescribe datos existentes: solo
+-- agrega tipos, tablas y columnas, y relaja restricciones que impedian
+-- el nuevo modelo.
+--
+-- Ejecutar con:  psql -d atelier_herreria -f database/migracion_002_produccion.sql
+-- Es idempotente: se puede correr mas de una vez sin efectos adversos.
 -- =====================================================================
 
--- ---------------------------------------------------------------------
--- TIPOS ENUMERADOS
--- ---------------------------------------------------------------------
-DO $$ BEGIN CREATE TYPE rol_usuario AS ENUM ('admin', 'empleado'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'REALIZADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE estado_pedido AS ENUM ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- 0. Etiquetas faltantes en enums ya existentes -----------------------
+-- Va fuera de la transacción porque ALTER TYPE ... ADD VALUE no puede
+-- usarse dentro del mismo bloque en el que se agrega. Algunas bases
+-- creadas con versiones anteriores tienen estado_etapa con las etiquetas
+-- EN_PROCESO/BLOQUEADA; se suman las que usa la API sin quitar ninguna.
 DO $$ BEGIN CREATE TYPE estado_etapa AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'COMPLETADA', 'CANCELADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE semaforo_rendimiento AS ENUM ('VERDE', 'AMARILLO', 'ROJO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
--- Algunas bases creadas con versiones anteriores tienen estado_etapa con
--- las etiquetas EN_PROCESO/BLOQUEADA. Se agregan las que usa la API sin
--- tocar las existentes, para no invalidar filas ya guardadas.
 ALTER TYPE estado_etapa ADD VALUE IF NOT EXISTS 'EN_PROGRESO';
 ALTER TYPE estado_etapa ADD VALUE IF NOT EXISTS 'CANCELADA';
 
--- ---------------------------------------------------------------------
--- USUARIOS
--- El primer administrador se carga a mano en la base (ver README).
--- Desde ahi el admin da de alta a los empleados con POST /api/usuarios.
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS usuarios (
-  id BIGSERIAL PRIMARY KEY,
-  nombre VARCHAR(120) NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  contrasena_hash TEXT NOT NULL,
-  rol rol_usuario NOT NULL DEFAULT 'empleado',
-  activo BOOLEAN NOT NULL DEFAULT TRUE,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(40);
+BEGIN;
 
-CREATE TABLE IF NOT EXISTS recuperaciones_contrasena (
-  id BIGSERIAL PRIMARY KEY,
-  usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL,
-  usado_en TIMESTAMPTZ,
-  vence_en TIMESTAMPTZ NOT NULL,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- 1. Tipos nuevos -----------------------------------------------------
+-- El esquema anterior tenía dos bloques con un CREATE TYPE rol_usuario
+-- duplicado, así que según hasta dónde llegó a ejecutarse la base puede
+-- tener el enum en minúscula o en mayúscula y le pueden faltar tablas.
+-- Todo el código consulta el rol con LOWER(), así que sirven las dos.
+DO $$ BEGIN CREATE TYPE rol_usuario AS ENUM ('admin', 'empleado'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'REALIZADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE estado_pedido AS ENUM ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE semaforo_rendimiento AS ENUM ('VERDE', 'AMARILLO', 'ROJO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TABLE IF NOT EXISTS equipos (
-  id BIGSERIAL PRIMARY KEY,
-  nombre VARCHAR(100) UNIQUE NOT NULL,
-  activo BOOLEAN NOT NULL DEFAULT TRUE
-);
-CREATE TABLE IF NOT EXISTS equipo_integrantes (
-  equipo_id BIGINT REFERENCES equipos(id) ON DELETE CASCADE,
-  usuario_id BIGINT REFERENCES usuarios(id) ON DELETE CASCADE,
-  PRIMARY KEY (equipo_id, usuario_id)
-);
-
--- ---------------------------------------------------------------------
--- CONFIGURACION DEL SISTEMA
--- Parametros editables por el admin (formula de recompensas, semaforo).
--- ---------------------------------------------------------------------
+-- 2. Configuracion editable por el admin ------------------------------
 CREATE TABLE IF NOT EXISTS configuracion (
   clave VARCHAR(60) PRIMARY KEY,
   valor TEXT NOT NULL,
   descripcion TEXT NOT NULL DEFAULT '',
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('recompensa_activa', 'true', 'Habilita el calculo automatico de recompensas al completar una etapa.'),
   ('recompensa_valor_hora', '2500', 'Valor de referencia de una hora de taller, usado para valorizar el tiempo ahorrado.'),
@@ -78,9 +48,11 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('moneda', 'ARS', 'Simbolo de moneda usado en los reportes.')
 ON CONFLICT (clave) DO NOTHING;
 
--- ---------------------------------------------------------------------
--- TAREAS LIBRES (trabajo interno que no nace de un pedido)
--- ---------------------------------------------------------------------
+-- 3. Usuarios y tareas libres ------------------------------------------
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(40);
+
+-- Las tablas de tareas pueden faltar si el esquema anterior se cortó en
+-- el CREATE TYPE duplicado; se crean acá para dejar la base completa.
 CREATE TABLE IF NOT EXISTS tareas (
   id BIGSERIAL PRIMARY KEY,
   titulo VARCHAR(180) NOT NULL,
@@ -91,8 +63,6 @@ CREATE TABLE IF NOT EXISTS tareas (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   actualizada_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-ALTER TABLE tareas ADD COLUMN IF NOT EXISTS finalizada_en TIMESTAMPTZ;
-
 CREATE TABLE IF NOT EXISTS tarea_etapas (
   id BIGSERIAL PRIMARY KEY,
   tarea_id BIGINT NOT NULL REFERENCES tareas(id) ON DELETE CASCADE,
@@ -103,14 +73,15 @@ CREATE TABLE IF NOT EXISTS tarea_etapas (
   completada_en TIMESTAMPTZ,
   UNIQUE (tarea_id, orden)
 );
--- Tiempo real informado por el empleado + resultado del semaforo.
+CREATE INDEX IF NOT EXISTS idx_tareas_asignado_estado ON tareas(asignado_a, estado);
+CREATE INDEX IF NOT EXISTS idx_tarea_etapas_tarea ON tarea_etapas(tarea_id, orden);
+
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS finalizada_en TIMESTAMPTZ;
 ALTER TABLE tarea_etapas ADD COLUMN IF NOT EXISTS minutos_reales INTEGER;
 ALTER TABLE tarea_etapas ADD COLUMN IF NOT EXISTS semaforo semaforo_rendimiento;
 ALTER TABLE tarea_etapas ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NULL DEFAULT 0;
 
--- ---------------------------------------------------------------------
--- CATALOGO: PRODUCTOS Y SUS ETAPAS DE FABRICACION
--- ---------------------------------------------------------------------
+-- 4. Catalogo de productos --------------------------------------------
 CREATE TABLE IF NOT EXISTS productos (
   id BIGSERIAL PRIMARY KEY,
   nombre VARCHAR(160) NOT NULL,
@@ -130,13 +101,10 @@ CREATE TABLE IF NOT EXISTS etapas_producto (
   puntos_recompensa INTEGER NOT NULL DEFAULT 0 CHECK (puntos_recompensa >= 0),
   UNIQUE (producto_id, orden)
 );
--- Costo y duracion estimada que define el admin para cada etapa.
 ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT NULL DEFAULT 60;
 
--- ---------------------------------------------------------------------
--- CLIENTES
--- ---------------------------------------------------------------------
+-- 5. Clientes ----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS clientes (
   id BIGSERIAL PRIMARY KEY,
   nombre VARCHAR(150) NOT NULL,
@@ -147,16 +115,14 @@ CREATE TABLE IF NOT EXISTS clientes (
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS notas TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- ---------------------------------------------------------------------
--- PEDIDOS (uno o mas productos por pedido)
--- ---------------------------------------------------------------------
+-- 6. Pedidos con varios productos --------------------------------------
 CREATE SEQUENCE IF NOT EXISTS pedidos_codigo_seq START 1;
 
 CREATE TABLE IF NOT EXISTS pedidos (
   id BIGSERIAL PRIMARY KEY,
   codigo VARCHAR(30) UNIQUE NOT NULL,
   cliente_id BIGINT REFERENCES clientes(id),
-  producto_id BIGINT REFERENCES productos(id),   -- legado: pedidos de un solo producto
+  producto_id BIGINT REFERENCES productos(id),
   equipo_id BIGINT REFERENCES equipos(id),
   cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
   estado estado_pedido NOT NULL DEFAULT 'PENDIENTE',
@@ -166,10 +132,14 @@ CREATE TABLE IF NOT EXISTS pedidos (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   terminado_en TIMESTAMPTZ
 );
+-- Un pedido ya no depende de un unico producto: pasa a pedido_items.
 ALTER TABLE pedidos ALTER COLUMN producto_id DROP NOT NULL;
 ALTER TABLE pedidos ALTER COLUMN codigo SET DEFAULT 'PED-' || LPAD(nextval('pedidos_codigo_seq')::text, 5, '0');
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS creado_por BIGINT REFERENCES usuarios(id);
+
+-- La secuencia arranca despues del ultimo codigo PED-xxxxx ya cargado.
+SELECT setval('pedidos_codigo_seq', GREATEST(1, COALESCE((SELECT MAX(NULLIF(regexp_replace(codigo, '\D', '', 'g'), ''))::bigint FROM pedidos WHERE codigo ~ '^PED-'), 0)));
 
 CREATE TABLE IF NOT EXISTS pedido_items (
   id BIGSERIAL PRIMARY KEY,
@@ -179,7 +149,6 @@ CREATE TABLE IF NOT EXISTS pedido_items (
   precio_unitario NUMERIC(12,2) NOT NULL DEFAULT 0
 );
 
--- Cada etapa de cada item del pedido es la unidad de trabajo asignable.
 CREATE TABLE IF NOT EXISTS pedido_etapas (
   id BIGSERIAL PRIMARY KEY,
   pedido_id BIGINT NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
@@ -190,6 +159,7 @@ CREATE TABLE IF NOT EXISTS pedido_etapas (
   completado_en TIMESTAMPTZ,
   observaciones TEXT
 );
+-- Con varios items por pedido, una misma etapa de producto puede repetirse.
 ALTER TABLE pedido_etapas DROP CONSTRAINT IF EXISTS pedido_etapas_pedido_id_etapa_producto_id_key;
 ALTER TABLE pedido_etapas ALTER COLUMN etapa_producto_id DROP NOT NULL;
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS pedido_item_id BIGINT REFERENCES pedido_items(id) ON DELETE CASCADE;
@@ -200,9 +170,7 @@ ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS minutos_reales INTEGER;
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS semaforo semaforo_rendimiento;
 
--- ---------------------------------------------------------------------
--- RECOMPENSAS (se generan solas cuando la etapa cierra en verde)
--- ---------------------------------------------------------------------
+-- 7. Recompensas por rendimiento ---------------------------------------
 CREATE TABLE IF NOT EXISTS recompensas (
   id BIGSERIAL PRIMARY KEY,
   pedido_id BIGINT REFERENCES pedidos(id) ON DELETE CASCADE,
@@ -213,6 +181,7 @@ CREATE TABLE IF NOT EXISTS recompensas (
   otorgado_por BIGINT REFERENCES usuarios(id),
   otorgado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Las recompensas ahora son individuales y automaticas.
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_puntos_check;
 ALTER TABLE recompensas ALTER COLUMN pedido_id DROP NOT NULL;
 ALTER TABLE recompensas ALTER COLUMN equipo_id DROP NOT NULL;
@@ -226,24 +195,21 @@ ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS minutos_reales INTEGER;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS minutos_ahorrados INTEGER;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS automatica BOOLEAN NOT NULL DEFAULT TRUE;
 
--- Una etapa genera como maximo una recompensa automatica.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recompensas_pedido_etapa ON recompensas(pedido_etapa_id) WHERE pedido_etapa_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recompensas_tarea_etapa ON recompensas(tarea_etapa_id) WHERE tarea_etapa_id IS NOT NULL;
 
--- ---------------------------------------------------------------------
--- REGLAS DE BORRADO
--- Las claves foraneas heredadas del esquema anterior no tenian accion de
--- borrado, asi que eliminar un pedido o reescribir las etapas de un
--- producto fallaba. Se redefinen de forma idempotente.
--- ---------------------------------------------------------------------
+-- 7 bis. Reglas de borrado ---------------------------------------------
+-- Las claves foráneas del esquema anterior no definían acción de borrado:
+-- eliminar un pedido con recompensas, o reescribir las etapas de un
+-- producto ya pedido, fallaba con violación de llave foránea.
 ALTER TABLE pedido_items DROP CONSTRAINT IF EXISTS pedido_items_pedido_id_fkey;
 ALTER TABLE pedido_items ADD CONSTRAINT pedido_items_pedido_id_fkey FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE;
 
 ALTER TABLE pedido_etapas DROP CONSTRAINT IF EXISTS pedido_etapas_pedido_id_fkey;
 ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_pedido_id_fkey FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE;
 
--- La etapa del pedido guarda su propia copia de nombre, costo y minutos,
--- asi que puede sobrevivir a la edicion del catalogo.
+-- La etapa del pedido guarda su copia de nombre, costo y minutos, así que
+-- sobrevive a la edición del catálogo.
 ALTER TABLE pedido_etapas DROP CONSTRAINT IF EXISTS pedido_etapas_etapa_producto_id_fkey;
 ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_etapa_producto_id_fkey FOREIGN KEY (etapa_producto_id) REFERENCES etapas_producto(id) ON DELETE SET NULL;
 
@@ -253,11 +219,7 @@ ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_responsable_id_fkey FOREI
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_pedido_id_fkey;
 ALTER TABLE recompensas ADD CONSTRAINT recompensas_pedido_id_fkey FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE;
 
--- ---------------------------------------------------------------------
--- INDICES
--- ---------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_tareas_asignado_estado ON tareas(asignado_a, estado);
-CREATE INDEX IF NOT EXISTS idx_tarea_etapas_tarea ON tarea_etapas(tarea_id, orden);
+-- 8. Indices ------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_etapas_producto_producto ON etapas_producto(producto_id, orden);
 CREATE INDEX IF NOT EXISTS idx_pedidos_estado ON pedidos(estado);
 CREATE INDEX IF NOT EXISTS idx_pedido_items_pedido ON pedido_items(pedido_id);
@@ -265,17 +227,11 @@ CREATE INDEX IF NOT EXISTS idx_pedido_etapas_pedido ON pedido_etapas(pedido_id, 
 CREATE INDEX IF NOT EXISTS idx_pedido_etapas_responsable ON pedido_etapas(responsable_id, estado);
 CREATE INDEX IF NOT EXISTS idx_recompensas_usuario ON recompensas(usuario_id, otorgado_en);
 
--- ---------------------------------------------------------------------
--- VISTAS
--- ---------------------------------------------------------------------
-
--- Se recrean en cada corrida. El orden de borrado respeta las
--- dependencias: vista_rendimiento_empleados se apoya en vista_tareas_empleado.
+-- 9. Vistas -------------------------------------------------------------
 DROP VIEW IF EXISTS vista_rendimiento_empleados;
 DROP VIEW IF EXISTS vista_tareas_empleado;
 DROP VIEW IF EXISTS vista_pedidos_activos;
 
--- Avance de cada pedido segun las etapas de sus productos.
 CREATE VIEW vista_pedidos_activos AS
 SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_entrega, p.creado_en,
        c.nombre AS cliente, c.telefono AS cliente_telefono,
@@ -287,7 +243,6 @@ LEFT JOIN clientes c ON c.id = p.cliente_id
 LEFT JOIN pedido_etapas pe ON pe.pedido_id = p.id
 GROUP BY p.id, c.nombre, c.telefono;
 
--- Bandeja unica de trabajo del empleado: etapas de pedido + etapas de tareas libres.
 CREATE VIEW vista_tareas_empleado AS
 SELECT 'PEDIDO'::text AS origen,
        pe.id::bigint AS id,
@@ -330,7 +285,6 @@ SELECT 'TAREA'::text,
 FROM tarea_etapas te
 JOIN tareas t ON t.id = te.tarea_id;
 
--- Rendimiento consolidado por empleado (base del apartado de estadisticas).
 CREATE VIEW vista_rendimiento_empleados AS
 SELECT u.id, u.nombre, u.email, u.activo,
        COUNT(v.id) FILTER (WHERE v.estado = 'COMPLETADA')::int AS completadas,
@@ -347,14 +301,4 @@ LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
 WHERE LOWER(u.rol::text) = 'empleado'
 GROUP BY u.id;
 
--- ---------------------------------------------------------------------
--- PRIMER ADMINISTRADOR
--- Se carga a mano. Reemplazar el hash por uno generado con bcrypt:
---   node -e "console.log(require('bcrypt').hashSync('TuClave123', 12))"
---
---   INSERT INTO usuarios (nombre, email, contrasena_hash, rol)
---   VALUES ('Administrador', 'admin@atelier.com', '<hash-bcrypt>', 'admin');
---
--- O bien promover una cuenta existente:
---   UPDATE usuarios SET rol = 'admin' WHERE email = 'tu-correo@ejemplo.com';
--- ---------------------------------------------------------------------
+COMMIT;
