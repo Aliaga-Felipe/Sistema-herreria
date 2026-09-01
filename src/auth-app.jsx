@@ -154,12 +154,13 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
 }
 
 function Admin() {
-  const [section, setSection] = useState('Panel de control')
-  return (
-    <Shell title={section} secciones={seccionesAdmin} seccionActiva={section} onSeccion={setSection}>
-      <WorkshopPanels section={section} setSection={setSection} />
-    </Shell>
-  )
+  const users = useData('/usuarios'); const tasks = useData('/tareas'); const { session } = useSession(); const token = session.token; const [message, setMessage] = useState(''); const [section, setSection] = useState('Panel de control')
+  const changeRole = async (id, rol) => { try { await request(`/usuarios/${id}/rol`, { method: 'PATCH', body: JSON.stringify({ rol }) }, token); users.load(); setMessage('Rol actualizado.') } catch (err) { setMessage(err.message) } }
+  const createProduct = async product => { await request('/tareas', { method: 'POST', body: JSON.stringify(product) }, token); await tasks.load() }
+  const updateStage = async (taskId, stageId, realizada) => { await request(`/tareas/${taskId}/etapas/${stageId}`, { method: 'PATCH', body: JSON.stringify({ realizada }) }, token); await tasks.load() }
+  const updateStatus = async (taskId, estado) => { await request(`/tareas/${taskId}/estado`, { method: 'PATCH', body: JSON.stringify({ estado }) }, token); await tasks.load() }
+  const administration = <><section className="page-heading"><div><p className="eyebrow">Administrador</p><h1>Administración del sistema</h1><p className="muted">Gestioná usuarios, roles y consultá todos los productos asignados.</p></div></section>{message && <p className="notice">{message}</p>}<section className="stats-grid admin-stats"><Stat label="Usuarios" value={users.data.length}/><Stat label="Empleados" value={users.data.filter(u => u.rol === 'empleado').length}/><Stat label="Productos asignados" value={tasks.data.length}/><Stat label="Terminados" value={tasks.data.filter(t => t.estado === 'REALIZADA').length}/></section><section className="list-panel"><div className="section-heading"><div><h2>Todos los productos de producción</h2><p>Se crean desde “Nuevo producto”.</p></div></div><TaskList tasks={tasks.data} /></section><section className="list-panel users-panel"><div className="section-heading"><div><h2>Usuarios y roles</h2><p>Solo el administrador puede cambiar roles.</p></div></div>{users.loading ? <p>Cargando usuarios...</p> : users.error ? <p className="form-error">{users.error}</p> : <div className="users-table">{users.data.map(user => <div key={user.id}><span><b>{user.nombre}</b><small>{user.email}</small></span><select value={user.rol} onChange={e => changeRole(user.id, e.target.value)}><option value="empleado">empleado</option><option value="admin">admin</option></select></div>)}</div>}</section></>
+  return <Shell title={section} adminSection={section} setAdminSection={setSection}><WorkshopPanels section={section} setSection={setSection} users={users.data} tasks={tasks.data} onCreateProduct={createProduct} onUpdateStage={updateStage} onUpdateStatus={updateStatus} administration={administration}/></Shell>
 }
 
 function Empleado() {
