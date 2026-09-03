@@ -54,13 +54,13 @@ export const Semaforo = ({ valor, compacto = false }) => {
   )
 }
 
-export function Modal({ title, subtitle, close, children, ancho }) {
+export function Modal({ title, subtitle, close, children, ancho, icono }) {
   return (
     <div className="modal-back" onMouseDown={event => event.target === event.currentTarget && close()}>
       <section className="modal" style={ancho ? { width: `min(${ancho}, 100%)` } : undefined}>
         <button className="close" onClick={close} type="button">×</button>
         <p className="eyebrow">El Atelier</p>
-        <h2>{title}</h2>
+        <h2>{icono && <span className="modal-icon">{icono}</span>}{title}</h2>
         {subtitle && <p className="muted">{subtitle}</p>}
         {children}
       </section>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import './features.css'
 import { dinero, duracion, fecha, iniciales, useData } from './api.js'
-import { Badge, Empty, Heading, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
+import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
 import PanelProductos from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
@@ -147,9 +147,15 @@ function Dashboard({ ir }) {
 function PanelTareas() {
   const tareas = useData('/tareas/asignadas/mias?todas=true')
   const [filtro, setFiltro] = useState('PENDIENTES')
+  const [seleccionada, setSeleccionada] = useState(null)
 
   const visibles = tareas.data.filter(tarea =>
     filtro === 'TODAS' ? true : filtro === 'PENDIENTES' ? tarea.estado !== 'COMPLETADA' : tarea.estado === 'COMPLETADA')
+
+  // Cada tarjeta agrupa las etapas de un mismo producto/trabajo (mismo
+  // pedido u origen + el nombre del producto), para no repetir el
+  // encabezado por cada etapa suelta.
+  const grupos = agruparPorProducto(visibles)
 
   return (
     <>
@@ -161,33 +167,94 @@ function PanelTareas() {
         </select>
       </Heading>
 
-      {tareas.loading ? <p>Cargando tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : visibles.length ? (
-        <section className="orders-card">
-          <div className="order-head tareas-head">
-            <span>Etapa</span><span>Pedido</span><span>Responsable</span><span>Estimado</span><span>Real</span><span>Semáforo</span><span>Estado</span>
-          </div>
+      {tareas.loading ? <p>Cargando tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : grupos.length ? (
+        <div className="tareas-grid">
+          {grupos.map(grupo => (
+            <article className="pedido-tile" key={grupo.clave}>
+              <div className="tarea-tile-head">
+                <div className="product-thumb">{grupo.origen === 'PEDIDO' ? '▦' : '✎'}</div>
+                <div>
+                  <h3>{grupo.titulo}</h3>
+                  <div className="tarea-tile-tags">
+                    <span>{grupo.referencia}</span>
+                    <span>{grupo.cliente}</span>
+                  </div>
+                </div>
+              </div>
 
-          {visibles.map(tarea => (
-            <div className="order-row tareas-row" key={`${tarea.origen}-${tarea.id}`}>
-              <div className="product">
-                <div className="product-thumb">{tarea.origen === 'PEDIDO' ? '▦' : '✎'}</div>
-                <div><b>{tarea.etapa}</b><small>{tarea.titulo}</small></div>
+              <div className="pedido-tile-etapas">
+                {grupo.etapas.map(tarea => (
+                  <button
+                    type="button"
+                    className="etapa-item"
+                    key={`${tarea.origen}-${tarea.id}`}
+                    onClick={() => setSeleccionada(tarea)}
+                  >
+                    <span className="etapa-item-nombre">{tarea.etapa}</span>
+                    <span className="etapa-item-tiempo">{duracion(tarea.minutos_estimados)}</span>
+                  </button>
+                ))}
               </div>
-              <div className="client"><b>{tarea.referencia}</b><small>{tarea.cliente}</small></div>
-              <div className="worker">
-                {tarea.responsable ? <><span>{iniciales(tarea.responsable)}</span>{tarea.responsable}</> : <small>Sin asignar</small>}
-              </div>
-              <div><em className="stage">{duracion(tarea.minutos_estimados)}</em></div>
-              <div><em className="stage">{tarea.minutos_reales ? duracion(tarea.minutos_reales) : '—'}</em></div>
-              <div><Semaforo valor={tarea.semaforo} /></div>
-              <div><Badge estado={tarea.estado} /></div>
-            </div>
+            </article>
           ))}
-        </section>
+        </div>
       ) : (
         <Empty title="No hay etapas en esta vista" text="Las etapas se generan al crear un pedido con productos del catálogo." />
       )}
+
+      {seleccionada && <DetalleTarea tarea={seleccionada} close={() => setSeleccionada(null)} />}
     </>
+  )
+}
+
+// Agrupa la lista plana de etapas por producto: mismo origen + mismo
+// contenedor (pedido o tarea libre) + mismo nombre de producto/trabajo.
+// Un pedido con varios productos distintos arma una tarjeta por producto.
+function agruparPorProducto(lista) {
+  const mapa = new Map()
+  for (const tarea of lista) {
+    const clave = `${tarea.origen}-${tarea.contenedor_id}-${tarea.titulo}`
+    if (!mapa.has(clave)) {
+      mapa.set(clave, { clave, origen: tarea.origen, titulo: tarea.titulo, referencia: tarea.referencia, cliente: tarea.cliente, etapas: [] })
+    }
+    mapa.get(clave).etapas.push(tarea)
+  }
+  return [...mapa.values()].map(grupo => ({ ...grupo, etapas: grupo.etapas.sort((a, b) => (a.orden || 0) - (b.orden || 0)) }))
+}
+
+// Ventana de detalle: se abre al hacer click en una tarjeta y muestra todos
+// los datos de esa etapa sin abandonar la grilla que queda detrás, oscurecida.
+function DetalleTarea({ tarea, close }) {
+  return (
+    <Modal
+      title={tarea.etapa}
+      subtitle={`${tarea.referencia} · ${tarea.cliente}`}
+      icono={tarea.origen === 'PEDIDO' ? '▦' : '✎'}
+      close={close}
+    >
+      <div className="tarea-detalle-grid">
+        <span><small>Estado</small><Badge estado={tarea.estado} /></span>
+        <span><small>Responsable</small><b>{tarea.responsable || 'Sin asignar'}</b></span>
+        <span><small>Tiempo estimado</small><b>{duracion(tarea.minutos_estimados)}</b></span>
+        <span><small>Tiempo real</small><b>{tarea.minutos_reales ? duracion(tarea.minutos_reales) : '—'}</b></span>
+        <span><small>Semáforo</small><Semaforo valor={tarea.semaforo} /></span>
+        {tarea.costo > 0 && <span><small>Costo estimado</small><b>{dinero(tarea.costo)}</b></span>}
+        {tarea.fecha_entrega && <span><small>Fecha de entrega</small><b>{fecha(tarea.fecha_entrega)}</b></span>}
+        {tarea.prioridad > 0 && <span><small>Prioridad</small><b>{tarea.prioridad >= 2 ? 'Urgente' : 'Alta'}</b></span>}
+        <span><small>Fecha de inicio</small><b>{tarea.iniciado_en ? fecha(tarea.iniciado_en) : '—'}</b></span>
+        <span><small>Fecha de fin</small><b>{tarea.completado_en ? fecha(tarea.completado_en) : '—'}</b></span>
+      </div>
+
+      <div className="detalle-bloque">
+        <b>Detalle</b>
+        <p>{tarea.titulo}</p>
+        {tarea.observaciones && <p className="muted">{tarea.observaciones}</p>}
+      </div>
+
+      <div className="form-actions">
+        <button type="button" className="secondary" onClick={close}>Cerrar</button>
+      </div>
+    </Modal>
   )
 }
 
