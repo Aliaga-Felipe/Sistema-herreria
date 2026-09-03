@@ -288,6 +288,9 @@ LEFT JOIN pedido_etapas pe ON pe.pedido_id = p.id
 GROUP BY p.id, c.nombre, c.telefono;
 
 -- Bandeja unica de trabajo del empleado: etapas de pedido + etapas de tareas libres.
+-- iniciado_en, fecha_entrega y prioridad viajan solo para etapas de pedido (las
+-- tareas libres no tienen cliente ni fecha de entrega); se agregan al final para
+-- no romper a nadie que dependa del orden de columnas previo.
 CREATE VIEW vista_tareas_empleado AS
 SELECT 'PEDIDO'::text AS origen,
        pe.id::bigint AS id,
@@ -304,7 +307,10 @@ SELECT 'PEDIDO'::text AS origen,
        pe.semaforo AS semaforo,
        pe.completado_en AS completado_en,
        COALESCE(c.nombre, 'Sin cliente')::text AS cliente,
-       pe.observaciones::text AS observaciones
+       pe.observaciones::text AS observaciones,
+       pe.iniciado_en AS iniciado_en,
+       p.fecha_entrega AS fecha_entrega,
+       p.prioridad::int AS prioridad
 FROM pedido_etapas pe
 JOIN pedidos p ON p.id = pe.pedido_id
 LEFT JOIN pedido_items pi ON pi.id = pe.pedido_item_id
@@ -326,7 +332,10 @@ SELECT 'TAREA'::text,
        te.semaforo,
        te.completada_en,
        'Trabajo interno'::text,
-       t.descripcion::text
+       t.descripcion::text,
+       NULL::timestamptz,
+       NULL::date,
+       NULL::int
 FROM tarea_etapas te
 JOIN tareas t ON t.id = te.tarea_id;
 

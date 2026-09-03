@@ -727,6 +727,20 @@ small.high {
     margin: 4px 0 23px;
 }
 
+.modal-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-right: 10px;
+    vertical-align: -8px;
+    border: 1px solid #61554c;
+    background: #47372b;
+    color: #f9c9a9;
+    font-family: Manrope, Arial, sans-serif;
+    font-size: 15px;
+}
+
 .close {
     position: absolute;
     right: 15px;
