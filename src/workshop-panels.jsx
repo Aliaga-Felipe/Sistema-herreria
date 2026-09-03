@@ -1,905 +1,296 @@
 import React, { useState } from 'react'
 import './features.css'
+import { dinero, duracion, fecha, iniciales, useData } from './api.js'
+import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
+import PanelProductos from './panel-productos.jsx'
+import PanelPedidos from './panel-pedidos.jsx'
+import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
+import PanelEstadisticas from './panel-estadisticas.jsx'
+import PanelUsuarios from './panel-usuarios.jsx'
 
-const initials = name =>
-  (name || '?')
-    .split(' ')
-    .filter(Boolean)
-    .map(part => part[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+export const seccionesAdmin = [
+  ['Panel de control', '▦'],
+  ['Pedidos', '⌁'],
+  ['Productos', '▱'],
+  ['Tareas', '✓'],
+  ['Recompensas', '♛'],
+  ['Estadísticas', '◫'],
+  ['Usuarios', '♙'],
+  ['Configuración', '⚙']
+]
 
-const Stat = ({ label, value }) => (
-  <article className="stat-card">
-    <span>{label}</span>
-    <strong>{value}</strong>
-  </article>
-)
+export default function WorkshopPanels({ section, setSection }) {
+  // `intencion` deja que los accesos directos del panel abran un formulario
+  // en la sección de destino sin pasos intermedios.
+  const [intencion, setIntencion] = useState(null)
+  const limpiar = () => setIntencion(null)
 
-const Progress = ({ value }) => (
-  <div className="progress">
-    <i style={{ width: `${value}%` }} />
-  </div>
-)
+  const ir = (destino, proposito = null) => { setIntencion(proposito); setSection(destino) }
 
-const Heading = ({ kicker, title, text, children }) => (
-  <section className="headline">
-    <div>
-      <p className="eyebrow">{kicker}</p>
-      <h1>{title}</h1>
-      <p className="muted">{text}</p>
-    </div>
-    {children}
-  </section>
-)
-
-const Empty = ({
-  title,
-  text,
-  action,
-  label = 'Crear producto'
-}) => (
-  <section className="empty">
-    <span>◇</span>
-    <h3>{title}</h3>
-    <p>{text}</p>
-    {action && (
-      <button className="primary" onClick={action}>
-        {label}
-      </button>
-    )}
-  </section>
-)
-
-export default function WorkshopPanels({
-  section,
-  setSection,
-  users,
-  tasks,
-  onCreateProduct,
-  onUpdateStage,
-  onUpdateStatus,
-  administration
-}) {
-  const [notice, setNotice] = useState('')
-
-  const show = message => {
-    setNotice(message)
-    window.setTimeout(() => setNotice(''), 2600)
+  const vistas = {
+    'Panel de control': <Dashboard ir={ir} />,
+    Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
+    Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
+    Tareas: <PanelTareas />,
+    Recompensas: <PanelRecompensas />,
+    Estadísticas: <PanelEstadisticas />,
+    Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} />,
+    Configuración: <PanelConfiguracion />
   }
 
-  const active = tasks.filter(task => task.estado !== 'REALIZADA')
-  const finished = tasks.filter(task => task.estado === 'REALIZADA')
-
-  const completeCurrent = async task => {
-    const current = task.etapas.find(stage => !stage.realizada)
-
-    if (!current) return
-
-    try {
-      await onUpdateStage(task.id, current.id, true)
-
-      if (
-        task.etapas.filter(stage => !stage.realizada).length === 1
-      ) {
-        await onUpdateStatus(task.id, 'REALIZADA')
-      } else if (task.estado === 'PENDIENTE') {
-        await onUpdateStatus(task.id, 'EN_PROGRESO')
-      }
-
-      show('Etapa completada. La producción fue actualizada.')
-    } catch (error) {
-      show(error.message)
-    }
-  }
-
-  const view = {
-    'Panel de control': (
-      <Dashboard
-        active={active}
-        finished={finished}
-        users={users}
-        onNew={() => setSection('Nuevo producto')}
-        onAdvance={completeCurrent}
-      />
-    ),
-
-    'Nuevo producto': (
-      <ProductForm
-        employees={users.filter(
-          user => user.rol === 'empleado' && user.activo
-        )}
-        onSave={async product => {
-          try {
-            await onCreateProduct(product)
-            setSection('Producción')
-            show(
-              'Producto creado, asignado y enviado a producción.'
-            )
-          } catch (error) {
-            show(error.message)
-          }
-        }}
-      />
-    ),
-
-    Producción: (
-      <Production
-        tasks={active}
-        users={users}
-        onNew={() => setSection('Nuevo producto')}
-        onAdvance={completeCurrent}
-      />
-    ),
-
-    'Tareas finalizadas': (
-      <Finished
-        tasks={finished}
-        users={users}
-      />
-    ),
-
-    'Producción mensual': (
-      <Monthly tasks={tasks} />
-    ),
-
-    Recompensas: (
-      <Rewards finished={finished} />
-    ),
-
-    Operarios: (
-      <Operators
-        users={users}
-        openAdmin={() => setSection('Administración')}
-      />
-    ),
-
-    Administración: administration,
-
-    Configuración: <Settings />
-  }[section]
-
-  return (
-    <>
-      {notice && <p className="notice">{notice}</p>}
-      {view}
-    </>
-  )
+  return vistas[section] || vistas['Panel de control']
 }
 
-function Dashboard({
-  active,
-  finished,
-  users,
-  onNew,
-  onAdvance
-}) {
+// ---------------------------------------------------------------------
+// PANEL DE CONTROL
+// Estadísticas de un vistazo + accesos directos de gestión rápida.
+// ---------------------------------------------------------------------
+function Dashboard({ ir }) {
+  const resumen = useData('/estadisticas/resumen', null)
+  const datos = resumen.data
+
+  if (resumen.loading && !datos) return <p>Cargando el panel...</p>
+  if (resumen.error) return <p className="form-error">{resumen.error}</p>
+  if (!datos) return null
+
+  const { pedidos, trabajo, catalogo, dinero: plata, mas_vendidos: masVendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
+  const moneda = configuracion?.moneda || 'ARS'
+  const maxUnidades = Math.max(...masVendidos.map(producto => producto.unidades), 1)
+
   return (
     <>
-      <Heading
-        kicker="Resumen de operaciones"
-        title="Panel de producción"
-        text="Cada producto asignado se convierte directamente en una tarea de producción."
-      >
-        <button className="primary" onClick={onNew}>
-          + Nuevo producto
-        </button>
+      <Heading kicker="Resumen de operaciones" title="Panel de producción" text="El estado del taller de un vistazo, con accesos directos para gestionar sin navegar.">
+        <button className="primary" onClick={() => ir('Pedidos', 'nuevo')}>+ Nuevo pedido</button>
       </Heading>
+
+      <QuickActions
+        acciones={[
+          { icono: '⌁', label: 'Nuevo pedido', texto: 'Cliente y productos', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
+          { icono: '▱', label: 'Nuevo producto', texto: 'Precio y etapas', onClick: () => ir('Productos', 'nuevo') },
+          { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
+          { icono: '✓', label: 'Asignar tareas', texto: `${trabajo.sin_asignar} etapas sin dueño`, onClick: () => ir('Tareas') },
+          { icono: '◫', label: 'Estadísticas', texto: 'Gastos y ganancias', onClick: () => ir('Estadísticas') },
+          { icono: '♛', label: 'Recompensas', texto: 'Semáforo y bonos', onClick: () => ir('Recompensas') }
+        ]}
+      />
 
       <section className="stats-grid dashboard-stats">
-        <Stat
-          label="Productos en curso"
-          value={active.length}
-        />
-
-        <Stat
-          label="Pendientes"
-          value={
-            active.filter(
-              task => task.estado === 'PENDIENTE'
-            ).length
-          }
-        />
-
-        <Stat
-          label="Terminados"
-          value={finished.length}
-        />
-
-        <Stat
-          label="Etapas en proceso"
-          value={
-            active
-              .flatMap(task => task.etapas)
-              .filter(stage => !stage.realizada)
-              .length
-          }
-        />
-
-        <Stat
-          label="Operarios"
-          value={
-            users.filter(
-              user => user.rol === 'empleado'
-            ).length
-          }
-        />
-      </section>
-
-      <TaskOrders
-        tasks={active}
-        users={users}
-        onAdvance={onAdvance}
-        emptyAction={onNew}
-      />
-    </>
-  )
-}
-
-function Production({
-  tasks,
-  users,
-  onNew,
-  onAdvance
-}) {
-  return (
-    <>
-      <Heading
-        kicker="Flujo de trabajo"
-        title="Producción"
-        text="Productos actualmente asignados a los operarios y sus etapas."
-      >
-        <button className="primary" onClick={onNew}>
-          + Nuevo producto
-        </button>
-      </Heading>
-
-      <TaskOrders
-        tasks={tasks}
-        users={users}
-        onAdvance={onAdvance}
-        emptyAction={onNew}
-      />
-    </>
-  )
-}
-
-function Finished({ tasks, users }) {
-  return (
-    <>
-      <Heading
-        kicker="Historial de producción"
-        title="Tareas finalizadas"
-        text="Productos con todas sus etapas realizadas."
-      />
-
-      <TaskOrders
-        tasks={tasks}
-        users={users}
-      />
-    </>
-  )
-}
-
-function TaskOrders({
-  tasks,
-  users,
-  onAdvance,
-  emptyAction
-}) {
-  if (!tasks.length) {
-    return (
-      <Empty
-        title="No hay productos en esta sección"
-        text="Creá un producto, agregá sus etapas y asignalo a un operario para iniciar la producción."
-        action={emptyAction}
-      />
-    )
-  }
-
-  return (
-    <section className="orders-card">
-      <div className="order-head">
-        <span>Producto</span>
-        <span>Descripción</span>
-        <span>Etapa actual</span>
-        <span>Progreso</span>
-        <span>Responsable</span>
-        <span>Acción</span>
-      </div>
-
-      {tasks.map(task => {
-        const current = task.etapas.find(
-          stage => !stage.realizada
-        )
-
-        const progress = Math.round(
-          task.etapas.filter(
-            stage => stage.realizada
-          ).length /
-            task.etapas.length *
-            100
-        )
-
-        const employee = users.find(
-          user =>
-            String(user.id) ===
-            String(task.asignado_a)
-        )
-
-        return (
-          <div
-            className="order-row"
-            key={task.id}
-          >
-            <div className="product">
-              <div className="product-thumb">
-                ▦
-              </div>
-
-              <div>
-                <b>{task.titulo}</b>
-                <small>
-                  Producto #{task.id}
-                </small>
-              </div>
-            </div>
-
-            <div className="client">
-              <b>
-                {task.descripcion ||
-                  'Sin descripción'}
-              </b>
-
-              <small>
-                {task.etapas.length} etapas
-              </small>
-            </div>
-
-            <div>
-              <em className="stage">
-                • {current?.nombre || 'Finalizado'}
-              </em>
-
-              {current && (
-                <small className="high">
-                  {current.minutos_estimados} min
-                </small>
-              )}
-            </div>
-
-            <div className="progress-cell">
-              <b>{progress}%</b>
-              <Progress value={progress} />
-            </div>
-
-            <div className="worker">
-              {employee ? (
-                <>
-                  <span>
-                    {initials(employee.nombre)}
-                  </span>
-
-                  {employee.nombre}
-                </>
-              ) : (
-                <small>Sin asignar</small>
-              )}
-            </div>
-
-            <div>
-              {current && onAdvance ? (
-                <button
-                  className="row-action"
-                  onClick={() => onAdvance(task)}
-                >
-                  Completar etapa
-                </button>
-              ) : (
-                <span className="done">
-                  ✓ Listo
-                </span>
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </section>
-  )
-}
-
-function Monthly({ tasks }) {
-  if (!tasks.length) {
-    return (
-      <>
-        <Heading
-          kicker="Métricas analíticas"
-          title="Producción mensual"
-          text="Las métricas se generan con los productos registrados."
-        />
-
-        <Empty
-          title="Aún no hay datos de producción"
-          text="Creá un producto para comenzar a medir la producción."
-        />
-      </>
-    )
-  }
-
-  const stages = tasks.flatMap(
-    task => task.etapas
-  )
-
-  const complete = stages.filter(
-    stage => stage.realizada
-  ).length
-
-  const pending = stages.length - complete
-
-  const max = Math.max(
-    complete,
-    pending,
-    1
-  )
-
-  return (
-    <>
-      <Heading
-        kicker="Métricas analíticas"
-        title="Producción mensual"
-        text="Avance consolidado de todos los productos."
-      />
-
-      <section className="stats-grid monthly-stats">
-        <Stat
-          label="Productos iniciados"
-          value={tasks.length}
-        />
-
-        <Stat
-          label="Terminados"
-          value={
-            tasks.filter(
-              task => task.estado === 'REALIZADA'
-            ).length
-          }
-        />
-
-        <Stat
-          label="En producción"
-          value={
-            tasks.filter(
-              task => task.estado !== 'REALIZADA'
-            ).length
-          }
-        />
-
-        <Stat
-          label="Etapas pendientes"
-          value={pending}
-        />
+        <Stat label="Pedidos activos" value={pedidos.activos} hint={`${pedidos.terminados} terminados`} />
+        <Stat label="Pedidos atrasados" value={pedidos.atrasados} tone={pedidos.atrasados ? 'danger' : ''} hint="Pasaron su fecha de entrega" />
+        <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${trabajo.sin_asignar} sin asignar`} />
+        <Stat label="Ganancia estimada" value={dinero(plata.ganancia, moneda)} hint={`Ingresos ${dinero(plata.ingresos, moneda)}`} tone={plata.ganancia >= 0 ? '' : 'danger'} />
+        <Stat label="Semáforo del taller" value={`🟢 ${trabajo.verdes} 🟡 ${trabajo.amarillos} 🔴 ${trabajo.rojos}`} hint={`${catalogo.empleados} empleados activos`} />
       </section>
 
       <section className="analytics">
         <article className="chart-card">
-          <div className="card-title">
-            Avance de etapas
-          </div>
-
-          <div className="chart">
-            <div className="bar-wrap">
-              <i
-                className="active-bar"
-                style={{
-                  height: `${Math.max(
-                    8,
-                    complete / max * 100
-                  )}%`
-                }}
-              />
-
-              <small>Completadas</small>
+          <div className="card-title">Productos más vendidos</div>
+          {masVendidos.length ? (
+            <div className="ranking-simple">
+              {masVendidos.map(producto => (
+                <div key={producto.id}>
+                  <b>{producto.nombre}</b>
+                  <Progress value={(producto.unidades / maxUnidades) * 100} />
+                  <span>{producto.unidades} u · {dinero(producto.facturado, moneda)}</span>
+                </div>
+              ))}
             </div>
-
-            <div className="bar-wrap">
-              <i
-                style={{
-                  height: `${Math.max(
-                    8,
-                    pending / max * 100
-                  )}%`
-                }}
-              />
-
-              <small>Pendientes</small>
-            </div>
-          </div>
+          ) : <p className="muted">Todavía no hay productos vendidos.</p>}
         </article>
 
         <article className="operator-summary">
-          <div className="card-title">
-            Tiempo estimado
-          </div>
-
-          <strong className="large-number">
-            {stages.reduce(
-              (total, stage) =>
-                total +
-                Number(stage.minutos_estimados),
-              0
-            )}{' '}
-            min
-          </strong>
-
-          <p>
-            Total de tiempo planificado para
-            todas las etapas.
-          </p>
+          <div className="card-title">Empleados con tareas pendientes</div>
+          {pendientes.length ? pendientes.map(empleado => (
+            <div className="person" key={empleado.id}>
+              <span>{iniciales(empleado.nombre)}</span>
+              <b>{empleado.nombre}</b>
+              <Progress value={(empleado.completadas / Math.max(1, empleado.completadas + empleado.pendientes)) * 100} />
+              <strong>{empleado.pendientes}</strong>
+            </div>
+          )) : <p className="muted">Nadie tiene tareas pendientes ahora mismo.</p>}
         </article>
       </section>
-    </>
-  )
-}
 
-function Rewards({ finished }) {
-  return (
-    <>
-      <Heading
-        kicker="Reconocimiento al equipo"
-        title="Recompensas"
-        text="Los productos terminados quedan disponibles para asignar recompensas."
-      />
+      <section className="section-heading">
+        <div><h2>Pedidos en curso</h2><p>Ordenados por prioridad y fecha de entrega.</p></div>
+        <button className="filter" onClick={() => ir('Pedidos')}>Ver todos</button>
+      </section>
 
-      {finished.length ? (
-        <section className="simple-list">
-          {finished.map(task => (
-            <article key={task.id}>
-              <span className="medal">
-                ♛
-              </span>
-
-              <div>
-                <b>{task.titulo}</b>
-                <p>
-                  Producto terminado · listo
-                  para reconocer al equipo.
-                </p>
+      {proximos.length ? (
+        <section className="orders-card">
+          <div className="order-head resumen-head">
+            <span>Pedido</span><span>Cliente</span><span>Estado</span><span>Avance</span><span>Entrega</span>
+          </div>
+          {proximos.map(pedido => (
+            <div className="order-row resumen-row" key={pedido.id}>
+              <div className="product">
+                <div className="product-thumb">▦</div>
+                <div><b>{pedido.codigo}</b><small>{pedido.etapas_completadas}/{pedido.etapas_totales} etapas</small></div>
               </div>
-            </article>
+              <div className="client"><b>{pedido.cliente || 'Sin cliente'}</b></div>
+              <div><Badge estado={pedido.estado} /></div>
+              <div className="progress-cell"><b>{pedido.avance}%</b><Progress value={pedido.avance} /></div>
+              <div><em className="stage">{fecha(pedido.fecha_entrega)}</em></div>
+            </div>
           ))}
         </section>
       ) : (
-        <Empty
-          title="No hay productos finalizados"
-          text="Cuando un producto complete todas sus etapas, aparecerá aquí."
-        />
+        <Empty title="No hay pedidos en curso" text="Creá un pedido para empezar a producir." action={() => ir('Pedidos', 'nuevo')} label="Crear pedido" />
       )}
     </>
   )
 }
 
-function Operators({
-  users,
-  openAdmin
-}) {
-  const employees = users.filter(
-    user => user.rol === 'empleado'
-  )
+// ---------------------------------------------------------------------
+// TAREAS (vista de producción del administrador)
+// ---------------------------------------------------------------------
+function PanelTareas() {
+  const tareas = useData('/tareas/asignadas/mias?todas=true')
+  const [filtro, setFiltro] = useState('PENDIENTES')
+  const [seleccionada, setSeleccionada] = useState(null)
+
+  const visibles = tareas.data.filter(tarea =>
+    filtro === 'TODAS' ? true : filtro === 'PENDIENTES' ? tarea.estado !== 'COMPLETADA' : tarea.estado === 'COMPLETADA')
+
+  // Cada tarjeta agrupa las etapas de un mismo producto/trabajo (mismo
+  // pedido u origen + el nombre del producto), para no repetir el
+  // encabezado por cada etapa suelta.
+  const grupos = agruparPorProducto(visibles)
 
   return (
     <>
-      <Heading
-        kicker="Personas de producción"
-        title="Operarios"
-        text="Personal que puede recibir productos para fabricar."
-      >
-        <button
-          className="primary"
-          onClick={openAdmin}
-        >
-          Administrar usuarios
-        </button>
+      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller, con su responsable, el tiempo estimado y el resultado del semáforo.">
+        <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
+          <option value="PENDIENTES">Pendientes</option>
+          <option value="COMPLETADA">Completadas</option>
+          <option value="TODAS">Todas</option>
+        </select>
       </Heading>
 
-      {employees.length ? (
-        <section className="employee-grid">
-          {employees.map(user => (
-            <article
-              className="employee-card"
-              key={user.id}
-            >
-              <span className="avatar">
-                {initials(user.nombre)}
-              </span>
+      {tareas.loading ? <p>Cargando tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : grupos.length ? (
+        <div className="tareas-grid">
+          {grupos.map(grupo => (
+            <article className="pedido-tile" key={grupo.clave}>
+              <div className="tarea-tile-head">
+                <div className="product-thumb">{grupo.origen === 'PEDIDO' ? '▦' : '✎'}</div>
+                <div>
+                  <h3>{grupo.titulo}</h3>
+                  <div className="tarea-tile-tags">
+                    <span>{grupo.referencia}</span>
+                    <span>{grupo.cliente}</span>
+                  </div>
+                </div>
+              </div>
 
-              <div>
-                <h3>{user.nombre}</h3>
-                <p>{user.email}</p>
-                <small>Operario</small>
+              <div className="pedido-tile-etapas">
+                {grupo.etapas.map(tarea => (
+                  <button
+                    type="button"
+                    className="etapa-item"
+                    key={`${tarea.origen}-${tarea.id}`}
+                    onClick={() => setSeleccionada(tarea)}
+                  >
+                    <span className="etapa-item-nombre">{tarea.etapa}</span>
+                    <span className="etapa-item-tiempo">{duracion(tarea.minutos_estimados)}</span>
+                  </button>
+                ))}
               </div>
             </article>
           ))}
-        </section>
+        </div>
       ) : (
-        <Empty
-          title="No hay operarios disponibles"
-          text="Registrá usuarios con rol empleado desde Administración."
-          action={openAdmin}
-          label="Administrar usuarios"
-        />
+        <Empty title="No hay etapas en esta vista" text="Las etapas se generan al crear un pedido con productos del catálogo." />
       )}
+
+      {seleccionada && <DetalleTarea tarea={seleccionada} close={() => setSeleccionada(null)} />}
     </>
   )
 }
 
-function Settings() {
+// Agrupa la lista plana de etapas por producto: mismo origen + mismo
+// contenedor (pedido o tarea libre) + mismo nombre de producto/trabajo.
+// Un pedido con varios productos distintos arma una tarjeta por producto.
+function agruparPorProducto(lista) {
+  const mapa = new Map()
+  for (const tarea of lista) {
+    const clave = `${tarea.origen}-${tarea.contenedor_id}-${tarea.titulo}`
+    if (!mapa.has(clave)) {
+      mapa.set(clave, { clave, origen: tarea.origen, titulo: tarea.titulo, referencia: tarea.referencia, cliente: tarea.cliente, etapas: [] })
+    }
+    mapa.get(clave).etapas.push(tarea)
+  }
+  return [...mapa.values()].map(grupo => ({ ...grupo, etapas: grupo.etapas.sort((a, b) => (a.orden || 0) - (b.orden || 0)) }))
+}
+
+// Ventana de detalle: se abre al hacer click en una tarjeta y muestra todos
+// los datos de esa etapa sin abandonar la grilla que queda detrás, oscurecida.
+function DetalleTarea({ tarea, close }) {
+  return (
+    <Modal
+      title={tarea.etapa}
+      subtitle={`${tarea.referencia} · ${tarea.cliente}`}
+      icono={tarea.origen === 'PEDIDO' ? '▦' : '✎'}
+      close={close}
+    >
+      <div className="tarea-detalle-grid">
+        <span><small>Estado</small><Badge estado={tarea.estado} /></span>
+        <span><small>Responsable</small><b>{tarea.responsable || 'Sin asignar'}</b></span>
+        <span><small>Tiempo estimado</small><b>{duracion(tarea.minutos_estimados)}</b></span>
+        <span><small>Tiempo real</small><b>{tarea.minutos_reales ? duracion(tarea.minutos_reales) : '—'}</b></span>
+        <span><small>Semáforo</small><Semaforo valor={tarea.semaforo} /></span>
+        {tarea.costo > 0 && <span><small>Costo estimado</small><b>{dinero(tarea.costo)}</b></span>}
+        {tarea.fecha_entrega && <span><small>Fecha de entrega</small><b>{fecha(tarea.fecha_entrega)}</b></span>}
+        {tarea.prioridad > 0 && <span><small>Prioridad</small><b>{tarea.prioridad >= 2 ? 'Urgente' : 'Alta'}</b></span>}
+        <span><small>Fecha de inicio</small><b>{tarea.iniciado_en ? fecha(tarea.iniciado_en) : '—'}</b></span>
+        <span><small>Fecha de fin</small><b>{tarea.completado_en ? fecha(tarea.completado_en) : '—'}</b></span>
+      </div>
+
+      <div className="detalle-bloque">
+        <b>Detalle</b>
+        <p>{tarea.titulo}</p>
+        {tarea.observaciones && <p className="muted">{tarea.observaciones}</p>}
+      </div>
+
+      <div className="form-actions">
+        <button type="button" className="secondary" onClick={close}>Cerrar</button>
+      </div>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------
+// CONFIGURACIÓN
+// ---------------------------------------------------------------------
+function PanelConfiguracion() {
+  const [aviso, setAviso] = useState('')
+
   return (
     <>
-      <Heading
-        kicker="Administración"
-        title="Configuración"
-        text="Configuración general del taller."
-      />
+      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller y reglas del sistema de recompensas." />
+
+      {aviso && <p className="notice">{aviso}</p>}
+
+      <ConfiguracionRecompensas onGuardar={() => setAviso('Parámetros guardados.')} />
 
       <section className="settings-grid">
         <article>
           <span>🔐</span>
-          <h3>Acceso y roles</h3>
-          <p>
-            Gestioná usuarios y roles desde
-            Administración.
-          </p>
+          <h3>Cuentas y roles</h3>
+          <p>El primer administrador se carga a mano en la base de datos. Desde “Usuarios” podés dar de alta empleados, restablecer contraseñas y desactivar cuentas sin perder su historial.</p>
         </article>
 
         <article>
           <span>▣</span>
-          <h3>Producción</h3>
-          <p>
-            Los productos se crean con etapas,
-            tiempos estimados y un operario
-            responsable.
-          </p>
+          <h3>Productos y pedidos</h3>
+          <p>Cada producto define su precio de venta y las etapas de fabricación con costo y duración. Al crear un pedido esas etapas se copian, de modo que editar el catálogo no altera la producción en curso.</p>
+        </article>
+
+        <article>
+          <span>🚦</span>
+          <h3>Semáforo de rendimiento</h3>
+          <p>El sistema compara el tiempo real informado por el empleado contra el estimado por el administrador y clasifica la etapa en verde, amarillo o rojo. Solo el verde genera bono.</p>
         </article>
       </section>
-    </>
-  )
-}
-
-function ProductForm({
-  employees,
-  onSave
-}) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [employee, setEmployee] = useState('')
-
-  const [stages, setStages] = useState([
-    {
-      nombre: 'Diseño y medidas',
-      minutos_estimados: 30
-    },
-    {
-      nombre: 'Corte de material',
-      minutos_estimados: 60
-    },
-    {
-      nombre: 'Soldadura',
-      minutos_estimados: 120
-    }
-  ])
-
-  const [error, setError] = useState('')
-
-  const submit = async event => {
-    event.preventDefault()
-
-    if (!employee) {
-      return setError(
-        'Seleccioná el operario responsable.'
-      )
-    }
-
-    if (
-      stages.some(
-        stage =>
-          !stage.nombre.trim() ||
-          Number(stage.minutos_estimados) <= 0
-      )
-    ) {
-      return setError(
-        'Completá cada etapa y su tiempo estimado.'
-      )
-    }
-
-    setError('')
-
-    await onSave({
-      titulo: name,
-      descripcion: description,
-      asignado_a: employee,
-      etapas: stages
-    })
-  }
-
-  return (
-    <>
-      <Heading
-        kicker="Alta de producción"
-        title="Nuevo producto"
-        text="Definí sus etapas, tiempos y responsable. Se creará directamente en Producción."
-      />
-
-      {employees.length ? (
-        <form
-          className="product-editor"
-          onSubmit={submit}
-        >
-          <label>
-            Nombre del producto
-
-            <input
-              required
-              value={name}
-              onChange={event =>
-                setName(event.target.value)
-              }
-              placeholder="Ej. Portón de hierro"
-            />
-          </label>
-
-          <label>
-            Descripción
-
-            <textarea
-              value={description}
-              onChange={event =>
-                setDescription(event.target.value)
-              }
-              placeholder="Medidas, materiales o notas"
-            />
-          </label>
-
-          <label>
-            Operario responsable
-
-            <select
-              required
-              value={employee}
-              onChange={event =>
-                setEmployee(event.target.value)
-              }
-            >
-              <option value="">
-                Seleccionar operario
-              </option>
-
-              {employees.map(user => (
-                <option
-                  value={user.id}
-                  key={user.id}
-                >
-                  {user.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="stage-edit">
-            <div>
-              <b>
-                Etapas y tiempo estimado
-              </b>
-
-              <span>
-                Cada etapa es parte del producto.
-              </span>
-            </div>
-
-            {stages.map((stage, index) => (
-              <div
-                className="stage-time-input"
-                key={index}
-              >
-                <small>
-                  {index + 1}
-                </small>
-
-                <input
-                  required
-                  value={stage.nombre}
-                  onChange={event =>
-                    setStages(
-                      stages.map(
-                        (item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                nombre:
-                                  event.target.value
-                              }
-                            : item
-                      )
-                    )
-                  }
-                />
-
-                <input
-                  required
-                  min="1"
-                  type="number"
-                  value={
-                    stage.minutos_estimados
-                  }
-                  onChange={event =>
-                    setStages(
-                      stages.map(
-                        (item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                minutos_estimados:
-                                  event.target.value
-                              }
-                            : item
-                      )
-                    )
-                  }
-                />
-
-                <span>min</span>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setStages(
-                      stages.filter(
-                        (_, itemIndex) =>
-                          itemIndex !== index
-                      )
-                    )
-                  }
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="add-stage"
-              onClick={() =>
-                setStages([
-                  ...stages,
-                  {
-                    nombre: '',
-                    minutos_estimados: 30
-                  }
-                ])
-              }
-            >
-              + Agregar etapa
-            </button>
-          </div>
-
-          {error && (
-            <p className="form-error">
-              {error}
-            </p>
-          )}
-
-          <div className="form-actions">
-            <button className="primary">
-              Crear y asignar producto
-            </button>
-          </div>
-        </form>
-      ) : (
-        <Empty
-          title="No hay operarios disponibles"
-          text="Primero registrá un usuario y mantenelo con rol empleado para poder asignarle productos."
-        />
-      )}
     </>
   )
 }
