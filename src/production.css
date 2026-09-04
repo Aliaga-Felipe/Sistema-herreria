@@ -62,7 +62,7 @@
     font-size: 10px;
     text-transform: capitalize;
     white-space: nowrap;
-}
+}   
 
 .semaforo.verde {
     color: #8fd39a;
@@ -82,6 +82,18 @@
 
 .semaforo-conteo {
     font-size: 11px;
+    white-space: nowrap;
+}
+
+.semaforo-taller {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.semaforo-taller span {
+    font-size: 20px;
     white-space: nowrap;
 }
 
