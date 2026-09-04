@@ -79,7 +79,17 @@ function Dashboard({ ir }) {
         <Stat label="Pedidos atrasados" value={pedidos.atrasados} tone={pedidos.atrasados ? 'danger' : ''} hint="Pasaron su fecha de entrega" />
         <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${trabajo.sin_asignar} sin asignar`} />
         <Stat label="Ganancia estimada" value={dinero(plata.ganancia, moneda)} hint={`Ingresos ${dinero(plata.ingresos, moneda)}`} tone={plata.ganancia >= 0 ? '' : 'danger'} />
-        <Stat label="Semáforo del taller" value={`🟢 ${trabajo.verdes} 🟡 ${trabajo.amarillos} 🔴 ${trabajo.rojos}`} hint={`${catalogo.empleados} empleados activos`} />
+        <Stat
+          label="Semáforo del taller"
+          value={
+            <span className="semaforo-taller">
+              <span>🟢 {trabajo.verdes}</span>
+              <span>🟡 {trabajo.amarillos}</span>
+              <span>🔴 {trabajo.rojos}</span>
+            </span>
+          }
+          hint={`${catalogo.empleados} empleados activos`}
+        />
       </section>
 
       <section className="analytics">
