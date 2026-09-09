@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { api, dinero, duracion, fecha, useData } from './api.js'
+import { api, dinero, duracion, etiquetaPrioridad, fecha, iniciales, porcentaje, useData } from './api.js'
 import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
 
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
@@ -28,7 +28,8 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 
   const cambiarEstado = async (pedido, estado) => {
     try {
-      await api.patch(`/pedidos/${pedido.id}`, { estado }, pedidos.token)
+      const actualizado = await api.patch(`/pedidos/${pedido.id}`, { estado }, pedidos.token)
+      setDetalle(actualizado)
       await pedidos.load()
       mostrar(`Pedido ${pedido.codigo} marcado como ${estado.toLowerCase().replace('_', ' ')}.`)
     } catch (error) { mostrar(error.message, 'error') }
@@ -57,6 +58,17 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const visibles = pedidos.data.filter(pedido =>
     filtro === 'TODOS' ? true : filtro === 'ACTIVOS' ? ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO'].includes(pedido.estado) : pedido.estado === filtro)
 
+  // Una fila por producto del pedido: cada producto tiene su propia etapa
+  // en curso, su empleado a cargo y su propio subtotal.
+  const filas = visibles.flatMap(pedido => pedido.items.map(item => {
+    const etapasItem = pedido.etapas
+      .filter(etapa => String(etapa.pedido_item_id) === String(item.id))
+      .sort((a, b) => a.orden - b.orden)
+    const actual = etapasItem.find(etapa => etapa.estado !== 'COMPLETADA') || null
+    const completadas = etapasItem.filter(etapa => etapa.estado === 'COMPLETADA').length
+    return { clave: `${pedido.id}-${item.id}`, pedido, item, etapasItem, actual, completadas }
+  }))
+
   return (
     <>
       <Heading kicker="Trabajo comprometido" title="Pedidos" text="Cada pedido agrupa uno o más productos y refleja su avance según las etapas de fabricación.">
@@ -72,44 +84,47 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 
       {nodo}
 
-      {pedidos.loading ? <p>Cargando pedidos...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : visibles.length ? (
+      {pedidos.loading ? <p>Cargando pedidos...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : filas.length ? (
         <section className="orders-card">
           <div className="order-head pedidos-head">
-            <span>Pedido</span><span>Cliente</span><span>Productos</span><span>Avance</span><span>Entrega</span><span>Total</span><span>Acción</span>
+            <span>Producto</span><span>Cantidad</span><span>Cliente</span><span>Etapas</span><span>Empleado</span><span>Prioridad</span><span>Entrega</span><span>Cumplimiento</span><span>Total</span>
           </div>
 
-          {visibles.map(pedido => (
-            <div className="order-row pedidos-row" key={pedido.id}>
-              <div className="product">
-                <div className="product-thumb">▦</div>
-                <div>
-                  <b>{pedido.codigo}</b>
-                  <small><Badge estado={pedido.estado} /></small>
+          {filas.map(fila => {
+            const avanceItem = porcentaje(fila.completadas, fila.etapasItem.length)
+            const responsable = fila.actual?.responsable || fila.etapasItem[fila.etapasItem.length - 1]?.responsable
+            return (
+              <div className="order-row pedidos-row" key={fila.clave} onClick={() => setDetalle(fila.pedido)}>
+                <div className="product">
+                  <div className="product-thumb">▦</div>
+                  <div>
+                    <b>{fila.item.producto}</b>
+                    <small>{fila.pedido.codigo}</small>
+                  </div>
                 </div>
+
+                <div className="cantidad-cell"><b>{fila.item.cantidad}</b></div>
+
+                <div className="client"><b>{fila.pedido.cliente?.nombre || 'Sin cliente'}</b></div>
+
+                <div className="etapas-cell">
+                  <b>{fila.completadas}/{fila.etapasItem.length}</b>
+                </div>
+
+                <div className="worker">
+                  {responsable ? <><span>{iniciales(responsable)}</span>{responsable}</> : <small>Sin asignar</small>}
+                </div>
+
+                <div className="prioridad-cell"><span className={`prioridad ${etiquetaPrioridad(fila.pedido.prioridad).toLowerCase()}`}>{etiquetaPrioridad(fila.pedido.prioridad)}</span></div>
+
+                <div><em className="stage">{fecha(fila.pedido.fecha_entrega)}</em></div>
+
+                <div className="progress-cell"><b>{avanceItem}%</b><Progress value={avanceItem} /></div>
+
+                <div className="total-cell"><b>{dinero(fila.item.subtotal)}</b></div>
               </div>
-
-              <div className="client">
-                <b>{pedido.cliente?.nombre || 'Sin cliente'}</b>
-                <small>{pedido.cliente?.telefono || pedido.cliente?.email || '—'}</small>
-              </div>
-
-              <div className="client">
-                <b>{pedido.items.map(item => `${item.cantidad}× ${item.producto}`).join(', ') || '—'}</b>
-                <small>{pedido.etapas_completadas}/{pedido.etapas_totales} etapas</small>
-              </div>
-
-              <div className="progress-cell">
-                <b>{pedido.avance}%</b>
-                <Progress value={pedido.avance} />
-              </div>
-
-              <div><em className="stage">{fecha(pedido.fecha_entrega)}</em></div>
-
-              <div className="money"><strong>{dinero(pedido.total)}</strong><small>costo {dinero(pedido.costo_estimado)}</small></div>
-
-              <div><button className="row-action" onClick={() => setDetalle(pedido)}>Ver detalle</button></div>
-            </div>
-          ))}
+            )
+          })}
         </section>
       ) : (
         <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo y cargando los datos del cliente." action={() => setCreando(true)} label="Crear pedido" />

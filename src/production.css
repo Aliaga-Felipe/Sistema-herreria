@@ -44,11 +44,11 @@
 }
 
 .quick-actions .quick b {
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .quick-actions .quick small {
-    font-size: 9px;
+    font-size: 10px;
     color: var(--muted);
 }
 
@@ -187,6 +187,7 @@
 .stage-grid-row button {
     background: none;
     border: 1px solid #4a423c;
+    border-radius: 50%;
     color: var(--muted);
     cursor: pointer;
     padding: 5px 0;
@@ -203,7 +204,60 @@
 */
 .pedidos-head,
 .pedidos-row {
-    grid-template-columns: 1fr 1fr 1.3fr 1fr .7fr .8fr .7fr;
+    grid-template-columns: repeat(9, 1fr);
+}
+
+.pedidos-row {
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s;
+}
+
+.pedidos-row:hover {
+    background: #211e1b;
+    border-color: #4a423c;
+}
+
+/* Cada campo de la tabla de pedidos va centrado, encabezado incluido. */
+.pedidos-head > span {
+    text-align: center;
+}
+
+.pedidos-row > div {
+    text-align: center;
+}
+
+.pedidos-row .product,
+.pedidos-row .worker {
+    justify-content: center;
+    margin-left: 0;
+}
+
+.pedidos-row .product > div {
+    text-align: center;
+}
+
+.cantidad-cell b {
+    font: 700 15px 'DM Mono', monospace;
+    color: var(--text);
+}
+
+.total-cell b {
+    font: 700 14px 'DM Mono', monospace;
+    color: var(--accent);
+}
+
+/* La barra de cumplimiento debe medir siempre lo mismo: el ancho fijo de
+   su columna, sin el margen pensado para la tabla de resumen del panel;
+   y su celda se centra igual que el resto de los campos. */
+.pedidos-row .progress-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.pedidos-row .progress {
+    width: 100%;
+    margin-right: 0;
 }
 
 .tareas-head,
@@ -214,6 +268,31 @@
 .resumen-head,
 .resumen-row {
     grid-template-columns: 1.4fr 1.2fr .9fr 1.1fr .8fr;
+}
+
+/* =========================
+   PRIORIDAD
+   Chip de la tabla de pedidos, mismo formato que .task-status.
+   El cumplimiento ahora es la barra de .progress-cell (ver styles.css),
+   reutilizada tal cual con el % de etapas completadas del producto.
+*/
+.prioridad {
+    display: inline-block;
+    padding: 4px 6px;
+    font: 800 8px Manrope;
+    text-transform: uppercase;
+    border: 1px solid #544941;
+    color: var(--muted);
+}
+
+.prioridad.alta {
+    border-color: #7d6c3c;
+    color: #e8cf87;
+}
+
+.prioridad.urgente {
+    border-color: #7d4a3f;
+    color: #e79a8c;
 }
 
 /* =========================
@@ -258,6 +337,7 @@
 .item-linea button {
     background: none;
     border: 1px solid #4a423c;
+    border-radius: 50%;
     color: var(--muted);
     cursor: pointer;
     padding: 5px 0;
@@ -408,7 +488,7 @@
     gap: 10px;
     align-items: center;
     padding: 6px 0;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 /* =========================

@@ -145,7 +145,9 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
       <main>
         <header>
           <div className="crumb">{title}</div>
-          <span className="role-badge">{session.usuario.rol}</span>
+          <span className={`role-badge ${session.usuario.rol}`} title={session.usuario.rol}>
+            {session.usuario.rol === 'admin' ? 'A' : 'O'}
+          </span>
         </header>
         <div className="content auth-content">{children}</div>
       </main>
