@@ -376,3 +376,95 @@
     align-items: flex-start;
   }
 }
+/* ==========================================
+   PRODUCTOS: MINIATURA + GESTOR DE IMÁGENES
+   (usado por panel-productos.jsx para el catálogo público)
+   ========================================== */
+.product-thumb-img {
+  width: 39px;
+  height: 39px;
+  object-fit: cover;
+  border: 1px solid #765744;
+  flex: none;
+}
+
+.imagenes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.imagen-item {
+  position: relative;
+  border: 1px solid #3d3530;
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+
+.imagen-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.imagen-item.principal {
+  border-color: #e8a383;
+}
+
+.imagen-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(14, 13, 12, 0.85);
+  color: #f7bb96;
+  font-size: 7px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 3px 5px;
+}
+
+.imagen-acciones {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: linear-gradient(0deg, rgba(8,7,6,0.9), transparent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.imagen-item:hover .imagen-acciones {
+  opacity: 1;
+}
+
+.imagen-acciones button {
+  flex: 1;
+  border: 1px solid #5b5048;
+  background: #1d1a18;
+  color: #fff;
+  font-size: 8px;
+  padding: 4px 3px;
+  cursor: pointer;
+}
+
+.imagen-acciones button.danger-link {
+  color: #ff9d85;
+}
+
+/* ==========================================
+   CONFIGURACIÓN: VIDEO DE FONDO DEL HERO
+   (usado por workshop-panels.jsx, GestorVideoHero)
+   ========================================== */
+.video-hero-preview {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin-top: 12px;
+  border: 1px solid #3d3530;
+  background: #000;
+}

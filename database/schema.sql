@@ -75,7 +75,19 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('recompensa_factor_ahorro', '0.5', 'Proporcion del valor del tiempo ahorrado que se paga como recompensa (0 a 1).'),
   ('recompensa_bono_minimo', '0', 'Monto minimo garantizado cuando la etapa cierra en verde.'),
   ('semaforo_tolerancia', '0.1', 'Margen sobre el tiempo estimado que se considera dentro del promedio (0.1 = 10%).'),
-  ('moneda', 'ARS', 'Simbolo de moneda usado en los reportes.')
+  ('moneda', 'ARS', 'Simbolo de moneda usado en los reportes.'),
+  ('negocio_nombre', 'El Atelier', 'Nombre de la herreria mostrado en la web publica.'),
+  ('negocio_rubro', 'Herrería de diseño', 'Frase corta que acompaña al nombre del negocio en el encabezado y la portada.'),
+  ('negocio_eslogan', 'Diseño que perdura', 'Frase corta mostrada en el hero de la web publica.'),
+  ('negocio_descripcion', 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.', 'Descripcion breve usada en la portada y en las meta etiquetas SEO.'),
+  ('negocio_whatsapp', '5491100000000', 'Numero de WhatsApp (con codigo de pais, sin signos) para el boton de consulta. Ejemplo Argentina: 5491122334455.'),
+  ('negocio_email', 'contacto@elatelier.com', 'Correo de contacto mostrado en la web publica.'),
+  ('negocio_telefono', '', 'Telefono alternativo mostrado en el pie de pagina (opcional).'),
+  ('negocio_direccion', '', 'Direccion del taller mostrada en Contacto (opcional).'),
+  ('negocio_instagram', '', 'URL del Instagram (opcional, se oculta si esta vacio).'),
+  ('negocio_facebook', '', 'URL del Facebook (opcional, se oculta si esta vacio).'),
+  ('negocio_horario', 'Lunes a viernes de 9 a 18 hs', 'Horario de atencion mostrado en Contacto.'),
+  ('negocio_hero_video', '', 'URL del video de fondo del hero de portada (opcional, se sube desde Configuracion).')
 ON CONFLICT (clave) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -109,6 +121,22 @@ ALTER TABLE tarea_etapas ADD COLUMN IF NOT EXISTS semaforo semaforo_rendimiento;
 ALTER TABLE tarea_etapas ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NULL DEFAULT 0;
 
 -- ---------------------------------------------------------------------
+-- CATEGORIAS DEL CATALOGO (usadas por la web publica y el panel admin)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS categorias (
+  id BIGSERIAL PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL,
+  slug VARCHAR(140) UNIQUE NOT NULL,
+  descripcion TEXT,
+  orden SMALLINT NOT NULL DEFAULT 0,
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Foto propia de la categoria (si no se carga, la web publica usa como
+-- respaldo la foto de algun producto de esa categoria).
+ALTER TABLE categorias ADD COLUMN IF NOT EXISTS imagen_url TEXT;
+
+-- ---------------------------------------------------------------------
 -- CATALOGO: PRODUCTOS Y SUS ETAPAS DE FABRICACION
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS productos (
@@ -120,6 +148,38 @@ CREATE TABLE IF NOT EXISTS productos (
 );
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_venta NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Catalogo publico: categoria, URL amigable y bandera de destacado.
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria_id BIGINT REFERENCES categorias(id) ON DELETE SET NULL;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS slug VARCHAR(200);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Genera un slug para productos que todavia no lo tienen (instalaciones
+-- existentes). Los productos nuevos reciben su slug desde la API.
+UPDATE productos SET slug = LOWER(
+    regexp_replace(
+      regexp_replace(
+        translate(nombre, 'áéíóúÁÉÍÓÚñÑüÜ', 'aeiouAEIOUnNuU'),
+        '[^a-zA-Z0-9]+', '-', 'g'
+      ), '(^-+)|(-+$)', '', 'g'
+    )
+  ) || '-' || id
+  WHERE slug IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_slug ON productos(slug);
+CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos(categoria_id);
+
+-- Galeria de imagenes del producto: varias por producto, ordenadas, con
+-- una marcada como principal para las grillas del catalogo.
+CREATE TABLE IF NOT EXISTS producto_imagenes (
+  id BIGSERIAL PRIMARY KEY,
+  producto_id BIGINT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  orden SMALLINT NOT NULL DEFAULT 0,
+  es_principal BOOLEAN NOT NULL DEFAULT FALSE,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_producto_imagenes_producto ON producto_imagenes(producto_id, orden);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_producto_imagenes_principal
+  ON producto_imagenes(producto_id) WHERE es_principal;
 
 CREATE TABLE IF NOT EXISTS etapas_producto (
   id BIGSERIAL PRIMARY KEY,
@@ -355,6 +415,20 @@ FROM usuarios u
 LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
 WHERE LOWER(u.rol::text) = 'empleado'
 GROUP BY u.id;
+
+-- ---------------------------------------------------------------------
+-- CATEGORIAS INICIALES (solo si la tabla esta vacia)
+-- ---------------------------------------------------------------------
+INSERT INTO categorias (nombre, slug, descripcion, orden)
+SELECT * FROM (VALUES
+  ('Mesas', 'mesas', 'Mesas de hierro y madera para comedor, centro y exterior.', 1),
+  ('Sillas y bancos', 'sillas-y-bancos', 'Asientos forjados, individuales y bancos largos.', 2),
+  ('Estanterías', 'estanterias', 'Estanterías y racks de hierro para el hogar y el comercio.', 3),
+  ('Portones y rejas', 'portones-y-rejas', 'Portones, rejas y cerramientos a medida.', 4),
+  ('Decoración', 'decoracion', 'Piezas decorativas y objetos utilitarios en hierro.', 5),
+  ('Iluminación', 'iluminacion', 'Lámparas y artefactos de iluminación forjados.', 6)
+) AS datos(nombre, slug, descripcion, orden)
+WHERE NOT EXISTS (SELECT 1 FROM categorias);
 
 -- ---------------------------------------------------------------------
 -- PRIMER ADMINISTRADOR

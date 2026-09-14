@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import './features.css'
-import { dinero, duracion, fecha, iniciales, useData } from './api.js'
+import { api, dinero, duracion, fecha, iniciales, useData } from './api.js'
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
 import PanelProductos from './panel-productos.jsx'
+import PanelCategorias from './panel-categorias.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
@@ -12,6 +13,7 @@ export const seccionesAdmin = [
   ['Panel de control', '▦'],
   ['Pedidos', '⌁'],
   ['Productos', '▱'],
+  ['Categorías', '◈'],
   ['Tareas', '✓'],
   ['Recompensas', '♛'],
   ['Estadísticas', '◫'],
@@ -31,6 +33,7 @@ export default function WorkshopPanels({ section, setSection }) {
     'Panel de control': <Dashboard ir={ir} />,
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
     Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
+    Categorías: <PanelCategorias />,
     Tareas: <PanelTareas />,
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
@@ -148,6 +151,148 @@ function Dashboard({ ir }) {
         <Empty title="No hay pedidos en curso" text="Creá un pedido para empezar a producir." action={() => ir('Pedidos', 'nuevo')} label="Crear pedido" />
       )}
     </>
+  )
+}
+
+// ---------------------------------------------------------------------
+// DATOS DE LA WEB PÚBLICA (nombre, WhatsApp, redes, horario)
+// Reutiliza la misma tabla `configuracion` clave/valor que ya usa el
+// sistema para los parámetros de recompensas.
+// ---------------------------------------------------------------------
+function ConfiguracionSitioPublico({ onGuardar }) {
+  const configuracion = useData('/configuracion/valores', {})
+  const [valores, setValores] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { if (configuracion.data && 'negocio_nombre' in configuracion.data) setValores(configuracion.data) }, [configuracion.data])
+  if (!valores) return null
+
+  const cambiar = clave => event => setValores({ ...valores, [clave]: event.target.value })
+
+  const guardar = async event => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      const claves = ['negocio_nombre', 'negocio_rubro', 'negocio_eslogan', 'negocio_descripcion', 'negocio_whatsapp', 'negocio_email', 'negocio_telefono', 'negocio_direccion', 'negocio_instagram', 'negocio_facebook', 'negocio_horario']
+      const cuerpo = Object.fromEntries(claves.map(clave => [clave, valores[clave] || '']))
+      const guardados = await api.put('/configuracion', cuerpo, configuracion.token)
+      setValores(guardados)
+      onGuardar?.()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <form className="config-card" onSubmit={guardar}>
+      <div className="card-title">Datos de la web pública</div>
+      <p className="muted">Estos datos aparecen en el catálogo público: portada, pie de página, botón de WhatsApp y página de Contacto.</p>
+
+      <div className="form-grid config-grid">
+        <label>Nombre del negocio
+          <input required value={valores.negocio_nombre} onChange={cambiar('negocio_nombre')} placeholder="Ej. El Atelier" />
+        </label>
+        <label>Rubro (junto al nombre, en el encabezado y la portada)
+          <input value={valores.negocio_rubro} onChange={cambiar('negocio_rubro')} placeholder="Ej. Herrería de diseño" />
+        </label>
+        <label>Frase del hero (portada)
+          <input value={valores.negocio_eslogan} onChange={cambiar('negocio_eslogan')} placeholder="Ej. Diseño que perdura" />
+        </label>
+        <label>WhatsApp (con código de país, sin signos)
+          <input value={valores.negocio_whatsapp} onChange={cambiar('negocio_whatsapp')} placeholder="Ej. 5491122334455" />
+        </label>
+        <label>Correo de contacto
+          <input type="email" value={valores.negocio_email} onChange={cambiar('negocio_email')} placeholder="contacto@tuherreria.com" />
+        </label>
+        <label>Teléfono (opcional)
+          <input value={valores.negocio_telefono} onChange={cambiar('negocio_telefono')} />
+        </label>
+        <label>Dirección del taller (opcional)
+          <input value={valores.negocio_direccion} onChange={cambiar('negocio_direccion')} />
+        </label>
+        <label>Horario de atención
+          <input value={valores.negocio_horario} onChange={cambiar('negocio_horario')} placeholder="Lunes a viernes de 9 a 18 hs" />
+        </label>
+        <label>Instagram (URL, opcional)
+          <input value={valores.negocio_instagram} onChange={cambiar('negocio_instagram')} placeholder="https://instagram.com/tuherreria" />
+        </label>
+        <label>Facebook (URL, opcional)
+          <input value={valores.negocio_facebook} onChange={cambiar('negocio_facebook')} placeholder="https://facebook.com/tuherreria" />
+        </label>
+      </div>
+
+      <label>Descripción breve (portada y buscadores)
+        <textarea value={valores.negocio_descripcion} onChange={cambiar('negocio_descripcion')} placeholder="Una o dos frases sobre el taller." />
+      </label>
+
+      <GestorVideoHero
+        videoInicial={valores.negocio_hero_video}
+        token={configuracion.token}
+        onCambiar={url => setValores(previo => ({ ...previo, negocio_hero_video: url }))}
+      />
+
+      {error && <p className="form-error">{error}</p>}
+      <div className="form-actions">
+        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar datos públicos'}</button>
+      </div>
+    </form>
+  )
+}
+
+// ---------------------------------------------------------------------
+// VIDEO DE FONDO DEL HERO (portada de la web pública)
+// Se sube y se borra al instante (no espera al submit del formulario de
+// arriba), igual que las fotos de producto/categoría.
+// ---------------------------------------------------------------------
+function GestorVideoHero({ videoInicial, token, onCambiar }) {
+  const [video, setVideo] = useState(videoInicial || '')
+  const [subiendo, setSubiendo] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { setVideo(videoInicial || '') }, [videoInicial])
+
+  const subir = async event => {
+    const archivo = event.target.files?.[0]
+    event.target.value = ''
+    if (!archivo) return
+    setSubiendo(true); setError('')
+    try {
+      const formData = new FormData()
+      formData.append('video', archivo)
+      const respuesta = await api.subir('/configuracion/video-hero', formData, token)
+      setVideo(respuesta.negocio_hero_video)
+      onCambiar?.(respuesta.negocio_hero_video)
+    } catch (err) { setError(err.message) } finally { setSubiendo(false) }
+  }
+
+  const quitar = async () => {
+    try {
+      const respuesta = await api.del('/configuracion/video-hero', token)
+      setVideo(respuesta.negocio_hero_video)
+      onCambiar?.(respuesta.negocio_hero_video)
+    } catch (err) { setError(err.message) }
+  }
+
+  return (
+    <div className="stage-edit">
+      <div>
+        <b>Video de fondo de la portada</b>
+        <span>Se reproduce en bucle, sin sonido, detrás del título del Inicio de la web pública. Formatos MP4, WEBM u OGG, hasta 40 MB. Si no cargás uno, la portada usa el fondo habitual.</span>
+      </div>
+
+      {video && (
+        <video src={video} className="video-hero-preview" muted loop autoPlay playsInline />
+      )}
+
+      <div className="form-actions" style={{ marginTop: video ? 8 : 0 }}>
+        <label className="add-stage" style={{ display: 'inline-flex', cursor: 'pointer' }}>
+          {subiendo ? 'Subiendo...' : video ? 'Reemplazar video' : '+ Agregar video'}
+          <input type="file" accept="video/mp4,video/webm,video/ogg" onChange={subir} disabled={subiendo} style={{ display: 'none' }} />
+        </label>
+        {video && <button type="button" className="danger-link" onClick={quitar}>Quitar video</button>}
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+    </div>
   )
 }
 
@@ -276,9 +421,11 @@ function PanelConfiguracion() {
 
   return (
     <>
-      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller y reglas del sistema de recompensas." />
+      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller, datos de la web pública y reglas del sistema de recompensas." />
 
       {aviso && <p className="notice">{aviso}</p>}
+
+      <ConfiguracionSitioPublico onGuardar={() => setAviso('Datos de la web pública actualizados.')} />
 
       <ConfiguracionRecompensas onGuardar={() => setAviso('Parámetros guardados.')} />
 

@@ -20,7 +20,15 @@ export const api = {
   post: (path, body, token) => request(path, { method: 'POST', body: JSON.stringify(body) }, token),
   put: (path, body, token) => request(path, { method: 'PUT', body: JSON.stringify(body) }, token),
   patch: (path, body, token) => request(path, { method: 'PATCH', body: JSON.stringify(body) }, token),
-  del: (path, token) => request(path, { method: 'DELETE' }, token)
+  del: (path, token) => request(path, { method: 'DELETE' }, token),
+  // Subida de archivos (multipart/form-data): no fija Content-Type para
+  // que el navegador agregue el boundary automáticamente.
+  async subir(path, formData, token) {
+    const response = await fetch(`${API}${path}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: formData })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo subir el archivo.')
+    return data
+  }
 }
 
 // Carga un recurso del backend y expone recarga manual. `vacio` define la

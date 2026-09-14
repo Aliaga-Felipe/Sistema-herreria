@@ -8,6 +8,15 @@ import './production.css'
 import { SessionContext, api, iniciales, useSession } from './api.js'
 import WorkshopPanels, { seccionesAdmin } from './workshop-panels.jsx'
 import MisTareas from './mis-tareas.jsx'
+// La web pública vive en /web-publica, fuera de /src, para no mezclarse
+// con los archivos del sistema interno (paneles, auth, etc.).
+import PublicLayout from '../web-publica/PublicLayout.jsx'
+import Home from '../web-publica/Home.jsx'
+import Catalogo from '../web-publica/Catalogo.jsx'
+import ProductoDetalle from '../web-publica/ProductoDetalle.jsx'
+import Categorias from '../web-publica/Categorias.jsx'
+import Nosotros from '../web-publica/Nosotros.jsx'
+import Contacto from '../web-publica/Contacto.jsx'
 
 function App() {
   const [session, setSession] = useState(() => { try { return JSON.parse(localStorage.getItem('atelier_session')) } catch { return null } })
@@ -22,7 +31,17 @@ function App() {
           <Route path="/registro" element={<Public><Register /></Public>} />
           <Route path="/admin" element={<Protected roles={['admin']}><Admin /></Protected>} />
           <Route path="/mis-tareas" element={<Protected roles={['empleado']}><Empleado /></Protected>} />
-          <Route path="*" element={<Landing />} />
+
+          {/* Web pública: catálogo de la herrería, sin login. */}
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/productos" element={<Catalogo />} />
+            <Route path="/productos/:slug" element={<ProductoDetalle />} />
+            <Route path="/categorias" element={<Categorias />} />
+            <Route path="/nosotros" element={<Nosotros />} />
+            <Route path="/contacto" element={<Contacto />} />
+            <Route path="*" element={<PublicNotFound />} />
+          </Route>
         </Routes>
       </BrowserRouter>
     </SessionContext.Provider>
@@ -34,6 +53,17 @@ function Landing() {
   return <Navigate to={session ? (session.usuario.rol === 'admin' ? '/admin' : '/mis-tareas') : '/iniciar-sesion'} replace />
 }
 function Public({ children }) { const { session } = useSession(); return session ? <Landing /> : children }
+
+function PublicNotFound() {
+  return (
+    <div className="estado-vacio-publico" style={{ paddingTop: '180px', paddingBottom: '120px' }}>
+      <span>◇</span>
+      <h1 style={{ fontSize: '1.6rem', marginBottom: 10 }}>No encontramos esta página</h1>
+      <p>Puede que el enlace esté roto o la página ya no exista.</p>
+      <NavLink className="btn-public btn-fantasma" to="/" style={{ marginTop: 20, display: 'inline-flex' }}>Volver al inicio</NavLink>
+    </div>
+  )
+}
 function Protected({ roles, children }) {
   const { session } = useSession()
   if (!session) return <Navigate to="/iniciar-sesion" replace />
