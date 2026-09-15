@@ -24,8 +24,7 @@ export default function Contacto() {
   return (
     <div className="contenedor contacto-grid">
       <Reveal>
-        <p className="eyebrow-public">Hablemos</p>
-        <h1 style={{ fontFamily: 'var(--fuente-display)', fontSize: 'clamp(2rem, 4.5vw, 2.8rem)', marginBottom: 28 }}>Contacto</h1>
+        <p className="eyebrow-public" style={{ marginBottom: 28 }}>Hablemos</p>
 
         <div className="contacto-datos">
           {config.negocio_whatsapp && (

@@ -11,17 +11,24 @@ export default function Nosotros() {
 
   return (
     <div>
-      <header className="catalogo-encabezado" style={{ paddingBottom: 56 }}>
+      <header className="catalogo-encabezado nosotros-encabezado" style={{ paddingBottom: 56 }}>
         <div className="contenedor">
           <p className="eyebrow-public">Nuestra historia</p>
-          <h1 style={{ fontSize: 'clamp(2.1rem, 5vw, 3.4rem)', maxWidth: '18ch' }}>El oficio detrás de cada pieza</h1>
         </div>
       </header>
 
       <section className="seccion-publica seccion-oscura" style={{ paddingTop: 0 }}>
         <div className="contenedor">
           <div className="split-editorial">
-            <Reveal><ForgePattern style={{ aspectRatio: '4/5', borderRadius: '2px' }} /></Reveal>
+            <Reveal>
+              <ForgePattern
+                style={{
+                  aspectRatio: '4/5',
+                  borderRadius: '2px',
+                  background: 'radial-gradient(circle at 50% 42%, rgba(122,78,45,0.4) 0%, rgba(46,42,38,0.55) 45%, var(--negro) 78%)'
+                }}
+              />
+            </Reveal>
             <Reveal className="texto">
               <p className="eyebrow-public">Taller y diseño</p>
               <h2>Hierro, fuego y paciencia</h2>

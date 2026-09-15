@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
+import logoUnAtelier from './logo-un-atelier.png'
 
 const enlaces = [
   { to: '/', label: 'Inicio', fin: true },
@@ -30,8 +31,7 @@ export default function Header() {
       <header className={`site-header ${scrolled || abierto ? 'scrolled' : ''}`}>
         <div className="contenedor">
           <NavLink to="/" className="brand-public" onClick={() => setAbierto(false)}>
-            {config.negocio_nombre}
-            <span>{config.negocio_rubro}</span>
+            <img src={logoUnAtelier} alt={config.negocio_nombre || 'Un Atelier'} className="logo-header" />
           </NavLink>
 
           <nav className="nav-public">
@@ -41,12 +41,6 @@ export default function Header() {
               </NavLink>
             ))}
           </nav>
-
-          <div className="nav-cta">
-            <WhatsAppLink numero={config.negocio_whatsapp} mensaje="Hola, quisiera hacer una consulta." className="btn-public btn-madera">
-              Consultar
-            </WhatsAppLink>
-          </div>
 
           <button className={`hamburguesa ${abierto ? 'abierto' : ''}`} onClick={() => setAbierto(!abierto)} aria-label="Abrir menú">
             <span /><span /><span />
