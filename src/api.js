@@ -72,3 +72,10 @@ export const fecha = valor => (valor ? new Date(valor).toLocaleDateString('es-AR
 export const porcentaje = (parte, total) => (total ? Math.round((parte / total) * 100) : 0)
 
 export const etiquetaEstado = estado => String(estado || '').replace(/_/g, ' ').toLowerCase()
+
+// Prioridad del pedido: 0 Normal, 1 Alta, 2 Urgente (mismos valores que usa
+// el formulario de alta en panel-pedidos.jsx).
+export const etiquetaPrioridad = prioridad => {
+  const nivel = Number(prioridad) || 0
+  return nivel >= 2 ? 'Urgente' : nivel === 1 ? 'Alta' : 'Normal'
+}
