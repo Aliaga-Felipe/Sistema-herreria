@@ -1,25 +1,36 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { publicApi, useMeta } from './api.js'
 import { usePublicConfig } from './PublicContext.jsx'
 import ProductCard from './components/ProductCard.jsx'
 
+// Opciones del orden del catálogo. Se definen acá (y no como <option> de
+// un <select> nativo) porque el SelectOrden de más abajo dibuja su propia
+// lista desplegada en vez de depender de la del navegador.
+const OPCIONES_ORDEN = [
+  { value: 'novedades', label: 'Más recientes' },
+  { value: 'nombre', label: 'Nombre A-Z' },
+  { value: 'precio_asc', label: 'Precio: menor a mayor' },
+  { value: 'precio_desc', label: 'Precio: mayor a menor' }
+]
+
 export default function Catalogo() {
   const config = usePublicConfig()
   const [params, setParams] = useSearchParams()
-  const [categorias, setCategorias] = useState([])
   const [resultado, setResultado] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [busquedaLocal, setBusquedaLocal] = useState(params.get('q') || '')
 
+  // La categoría ya no tiene un filtro visible en esta página (se quitó
+  // el select), pero el parámetro se sigue leyendo y pasando a la API:
+  // las tarjetas de categoría del Inicio y de /categorias enlazan acá con
+  // ?categoria=slug, y ese enlace tiene que seguir filtrando el catálogo.
   const categoria = params.get('categoria') || ''
   const orden = params.get('orden') || 'novedades'
   const q = params.get('q') || ''
   const pagina = Number(params.get('pagina')) || 1
 
   useMeta('Productos', 'Catálogo completo de muebles y piezas de herrería artesanal: mesas, sillas, portones, rejas y decoración.')
-
-  useEffect(() => { publicApi.categorias().then(setCategorias).catch(() => setCategorias([])) }, [])
 
   useEffect(() => {
     setCargando(true)
@@ -45,7 +56,6 @@ export default function Catalogo() {
       <header className="catalogo-encabezado">
         <div className="contenedor">
           <p className="eyebrow-public">Catálogo completo</p>
-          <h1 style={{ fontSize: 'clamp(2.1rem, 5vw, 3.2rem)' }}>Productos</h1>
 
           <form className="filtros-barra" onSubmit={enviarBusqueda}>
             <div className="campo-filtro">
@@ -57,18 +67,7 @@ export default function Catalogo() {
               />
             </div>
             <div className="campo-filtro">
-              <select value={categoria} onChange={event => actualizar({ categoria: event.target.value })}>
-                <option value="">Todas las categorías</option>
-                {categorias.map(c => <option key={c.id} value={c.slug}>{c.nombre}</option>)}
-              </select>
-            </div>
-            <div className="campo-filtro">
-              <select value={orden} onChange={event => actualizar({ orden: event.target.value })}>
-                <option value="novedades">Más recientes</option>
-                <option value="nombre">Nombre A-Z</option>
-                <option value="precio_asc">Precio: menor a mayor</option>
-                <option value="precio_desc">Precio: mayor a menor</option>
-              </select>
+              <SelectOrden value={orden} onChange={valor => actualizar({ orden: valor })} />
             </div>
             <button type="submit" className="btn-public btn-madera">Buscar</button>
           </form>
@@ -114,5 +113,59 @@ export default function Catalogo() {
         </div>
       </section>
     </>
+  )
+}
+
+// ---------------------------------------------------------------------
+// SELECT DE ORDEN (reemplaza el <select> nativo del catálogo)
+// Un <select> nativo no se puede re-estilar por dentro: la lista
+// desplegada la dibuja el sistema operativo/navegador con sus propios
+// colores (fondo blanco, resaltado azul), sin importar el CSS del sitio.
+// Este control dibuja su propia lista, así que la opción activa puede
+// mostrarse con el mismo fondo que el resto de los filtros + un borde
+// negro (igual que el resto de los campos), en vez de blanco.
+// Mismo valor/onChange que un <select> común, así que el filtrado y la
+// URL (?orden=...) funcionan exactamente igual que antes.
+// ---------------------------------------------------------------------
+function SelectOrden({ value, onChange }) {
+  const [abierto, setAbierto] = useState(false)
+  const raiz = useRef(null)
+  const actual = OPCIONES_ORDEN.find(opcion => opcion.value === value) || OPCIONES_ORDEN[0]
+
+  useEffect(() => {
+    const cerrarSiEsAfuera = event => {
+      if (raiz.current && !raiz.current.contains(event.target)) setAbierto(false)
+    }
+    document.addEventListener('mousedown', cerrarSiEsAfuera)
+    return () => document.removeEventListener('mousedown', cerrarSiEsAfuera)
+  }, [])
+
+  return (
+    <div className="select-personalizado" ref={raiz}>
+      <button
+        type="button"
+        className={`select-personalizado-boton ${abierto ? 'abierto' : ''}`}
+        onClick={() => setAbierto(previo => !previo)}
+        aria-haspopup="listbox"
+        aria-expanded={abierto}
+      >
+        {actual.label}
+      </button>
+      {abierto && (
+        <ul className="select-personalizado-lista" role="listbox">
+          {OPCIONES_ORDEN.map(opcion => (
+            <li
+              key={opcion.value}
+              role="option"
+              aria-selected={opcion.value === value}
+              className={opcion.value === value ? 'seleccionada' : ''}
+              onClick={() => { onChange(opcion.value); setAbierto(false) }}
+            >
+              {opcion.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

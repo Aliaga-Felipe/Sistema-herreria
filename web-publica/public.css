@@ -24,8 +24,9 @@
   --borde-claro: rgba(243, 237, 227, 0.16);
   --borde-oscuro: rgba(26, 26, 26, 0.12);
 
-  --fuente-display: 'Cormorant Garamond', 'Georgia', serif;
-  --fuente-texto: 'Jost', 'Segoe UI', sans-serif;
+  --fuente-display: 'Stardos Stencil', 'Georgia', serif;
+  --fuente-texto: 'Stardos Stencil', 'Segoe UI', sans-serif;
+  --fuente-mono: 'Cutive Mono', 'Courier New', monospace;
 
   --radio: 2px;
   --transicion: 420ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -50,7 +51,7 @@
 
 .public-root h1, .public-root h2, .public-root h3, .public-root h4 {
   font-family: var(--fuente-display);
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.01em;
   margin: 0;
 }
@@ -100,27 +101,54 @@
   border-bottom: 1px solid var(--borde-claro);
   height: 64px;
 }
-.site-header .contenedor { display: flex; align-items: center; justify-content: space-between; }
+/* Layout de 3 columnas: el logo queda anclado a la izquierda y la nav
+   queda centrada respecto de TODO el header (no del espacio que sobra
+   después del logo). Las columnas 1 y 3 son "1fr" cada una, así que sin
+   importar cuánto ancho ocupe el logo o el botón de menú, la columna del
+   medio (la nav) siempre cae exactamente en el centro del header.
+   El padding izquierdo y derecho del contenedor se igualan a propósito
+   (en vez de heredar el padding asimétrico de otras secciones): si no,
+   el centro del área de contenido queda corrido y la nav deja de caer
+   en el centro real del header. */
+.site-header .contenedor {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  column-gap: 16px;
+  padding: 0 20px;
+}
+@media (min-width: 720px) { .site-header .contenedor { padding: 0 24px; } }
+@media (min-width: 1200px) { .site-header .contenedor { padding: 0 32px; } }
 
 .brand-public {
-  font-family: var(--fuente-display);
-  font-size: 1.5rem;
-  letter-spacing: 0.02em;
-  color: var(--texto-claro);
   display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-}
-.brand-public span {
-  font-family: var(--fuente-texto);
-  font-size: 0.6rem;
-  letter-spacing: 0.32em;
-  color: var(--arena);
-  text-transform: uppercase;
-  margin-top: 4px;
+  align-items: center;
+  height: 100%;
+  grid-column: 1;
+  justify-self: start;
 }
 
-.nav-public { display: none; align-items: center; gap: 36px; }
+/* Logo del encabezado: el archivo es carbón oscuro sobre fondo
+   transparente, así que se invierte a un tono claro para que se lea
+   sobre el header (siempre oscuro, con o sin scroll). El alto se fija
+   y el ancho queda en "auto" para no deformar las proporciones. */
+.logo-header {
+  height: 38px;
+  width: auto;
+  display: block;
+  filter: brightness(0) invert(1);
+  opacity: 0.94;
+  transition: height var(--transicion);
+}
+@media (min-width: 720px) {
+  .logo-header { height: 46px; }
+}
+.site-header.scrolled .logo-header { height: 32px; }
+@media (min-width: 720px) {
+  .site-header.scrolled .logo-header { height: 38px; }
+}
+
+.nav-public { display: none; align-items: center; gap: 36px; grid-column: 2; justify-self: center; }
 .nav-public a {
   font-size: 0.82rem;
   text-transform: uppercase;
@@ -142,6 +170,8 @@
   border: none;
   padding: 8px;
   z-index: 110;
+  grid-column: 3;
+  justify-self: end;
 }
 .hamburguesa span { width: 24px; height: 1px; background: var(--texto-claro); transition: transform var(--transicion), opacity var(--transicion); }
 .hamburguesa.abierto span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
@@ -221,7 +251,14 @@
   content: '';
   position: absolute; inset: 0;
   z-index: 1;
-  background: linear-gradient(180deg, rgba(26,26,26,0.15) 0%, rgba(26,26,26,0.85) 100%);
+  /* Se mantiene el oscurecimiento progresivo original y, sobre el final,
+     se lleva a color sólido (--negro, el mismo fondo de la sección que
+     sigue) para que el video se funda con la página en vez de cortarse. */
+  background: linear-gradient(180deg,
+    rgba(26,26,26,0.15) 0%,
+    rgba(26,26,26,0.55) 62%,
+    rgba(26,26,26,0.88) 84%,
+    var(--negro) 100%);
 }
 .hero-video {
   position: absolute;
@@ -339,6 +376,82 @@
 .campo-filtro select option { color: var(--negro); }
 .campo-filtro label { display: none; }
 
+/* Estado activo/foco de los filtros: mantiene el mismo color de fondo
+   que el filtro tiene normalmente (nada de blanco) y suma un borde
+   negro para marcarlo como seleccionado, sin romper el hover. */
+.campo-filtro input:hover, .campo-filtro select:hover {
+  border-color: var(--arena);
+}
+.campo-filtro input:focus, .campo-filtro select:focus,
+.campo-filtro input:focus-visible, .campo-filtro select:focus-visible {
+  background: rgba(243,237,227,0.06);
+  color: var(--texto-claro);
+  border: 1px solid var(--negro);
+  outline: none;
+}
+
+/* Select personalizado del orden del catálogo: un <select> nativo no se
+   puede re-estilar por dentro (el navegador dibuja la lista desplegada
+   con sus propios colores, sin importar el CSS), así que la opción
+   seleccionada termina mostrándose con fondo blanco y resaltado azul del
+   sistema operativo. Este control reemplaza esa lista nativa por una
+   propia: mismo aspecto que el resto de los filtros, y la opción activa
+   mantiene el color de fondo habitual del filtro + borde negro, igual
+   que el resto de los campos, en vez de blanco. */
+.select-personalizado { position: relative; }
+.select-personalizado-boton {
+  width: 100%;
+  display: block;
+  text-align: left;
+  background: rgba(243,237,227,0.06);
+  border: 1px solid var(--borde-claro);
+  color: var(--texto-claro);
+  padding: 13px 16px;
+  border-radius: var(--radio);
+  font-size: 0.88rem;
+  font-family: inherit;
+}
+.select-personalizado-boton::after {
+  content: '▾';
+  float: right;
+  color: var(--texto-claro-muted);
+  margin-left: 8px;
+}
+.select-personalizado-boton:hover { border-color: var(--arena); }
+.select-personalizado-boton:focus,
+.select-personalizado-boton:focus-visible,
+.select-personalizado-boton.abierto {
+  background: rgba(243,237,227,0.06);
+  color: var(--texto-claro);
+  border: 1px solid var(--negro);
+  outline: none;
+}
+.select-personalizado-lista {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  z-index: 20;
+  background: var(--carbon);
+  border: 1px solid var(--borde-claro);
+  border-radius: var(--radio);
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  box-shadow: 0 16px 32px rgba(0,0,0,0.4);
+}
+.select-personalizado-lista li {
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  color: var(--texto-claro);
+  cursor: pointer;
+}
+.select-personalizado-lista li:hover { background: rgba(243,237,227,0.08); }
+.select-personalizado-lista li.seleccionada {
+  background: rgba(243,237,227,0.06);
+  box-shadow: inset 0 0 0 1px var(--negro);
+  color: var(--texto-claro);
+}
+
 .resultado-info { padding: 24px 0 0; font-size: 0.84rem; color: var(--texto-oscuro-muted); }
 
 .catalogo-lista { background: var(--negro); padding: 48px 0 88px; }
@@ -377,7 +490,7 @@
 .detalle-info .eyebrow-public { margin-bottom: 10px; }
 .detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 14px; }
 .detalle-precio { font-size: 1.5rem; color: var(--arena); font-family: var(--fuente-display); margin-bottom: 26px; }
-.detalle-descripcion { color: var(--texto-claro-muted); line-height: 1.75; font-size: 0.98rem; white-space: pre-line; margin-bottom: 30px; }
+.detalle-descripcion { font-family: var(--fuente-mono); color: var(--texto-claro-muted); line-height: 1.75; font-size: 0.9rem; white-space: pre-line; margin-bottom: 30px; }
 .detalle-acciones { display: flex; flex-direction: column; gap: 12px; margin-bottom: 34px; }
 .detalle-acciones .btn-public { width: 100%; }
 .detalle-meta { border-top: 1px solid var(--borde-claro); padding-top: 22px; display: grid; gap: 10px; font-size: 0.86rem; color: var(--texto-claro-muted); }
@@ -388,6 +501,15 @@
 /* ---------------------------------------------------------------------
    NOSOTROS / MATERIALES
    --------------------------------------------------------------------- */
+/* Encabezado de Nosotros: en vez del corte seco entre el carbón del
+   encabezado y el negro de la sección siguiente, el fondo se funde en
+   degradé de un tono al otro, así la transición queda integrada en vez
+   de una línea visible. Sólo aplica acá (no toca Productos/Categorías,
+   que siguen usando .catalogo-encabezado con su fondo sólido de siempre). */
+.nosotros-encabezado {
+  background: linear-gradient(180deg, var(--carbon) 0%, var(--negro) 100%);
+}
+
 .split-editorial { display: grid; grid-template-columns: 1fr; gap: 36px; align-items: center; }
 @media (min-width: 900px) { .split-editorial { grid-template-columns: 1fr 1fr; gap: 72px; } }
 .split-editorial img { border-radius: var(--radio); aspect-ratio: 4/5; object-fit: cover; width: 100%; }

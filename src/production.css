@@ -536,6 +536,87 @@
     width: auto;
 }
 
+/* =========================
+   CONFIGURACIÓN — DATOS DE LA WEB PÚBLICA
+   Mismos estilos visuales que los inputs de "Nuevos productos"
+   (ver ".modal input" / ".modal textarea" en styles.css): misma
+   tipografía, color, fondo, borde, focus y radio. Se reutiliza el
+   contenedor ".config-card" (mismo fondo/borde que Recompensas) pero
+   los campos de este formulario en particular usan ".config-card-publico"
+   para no alterar los inputs numéricos de Recompensas.
+*/
+.config-card-publico {
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.config-card-publico .config-grid {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+/* Combinador directo (">"): solo los labels de los campos del negocio,
+   nunca el label "+ Reemplazar video" del selector de archivo (ese ya
+   tiene su propio estilo de botón vía ".add-stage" y no debe tocarse). */
+.config-card-publico > .config-grid > label,
+.config-card-publico > label {
+    display: block;
+    font-weight: 700;
+    font-size: 10px;
+    margin: 13px 0;
+}
+
+.config-card-publico input,
+.config-card-publico textarea,
+.config-card-publico .campo-auto {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: #121110;
+    border: 1px solid #46403a;
+    color: var(--text);
+    padding: 10px;
+    margin-top: 7px;
+    font: 11px Manrope;
+    outline-color: #e8a383;
+}
+
+.config-card-publico textarea {
+    height: 65px;
+    resize: vertical;
+}
+
+/* El campo de descripción se ve como un input de una línea (mismo
+   alto mínimo que los demás) pero crece solo, en altura, a medida que
+   el texto ocupa más de una línea: no es un <textarea>, es un
+   <div contenteditable> con esta clase. */
+.config-card-publico .campo-auto {
+    min-height: 39px;
+    height: auto;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    cursor: text;
+}
+
+.config-card-publico .campo-auto:empty::before {
+    content: attr(data-placeholder);
+    color: #746a62;
+}
+
+.config-card-publico .campo-auto:focus {
+    outline: 1px solid #e8a383;
+    outline-offset: 0;
+}
+
+@media (max-width: 480px) {
+    .config-card-publico {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+}
+
 .rango {
     display: flex;
     flex-direction: column;
