@@ -12,6 +12,7 @@ const etapasSugeridas = [
 
 export default function PanelProductos({ intencion, limpiarIntencion }) {
   const productos = useData('/productos')
+  const categorias = useData('/categorias')
   const { mostrar, nodo } = useAviso()
   const [editando, setEditando] = useState(null)
 
@@ -20,18 +21,24 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
     if (intencion === 'nuevo') { setEditando({}); limpiarIntencion?.() }
   }, [intencion])
 
+  // Guarda el producto pero NO cierra el modal: si es nuevo, lo deja
+  // abierto ya con id asignado para que el admin pueda cargar fotos sin
+  // pasos extra. El admin cierra el modal cuando termina.
   const guardar = async producto => {
     const cuerpo = {
       nombre: producto.nombre,
       descripcion: producto.descripcion,
       precio_venta: Number(producto.precio_venta),
+      categoria_id: producto.categoria_id || null,
+      destacado: Boolean(producto.destacado),
       etapas: producto.etapas.map(etapa => ({ ...etapa, costo: Number(etapa.costo), minutos_estimados: Number(etapa.minutos_estimados) }))
     }
-    if (producto.id) await api.put(`/productos/${producto.id}`, cuerpo, productos.token)
-    else await api.post('/productos', cuerpo, productos.token)
-    setEditando(null)
+    const resultado = producto.id
+      ? await api.put(`/productos/${producto.id}`, cuerpo, productos.token)
+      : await api.post('/productos', cuerpo, productos.token)
     await productos.load()
-    mostrar(producto.id ? 'Producto actualizado.' : 'Producto creado con sus etapas.')
+    mostrar(producto.id ? 'Producto actualizado.' : 'Producto creado. Ahora podés agregarle fotos.')
+    setEditando(resultado)
   }
 
   const eliminar = async producto => {
@@ -53,7 +60,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
   return (
     <>
-      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta y las etapas que lo fabrican, con costo y duración estimada.">
+      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. Lo que cargues acá es lo que se ve en la web pública.">
         <button className="primary" onClick={() => setEditando({})}>+ Nuevo producto</button>
       </Heading>
 
@@ -63,10 +70,13 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
         <section className="product-grid">
           {productos.data.map(producto => (
             <article className={`product-card ${producto.activo ? '' : 'inactivo'}`} key={producto.id}>
-              <div className="product-symbol">▱</div>
+              {producto.imagenes?.[0]?.url
+                ? <img src={producto.imagenes[0].url} alt={producto.nombre} className="product-thumb-img" />
+                : <div className="product-symbol">▱</div>}
 
               <div className="product-info">
-                <h3>{producto.nombre}</h3>
+                <h3>{producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}</h3>
+                <p>{producto.categoria_nombre || 'Sin categoría'}</p>
                 <p>{producto.descripcion || 'Sin descripción.'}</p>
 
                 <div className="product-numbers">
@@ -95,16 +105,18 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
         <Empty title="No hay productos cargados" text="Creá el primer producto con sus etapas de fabricación." action={() => setEditando({})} label="Crear producto" />
       )}
 
-      {editando && <ProductoModal producto={editando} close={() => setEditando(null)} save={guardar} />}
+      {editando && <ProductoModal producto={editando} categorias={categorias.data} token={productos.token} close={() => setEditando(null)} save={guardar} />}
     </>
   )
 }
 
-function ProductoModal({ producto, close, save }) {
+function ProductoModal({ producto, categorias, token, close, save }) {
   const editar = Boolean(producto.id)
   const [nombre, setNombre] = useState(producto.nombre || '')
   const [descripcion, setDescripcion] = useState(producto.descripcion || '')
   const [precio, setPrecio] = useState(producto.precio_venta ?? '')
+  const [categoriaId, setCategoriaId] = useState(producto.categoria_id || '')
+  const [destacado, setDestacado] = useState(Boolean(producto.destacado))
   const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, costo, minutos_estimados }) => ({ nombre, costo, minutos_estimados })) : etapasSugeridas)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -121,29 +133,47 @@ function ProductoModal({ producto, close, save }) {
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
     if (etapas.some(etapa => !etapa.nombre.trim() || Number(etapa.minutos_estimados) <= 0)) return setError('Cada etapa necesita nombre y una duración mayor a cero.')
     setBusy(true); setError('')
-    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, etapas }) }
+    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, etapas }) }
     catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
   return (
-    <Modal title={editar ? 'Editar producto' : 'Nuevo producto'} subtitle="Definí el precio de venta y las etapas de fabricación con su costo y duración." close={close} ancho="640px">
+    <Modal title={editar ? 'Editar producto' : 'Nuevo producto'} subtitle="Definí el precio, la categoría, las fotos y las etapas de fabricación." close={close} ancho="720px">
       <form onSubmit={enviar}>
         <label>Nombre del producto
           <input required value={nombre} onChange={event => setNombre(event.target.value)} placeholder="Ej. Portón de hierro forjado" />
         </label>
 
+        <div className="form-grid config-grid">
+          <label>Categoría
+            <select value={categoriaId} onChange={event => setCategoriaId(event.target.value)}>
+              <option value="">Sin categoría</option>
+              {categorias.map(categoria => <option key={categoria.id} value={categoria.id}>{categoria.nombre}{categoria.activo ? '' : ' (oculta)'}</option>)}
+            </select>
+          </label>
+
+          <label>Precio de venta
+            <input required min="1" step="0.01" type="number" value={precio} onChange={event => setPrecio(event.target.value)} placeholder="0" />
+          </label>
+        </div>
+
         <label>Descripción
-          <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación" />
+          <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
         </label>
 
-        <label>Precio de venta
-          <input required min="1" step="0.01" type="number" value={precio} onChange={event => setPrecio(event.target.value)} placeholder="0" />
+        <label className="config-check">
+          <input type="checkbox" checked={destacado} onChange={event => setDestacado(event.target.checked)} />
+          Mostrar como producto destacado en la portada de la web
         </label>
+
+        {editar
+          ? <GestorImagenes productoId={producto.id} imagenesIniciales={producto.imagenes || []} token={token} />
+          : <p className="muted" style={{ marginTop: 4 }}>Guardá el producto para poder cargarle fotos.</p>}
 
         <div className="stage-edit">
           <div>
             <b>Etapas de fabricación</b>
-            <span>Nombre, costo y duración estimada de cada etapa.</span>
+            <span>Nombre, costo y duración estimada de cada etapa. Esto es información interna: nunca se muestra en la web pública.</span>
           </div>
 
           <div className="stage-grid-head">
@@ -172,5 +202,76 @@ function ProductoModal({ producto, close, save }) {
         <Actions close={close} label={editar ? 'Guardar cambios' : 'Crear producto'} busy={busy} />
       </form>
     </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------
+// GALERÍA DE IMÁGENES DEL PRODUCTO
+// Sube archivos al servidor (server/uploads/productos) y administra cuál
+// es la imagen principal, la que se usa en las grillas del catálogo.
+// ---------------------------------------------------------------------
+function GestorImagenes({ productoId, imagenesIniciales, token }) {
+  const [imagenes, setImagenes] = useState(imagenesIniciales)
+  const [subiendo, setSubiendo] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { setImagenes(imagenesIniciales) }, [productoId])
+
+  const subirArchivo = async event => {
+    const archivo = event.target.files?.[0]
+    event.target.value = ''
+    if (!archivo) return
+    setSubiendo(true); setError('')
+    try {
+      const formData = new FormData()
+      formData.append('imagen', archivo)
+      const respuesta = await api.subir(`/productos/${productoId}/imagenes`, formData, token)
+      setImagenes(respuesta.imagenes)
+    } catch (err) { setError(err.message) } finally { setSubiendo(false) }
+  }
+
+  const marcarPrincipal = async imagenId => {
+    try {
+      const respuesta = await api.patch(`/productos/${productoId}/imagenes/${imagenId}/principal`, {}, token)
+      setImagenes(respuesta.imagenes)
+    } catch (err) { setError(err.message) }
+  }
+
+  const eliminarImagen = async imagenId => {
+    try {
+      const respuesta = await api.del(`/productos/${productoId}/imagenes/${imagenId}`, token)
+      setImagenes(respuesta.imagenes)
+    } catch (err) { setError(err.message) }
+  }
+
+  return (
+    <div className="stage-edit">
+      <div>
+        <b>Fotos del producto</b>
+        <span>La primera foto marcada como principal es la que aparece en el catálogo. Formatos: JPG, PNG, WEBP o GIF, hasta 8 MB.</span>
+      </div>
+
+      {imagenes.length > 0 && (
+        <div className="imagenes-grid">
+          {imagenes.map(imagen => (
+            <div className={`imagen-item ${imagen.es_principal ? 'principal' : ''}`} key={imagen.id}>
+              <img src={imagen.url} alt="" />
+              {imagen.es_principal && <span className="imagen-badge">Principal</span>}
+              <div className="imagen-acciones">
+                {!imagen.es_principal && <button type="button" onClick={() => marcarPrincipal(imagen.id)}>Hacer principal</button>}
+                <button type="button" className="danger-link" onClick={() => eliminarImagen(imagen.id)}>Quitar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <label className="add-stage" style={{ display: 'inline-flex', cursor: 'pointer' }}>
+        {subiendo ? 'Subiendo...' : '+ Agregar foto'}
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={subirArchivo} disabled={subiendo} style={{ display: 'none' }} />
+      </label>
+
+      {error && <p className="form-error">{error}</p>}
+    </div>
   )
 }

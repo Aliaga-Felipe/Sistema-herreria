@@ -29,8 +29,39 @@ export const configuracionPorDefecto = {
   recompensa_factor_ahorro: '0.5',
   recompensa_bono_minimo: '0',
   semaforo_tolerancia: '0.1',
-  moneda: 'ARS'
+  moneda: 'ARS',
+  negocio_nombre: 'El Atelier',
+  negocio_rubro: 'Herrería de diseño',
+  negocio_eslogan: 'Diseño que perdura',
+  negocio_descripcion: 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.',
+  negocio_whatsapp: '',
+  negocio_email: '',
+  negocio_telefono: '',
+  negocio_direccion: '',
+  negocio_instagram: '',
+  negocio_facebook: '',
+  negocio_horario: '',
+  negocio_hero_video: ''
 }
+
+// Claves de configuración seguras para exponer en la web pública. El
+// resto (parámetros de recompensas, semáforo, etc.) es información
+// interna del taller y nunca debe salir por /api/publico.
+export const clavesConfiguracionPublica = [
+  'negocio_nombre', 'negocio_rubro', 'negocio_eslogan', 'negocio_descripcion', 'negocio_whatsapp',
+  'negocio_email', 'negocio_telefono', 'negocio_direccion', 'negocio_instagram',
+  'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'moneda'
+]
+
+// Genera un slug URL-friendly a partir de un texto (nombre de producto o
+// categoría), sin acentos ni caracteres especiales.
+export const slugify = texto =>
+  String(texto || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+)|(-+$)/g, '')
+    .slice(0, 180)
 
 export async function leerConfiguracion(cliente = pool) {
   const { rows } = await cliente.query('SELECT clave, valor FROM configuracion')
