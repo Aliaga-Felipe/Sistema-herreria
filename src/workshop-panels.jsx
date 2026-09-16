@@ -2,16 +2,22 @@ import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
 import { api, dinero, duracion, fecha, iniciales, useData } from './api.js'
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
-import PanelProductos from './panel-productos.jsx'
+import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
+import PanelMateriales from './panel-materiales.jsx'
+import PanelProduccion from './panel-produccion.jsx'
+import PanelPresupuestos from './panel-presupuestos.jsx'
 
 export const seccionesAdmin = [
   ['Panel de control', '▦'],
   ['Pedidos', '⌁'],
+  ['Presupuestos', '⎙'],
   ['Productos', '▱'],
+  ['Materiales', '◆'],
+  ['Producción diaria', '◈'],
   ['Tareas', '✓'],
   ['Recompensas', '♛'],
   ['Estadísticas', '◫'],
@@ -30,7 +36,10 @@ export default function WorkshopPanels({ section, setSection }) {
   const vistas = {
     'Panel de control': <Dashboard ir={ir} />,
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
+    Presupuestos: <PanelPresupuestos />,
     Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
+    Materiales: <PanelMateriales />,
+    'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
@@ -475,6 +484,8 @@ function PanelConfiguracion() {
       {aviso && <p className="notice">{aviso}</p>}
 
       <ConfiguracionSitioPublico onGuardar={() => setAviso('Datos de la web pública actualizados.')} />
+
+      <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
 
       <ConfiguracionRecompensas onGuardar={() => setAviso('Parámetros guardados.')} />
 

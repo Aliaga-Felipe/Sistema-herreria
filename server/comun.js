@@ -41,7 +41,8 @@ export const configuracionPorDefecto = {
   negocio_instagram: '',
   negocio_facebook: '',
   negocio_horario: '',
-  negocio_hero_video: ''
+  negocio_hero_video: '',
+  costo_hora_mano_obra: '0'
 }
 
 // Claves de configuración seguras para exponer en la web pública. El
