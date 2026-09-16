@@ -292,6 +292,110 @@
 .titulo-seccion p { margin: 10px 0 0; max-width: 52ch; opacity: 0.78; font-size: 0.98rem; }
 .enlace-ver-todo { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.14em; border-bottom: 1px solid currentColor; padding-bottom: 3px; }
 
+/* Oculta visualmente pero deja legible para lectores de pantalla (el
+   título animado de "Piezas destacadas" se arma letra por letra, así que
+   lleva aria-hidden + este texto real como alternativa accesible). */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------
+   INICIO: "PIEZAS DESTACADAS" ANIMADO AL SCROLL
+   Todo centrado: el título arma sus letras desde los costados, debajo
+   entra la bajada centrada, después (con movimiento mínimo, solo aparece)
+   el enlace "Ver todo el catálogo" a la derecha, y por último las fotos
+   cuadradas de los productos destacados entran volando desde los costados
+   — cada una según qué tan lejos está del centro de la fila — y quedan
+   fijas ahí; no es un loop continuo. Todo el desplazamiento lo maneja
+   framer-motion en DestacadosAnimados.jsx; acá solo va la base visual con
+   la paleta ya establecida del sitio.
+   --------------------------------------------------------------------- */
+.destacados-animados {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 26px;
+}
+
+.destacados-titulo {
+  font-size: clamp(2rem, 5.4vw, 3.4rem);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.08;
+}
+.destacados-letra { display: inline-block; will-change: transform, opacity; }
+.destacados-letra-espacio { width: 0.3em; }
+
+.destacados-subtitulo {
+  max-width: 52ch;
+  margin: 0 auto;
+  opacity: 0.8;
+  font-size: 1rem;
+  will-change: transform, opacity;
+}
+
+/* Va entre la bajada y las fotos, pegado al borde derecho del contenedor. */
+.destacados-cta {
+  align-self: flex-end;
+  will-change: opacity;
+}
+
+.destacados-vacio { color: var(--texto-claro-muted); font-size: 0.94rem; }
+
+.destacados-logos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 22px;
+}
+.destacados-item {
+  /* Ancho fijo (no "flex-basis" ni %) + flex-shrink:0, así las N fotos
+     miden siempre exactamente lo mismo entre sí, sin importar cuántas
+     entren en la fila o el ancho del contenedor. El nombre del producto
+     va debajo, dentro del mismo bloque, con el mismo ancho que la foto. */
+  flex: 0 0 auto;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  will-change: transform, opacity;
+}
+.destacados-logo {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radio);
+  overflow: hidden;
+  background: var(--carbon);
+  border: 1px solid var(--borde-claro);
+}
+.destacados-logo a { display: block; width: 100%; height: 100%; transition: transform var(--transicion); }
+.destacados-logo a:hover { transform: scale(1.04); }
+.destacados-logo img { width: 100%; height: 100%; object-fit: cover; }
+.destacados-logo-sin-imagen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 1.6rem; }
+.destacados-nombre {
+  margin: 0;
+  text-align: center;
+  font-size: 0.86rem;
+  letter-spacing: 0.01em;
+  color: var(--texto-claro-muted);
+}
+@media (min-width: 720px) { .destacados-item { width: 320px; } }
+
+/* Con "reducir movimiento" activo, o mientras el JS todavía no calculó el
+   scroll, todo el contenido ya queda en su posición final (ver el hook
+   usePrefiereMenosMovimiento y los valores iniciales de cada motion.*). */
+@media (prefers-reduced-motion: reduce) {
+  .destacados-logo a:hover { transform: none; }
+}
+
 /* ---------------------------------------------------------------------
    GRILLA DE PRODUCTOS (estilo editorial, no tarjetas de e-commerce)
    --------------------------------------------------------------------- */
