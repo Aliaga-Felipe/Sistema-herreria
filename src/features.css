@@ -454,6 +454,54 @@
   color: #ff9d85;
 }
 
+/* Zona de carga de fotos: envuelve el botón ".add-stage" existente (que
+   no se toca, ver comentario en production.css) dentro de un recuadro con
+   borde punteado para que se lea claramente como un espacio de carga.
+   Admite arrastrar y soltar, y "Ctrl+V" para pegar desde el portapapeles. */
+.zona-subida {
+  margin-top: 12px;
+  border: 1.5px dashed #5b5048;
+  border-radius: 3px;
+  background: #17140f;
+  padding: 22px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.zona-subida-icono {
+  font-size: 22px;
+  opacity: 0.85;
+}
+
+.zona-subida-texto {
+  margin: 0;
+  font-size: 10px;
+  color: #ac9d92;
+  line-height: 1.5;
+}
+
+.zona-subida-texto b {
+  color: #f0ab8d;
+}
+
+.zona-subida .add-stage {
+  margin-top: 2px;
+}
+
+.zona-subida.arrastrando {
+  border-color: #e8a383;
+  background: #1f1913;
+}
+
+.zona-subida.subiendo {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 /* ==========================================
    CONFIGURACIÓN: VIDEO DE FONDO DEL HERO
    (usado por workshop-panels.jsx, GestorVideoHero)

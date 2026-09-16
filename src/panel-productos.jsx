@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api, dinero, duracion, useData } from './api.js'
 import { Actions, Empty, Heading, Modal, useAviso } from './ui.jsx'
 
@@ -197,9 +197,12 @@ function ProductoModal({ producto, categorias, materialesDisponibles, costoHora,
           <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
         </label>
 
-        <label className="config-check">
+        <label className="config-check destacado-check">
           <input type="checkbox" checked={destacado} onChange={event => setDestacado(event.target.checked)} />
-          Mostrar como producto destacado en la portada de la web
+          <span className="destacado-check-texto">
+            <b>★ Producto destacado</b>
+            <small>Se muestra en la sección "Productos destacados" de la portada de la web</small>
+          </span>
         </label>
 
         {editar
@@ -333,21 +336,52 @@ function GestorImagenes({ productoId, imagenesIniciales, token }) {
   const [imagenes, setImagenes] = useState(imagenesIniciales)
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState('')
+  const [arrastrando, setArrastrando] = useState(false)
+  const zonaRef = useRef(null)
 
   useEffect(() => { setImagenes(imagenesIniciales) }, [productoId])
 
-  const subirArchivo = async event => {
-    const archivo = event.target.files?.[0]
-    event.target.value = ''
+  // Punto único de subida: lo usan tanto el selector de archivos como el
+  // arrastrar-y-soltar y el pegado (Ctrl+V) de una imagen del portapapeles.
+  const subirImagen = async archivo => {
     if (!archivo) return
+    if (!archivo.type || !archivo.type.startsWith('image/')) { setError('Solo se pueden subir imágenes.'); return }
     setSubiendo(true); setError('')
     try {
       const formData = new FormData()
-      formData.append('imagen', archivo)
+      formData.append('imagen', archivo, archivo.name || `foto-pegada-${Date.now()}.png`)
       const respuesta = await api.subir(`/productos/${productoId}/imagenes`, formData, token)
       setImagenes(respuesta.imagenes)
     } catch (err) { setError(err.message) } finally { setSubiendo(false) }
   }
+
+  const subirArchivo = event => {
+    const archivo = event.target.files?.[0]
+    event.target.value = ''
+    subirImagen(archivo)
+  }
+
+  const alSoltar = event => {
+    event.preventDefault()
+    setArrastrando(false)
+    subirImagen(event.dataTransfer.files?.[0])
+  }
+
+  // Mientras esta galería está montada (el modal de edición abierto), un
+  // Ctrl+V en cualquier parte de la página sube la imagen del portapapeles,
+  // sin necesidad de hacer foco en un campo puntual.
+  useEffect(() => {
+    const alPegar = event => {
+      const items = event.clipboardData?.items
+      if (!items) return
+      const item = Array.from(items).find(item => item.type && item.type.startsWith('image/'))
+      if (!item) return
+      event.preventDefault()
+      subirImagen(item.getAsFile())
+    }
+    window.addEventListener('paste', alPegar)
+    return () => window.removeEventListener('paste', alPegar)
+  }, [productoId, token])
 
   const marcarPrincipal = async imagenId => {
     try {
@@ -385,10 +419,24 @@ function GestorImagenes({ productoId, imagenesIniciales, token }) {
         </div>
       )}
 
-      <label className="add-stage" style={{ display: 'inline-flex', cursor: 'pointer' }}>
-        {subiendo ? 'Subiendo...' : '+ Agregar foto'}
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={subirArchivo} disabled={subiendo} style={{ display: 'none' }} />
-      </label>
+      <div
+        ref={zonaRef}
+        className={`zona-subida${arrastrando ? ' arrastrando' : ''}${subiendo ? ' subiendo' : ''}`}
+        onDragOver={event => { event.preventDefault(); setArrastrando(true) }}
+        onDragLeave={() => setArrastrando(false)}
+        onDrop={alSoltar}
+      >
+        <span className="zona-subida-icono" aria-hidden="true">🖼️</span>
+        <p className="zona-subida-texto">
+          {subiendo
+            ? 'Subiendo...'
+            : <>Arrastrá una foto acá o pegala con <b>Ctrl+V</b></>}
+        </p>
+        <label className="add-stage" style={{ display: 'inline-flex', cursor: 'pointer' }}>
+          {subiendo ? 'Subiendo...' : '+ Elegir foto desde mis archivos'}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={subirArchivo} disabled={subiendo} style={{ display: 'none' }} />
+        </label>
+      </div>
 
       {error && <p className="form-error">{error}</p>}
     </div>

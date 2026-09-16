@@ -565,6 +565,41 @@
     width: auto;
 }
 
+/* Checkbox de "producto destacado" en el formulario de producto: se
+   destaca con un recuadro y color propio (sin tocar ".config-check",
+   que se comparte con Recompensas) para que sea fácil de encontrar. */
+.config-check.destacado-check {
+    align-items: flex-start;
+    border: 1px solid #5b3e2e;
+    border-radius: 3px;
+    background: linear-gradient(180deg, rgba(232, 163, 131, 0.12), rgba(232, 163, 131, 0.03));
+    padding: 11px 13px;
+}
+
+.destacado-check input {
+    width: 17px;
+    height: 17px;
+    margin-top: 1px;
+    accent-color: #e8a383;
+}
+
+.destacado-check-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.destacado-check-texto b {
+    font-size: 12px;
+    color: #f7bb96;
+}
+
+.destacado-check-texto small {
+    font-size: 9px;
+    font-weight: 400;
+    color: #ac9d92;
+}
+
 /* =========================
    CONFIGURACIÓN — DATOS DE LA WEB PÚBLICA
    Mismos estilos visuales que los inputs de "Nuevos productos"
