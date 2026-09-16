@@ -5,23 +5,38 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, fallo, slugify } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, fallo, leerConfiguracion, slugify } from '../comun.js'
 
 const router = Router()
 
 const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.slug, p.creado_en,
-    p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug,
+    p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre,
     COALESCE(SUM(e.costo), 0)::float8 AS costo_total,
     COALESCE(SUM(e.minutos_estimados), 0)::int AS minutos_totales,
     (p.precio_venta - COALESCE(SUM(e.costo), 0))::float8 AS margen,
     COALESCE(json_agg(json_build_object('id', e.id, 'nombre', e.nombre, 'descripcion', e.descripcion, 'orden', e.orden,
       'costo', e.costo::float8, 'minutos_estimados', e.minutos_estimados) ORDER BY e.orden) FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
     COALESCE((SELECT json_agg(jsonb_build_object('id', pi.id, 'url', pi.url, 'orden', pi.orden, 'es_principal', pi.es_principal) ORDER BY pi.orden)
-      FROM producto_imagenes pi WHERE pi.producto_id = p.id), '[]') AS imagenes
+      FROM producto_imagenes pi WHERE pi.producto_id = p.id), '[]') AS imagenes,
+    COALESCE((SELECT SUM(pm.cantidad * m.precio_unitario) FROM producto_materiales pm JOIN materiales m ON m.id = pm.material_id WHERE pm.producto_id = p.id), 0)::float8 AS costo_materiales,
+    COALESCE((SELECT json_agg(jsonb_build_object('id', pm.id, 'material_id', m.id, 'nombre', m.nombre, 'unidad_medida', m.unidad_medida,
+        'precio_unitario', m.precio_unitario::float8, 'cantidad', pm.cantidad::float8, 'subtotal', (pm.cantidad * m.precio_unitario)::float8) ORDER BY m.nombre)
+      FROM producto_materiales pm JOIN materiales m ON m.id = pm.material_id WHERE pm.producto_id = p.id), '[]') AS materiales
   FROM productos p
   LEFT JOIN categorias c ON c.id = p.categoria_id
   LEFT JOIN etapas_producto e ON e.producto_id = p.id
   GROUP BY p.id, c.nombre, c.slug`
+
+// Agrega el desglose de costo calculado (materiales + mano de obra) a cada
+// fila. Convive con costo_total (suma de costos de etapa) sin reemplazarlo:
+// son dos formas de costear el producto que el admin puede comparar.
+const conCostoCalculado = async filas => {
+  const costoHora = Number((await leerConfiguracion()).costo_hora_mano_obra) || 0
+  return filas.map(fila => {
+    const costoManoObra = decimal((Number(fila.horas_hombre) || 0) * costoHora)
+    return { ...fila, costo_hora_mano_obra: costoHora, costo_mano_obra: costoManoObra, costo_calculado_total: decimal(fila.costo_materiales + costoManoObra) }
+  })
+}
 
 // Valida y normaliza las etapas que define el admin para un producto.
 const normalizarEtapas = etapas => {
@@ -39,6 +54,28 @@ const guardarEtapas = async (cliente, productoId, etapas) => {
   for (const etapa of etapas) {
     await cliente.query('INSERT INTO etapas_producto (producto_id, nombre, descripcion, orden, costo, minutos_estimados) VALUES ($1, $2, $3, $4, $5, $6)',
       [productoId, etapa.nombre, etapa.descripcion, etapa.orden, etapa.costo, etapa.minutos_estimados])
+  }
+}
+
+// Valida y normaliza los materiales que el admin asocia a un producto
+// (opcional: un producto puede no tener materiales cargados todavía).
+const normalizarMateriales = materiales => {
+  if (!Array.isArray(materiales)) return []
+  const vistos = new Set()
+  return materiales.filter(item => item?.material_id).map(item => {
+    if (vistos.has(String(item.material_id))) throw fallo('No repitas el mismo material en la lista.')
+    vistos.add(String(item.material_id))
+    const cantidad = decimal(item.cantidad)
+    if (cantidad <= 0) throw fallo('Cada material necesita una cantidad mayor a cero.')
+    return { material_id: item.material_id, cantidad }
+  })
+}
+
+const guardarMateriales = async (cliente, productoId, materiales) => {
+  await cliente.query('DELETE FROM producto_materiales WHERE producto_id = $1', [productoId])
+  for (const item of materiales) {
+    await cliente.query('INSERT INTO producto_materiales (producto_id, material_id, cantidad) VALUES ($1, $2, $3)',
+      [productoId, item.material_id, item.cantidad])
   }
 }
 
@@ -69,21 +106,23 @@ const validarCategoria = async categoriaId => {
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const soloActivos = req.query.activos === 'true'
   const { rows } = await pool.query(`${consultaProductos}${soloActivos ? ' HAVING p.activo' : ''} ORDER BY p.nombre`)
-  res.json(rows)
+  res.json(await conCostoCalculado(rows))
 }))
 
 router.get('/:id', auth(), asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`${consultaProductos} HAVING p.id = $1`, [req.params.id])
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-  res.json(rows[0])
+  res.json((await conCostoCalculado(rows))[0])
 }))
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false } = req.body
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [] } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = decimal(precio_venta)
   if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
+  const horasHombre = Math.max(0, decimal(horas_hombre))
   const normalizadas = normalizarEtapas(etapas)
+  const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
 
   const cliente = await pool.connect()
@@ -91,22 +130,25 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     await cliente.query('BEGIN')
     const slug = await generarSlugUnico(cliente, nombre.trim())
     const { rows } = await cliente.query(
-      'INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado)]
+      'INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre]
     )
     await guardarEtapas(cliente, rows[0].id, normalizadas)
+    await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     const creado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
-    res.status(201).json(creado.rows[0])
+    res.status(201).json((await conCostoCalculado(creado.rows))[0])
   } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false } = req.body
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [] } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = decimal(precio_venta)
   if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
+  const horasHombre = Math.max(0, decimal(horas_hombre))
   const normalizadas = normalizarEtapas(etapas)
+  const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
 
   const cliente = await pool.connect()
@@ -120,16 +162,17 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
       : await generarSlugUnico(cliente, nombre.trim(), req.params.id)
 
     const { rows } = await cliente.query(
-      'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, actualizado_en = NOW() WHERE id = $7 RETURNING id',
-      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), req.params.id]
+      'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, horas_hombre = $7, actualizado_en = NOW() WHERE id = $8 RETURNING id',
+      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre, req.params.id]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
     // Los pedidos ya generados guardan copia de nombre, costo y minutos,
     // así que reescribir las etapas no altera la producción en curso.
     await guardarEtapas(cliente, rows[0].id, normalizadas)
+    await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
-    res.json(actualizado.rows[0])
+    res.json((await conCostoCalculado(actualizado.rows))[0])
   } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
 }))
 

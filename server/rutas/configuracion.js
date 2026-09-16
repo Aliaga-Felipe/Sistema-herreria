@@ -29,7 +29,7 @@ router.put('/', auth(['admin']), asyncRoute(async (req, res) => {
   const claves = Object.keys(valores).filter(clave => clave in configuracionPorDefecto)
   if (!claves.length) throw fallo('No hay parámetros válidos para guardar.')
 
-  const numericas = ['recompensa_valor_hora', 'recompensa_factor_ahorro', 'recompensa_bono_minimo', 'semaforo_tolerancia']
+  const numericas = ['recompensa_valor_hora', 'recompensa_factor_ahorro', 'recompensa_bono_minimo', 'semaforo_tolerancia', 'costo_hora_mano_obra']
   for (const clave of claves) {
     if (numericas.includes(clave) && !(Number(valores[clave]) >= 0)) throw fallo(`El parámetro "${clave}" debe ser un número mayor o igual a cero.`)
   }
