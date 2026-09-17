@@ -626,6 +626,22 @@
 .material-item h4 { font-size: 1.02rem; margin-bottom: 8px; }
 .material-item p { font-size: 0.84rem; opacity: 0.72; line-height: 1.6; }
 
+/* Ubicación: mapa a la izquierda, datos a la derecha (misma grilla y
+   breakpoint que .split-editorial). En móvil se apila: mapa arriba,
+   información abajo. */
+.ubicacion-grid { display: grid; grid-template-columns: 1fr; gap: 32px; align-items: stretch; margin-top: 64px; }
+@media (min-width: 900px) { .ubicacion-grid { grid-template-columns: 1fr 1fr; gap: 72px; } }
+
+.ubicacion-mapa { border: 1px solid var(--borde-claro); border-radius: var(--radio); overflow: hidden; aspect-ratio: 4/3; }
+@media (min-width: 900px) { .ubicacion-mapa { aspect-ratio: auto; min-height: 320px; height: 100%; } }
+.ubicacion-mapa iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.ubicacion-info { display: flex; flex-direction: column; justify-content: center; }
+.ubicacion-info h3 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); margin-bottom: 18px; }
+.ubicacion-direccion { font-style: normal; line-height: 1.8; opacity: 0.82; font-size: 1rem; margin: 0 0 8px; }
+.ubicacion-horario { margin-top: 18px; }
+.ubicacion-grid .ubicacion-horario article { border-bottom: none; padding: 16px 0 0; }
+
 /* ---------------------------------------------------------------------
    CTA FINAL
    --------------------------------------------------------------------- */
