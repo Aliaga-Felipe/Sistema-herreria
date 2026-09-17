@@ -2,12 +2,17 @@ import React, { useEffect, useState } from 'react'
 import { api, fecha, iniciales, useData, useSession } from './api.js'
 import { Actions, Empty, Heading, Modal, Stat, useAviso } from './ui.jsx'
 
-export default function PanelUsuarios({ intencion, limpiarIntencion }) {
+export default function PanelUsuarios({ intencion, limpiarIntencion, rol }) {
   const usuarios = useData('/usuarios')
   const { session } = useSession()
   const { mostrar, nodo } = useAviso()
   const [creando, setCreando] = useState(false)
   const [clave, setClave] = useState(null)
+  // Un "admin" común ve esta sección y también puede crear cuentas, pero
+  // con permisos acotados: solo restablece la clave de un empleado, y
+  // solo puede asignar (al crear o al cambiar el rol) el rol "empleado",
+  // nunca "admin". "super_admin" no tiene ninguna de estas restricciones.
+  const esSuperAdmin = rol === 'super_admin'
 
   useEffect(() => {
     if (intencion === 'nuevo') { setCreando(true); limpiarIntencion?.() }
@@ -55,7 +60,7 @@ export default function PanelUsuarios({ intencion, limpiarIntencion }) {
       <section className="stats-grid dashboard-stats">
         <Stat label="Usuarios" value={usuarios.data.length} />
         <Stat label="Empleados activos" value={empleados.filter(usuario => usuario.activo).length} />
-        <Stat label="Administradores" value={usuarios.data.filter(usuario => usuario.rol === 'admin').length} />
+        <Stat label="Administradores" value={usuarios.data.filter(usuario => usuario.rol === 'admin' || usuario.rol === 'super_admin').length} />
         <Stat label="Cuentas desactivadas" value={usuarios.data.filter(usuario => !usuario.activo).length} />
       </section>
 
@@ -73,25 +78,46 @@ export default function PanelUsuarios({ intencion, limpiarIntencion }) {
 
               <label className="status-control">
                 Rol
+                {/* Un "admin" común solo tiene "empleado" para elegir (nunca
+                    puede asignar "admin") y no puede tocar el rol de una
+                    cuenta "super_admin". Un "super_admin" no tiene esa
+                    restricción (tiene permiso total); solo se bloquea el
+                    selector para su propia cuenta. La asignación del rol
+                    "super_admin" en sí sigue siendo una acción manual, ver
+                    server/scripts/configurar-super-admin.js. */}
                 <select
                   value={usuario.rol}
-                  disabled={String(usuario.id) === String(session.usuario.id)}
+                  disabled={String(usuario.id) === String(session.usuario.id) || (usuario.rol === 'super_admin' && !esSuperAdmin)}
                   onChange={event => cambiarRol(usuario, event.target.value)}
                 >
                   <option value="empleado">empleado</option>
-                  <option value="admin">admin</option>
+                  {(esSuperAdmin || usuario.rol === 'admin') && <option value="admin">admin</option>}
+                  {usuario.rol === 'super_admin' && <option value="super_admin">super_admin</option>}
                 </select>
               </label>
 
               <div className="card-buttons">
-                <button onClick={() => setClave(usuario)}>Restablecer clave</button>
-                <button
-                  className={usuario.activo ? 'danger-link' : ''}
-                  disabled={String(usuario.id) === String(session.usuario.id)}
-                  onClick={() => alternarActivo(usuario)}
-                >
-                  {usuario.activo ? 'Desactivar' : 'Reactivar'}
-                </button>
+                {/* Un "admin" común solo puede restablecer la clave de un
+                    empleado: para las demás filas (otro admin) el botón
+                    directamente no se muestra, en vez de mostrarse
+                    deshabilitado. "super_admin" lo ve siempre. */}
+                {(esSuperAdmin || usuario.rol === 'empleado') && (
+                  <button onClick={() => setClave(usuario)}>
+                    Restablecer clave
+                  </button>
+                )}
+                {/* Activar/desactivar cuentas es exclusivo de "super_admin":
+                    un "admin" común nunca ve este botón, en ninguna fila. */}
+                {esSuperAdmin && (
+                  <button
+                    className={usuario.activo ? 'danger-link' : ''}
+                    disabled={String(usuario.id) === String(session.usuario.id)}
+                    title={String(usuario.id) === String(session.usuario.id) ? 'No podés desactivar tu propia cuenta.' : undefined}
+                    onClick={() => alternarActivo(usuario)}
+                  >
+                    {usuario.activo ? 'Desactivar' : 'Reactivar'}
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -100,14 +126,14 @@ export default function PanelUsuarios({ intencion, limpiarIntencion }) {
         <Empty title="No hay usuarios cargados" text="Creá la primera cuenta de empleado." action={() => setCreando(true)} label="Nuevo empleado" />
       )}
 
-      {creando && <UsuarioModal close={() => setCreando(false)} save={crear} />}
+      {creando && <UsuarioModal close={() => setCreando(false)} save={crear} esSuperAdmin={esSuperAdmin} />}
       {clave && <ClaveModal usuario={clave} close={() => setClave(null)} save={restablecer} />}
     </>
   )
 }
 
-function UsuarioModal({ close, save }) {
-  const [form, setForm] = useState({ nombre: '', email: '', telefono: '', contrasena: '', rol: 'empleado' })
+function UsuarioModal({ close, save, esSuperAdmin }) {
+  const [form, setForm] = useState({ nombre: '', email: '', contrasena: '', rol: 'empleado' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const cambiar = clave => event => setForm({ ...form, [clave]: event.target.value })
@@ -124,15 +150,17 @@ function UsuarioModal({ close, save }) {
       <form onSubmit={enviar}>
         <label>Nombre completo<input required value={form.nombre} onChange={cambiar('nombre')} /></label>
         <label>Correo electrónico<input required type="email" value={form.email} onChange={cambiar('email')} /></label>
-        <label>Teléfono<input value={form.telefono} onChange={cambiar('telefono')} placeholder="Opcional" /></label>
         <label>Contraseña inicial
           <input required minLength="8" type="password" value={form.contrasena} onChange={cambiar('contrasena')} />
           <small>Mínimo 8 caracteres. Compartila con la persona para su primer ingreso.</small>
         </label>
         <label>Rol
+          {/* Un "admin" común solo puede crear cuentas de empleado: la
+              opción "admin" solo aparece para "super_admin" (misma regla
+              que al cambiar el rol de una cuenta existente). */}
           <select value={form.rol} onChange={cambiar('rol')}>
             <option value="empleado">empleado</option>
-            <option value="admin">admin</option>
+            {esSuperAdmin && <option value="admin">admin</option>}
           </select>
         </label>
 

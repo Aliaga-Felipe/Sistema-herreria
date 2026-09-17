@@ -25,11 +25,26 @@ export const seccionesAdmin = [
   ['Configuración', '⚙']
 ]
 
-export default function WorkshopPanels({ section, setSection }) {
+// Secciones exclusivas de "super_admin": un "admin" común no las ve en el
+// menú ni puede entrar a ellas (y la API tampoco se lo permite, ver
+// auth(['super_admin']) en rutas/configuracion.js). "Usuarios" en cambio
+// la ven los dos roles: lo que cambia es qué puede hacer un "admin" común
+// ahí adentro (ver PanelUsuarios y rutas/usuarios.js: no puede crear
+// cuentas, solo restablece la clave de un empleado y solo puede asignar
+// el rol "empleado", nunca "admin").
+export const SECCIONES_SUPER_ADMIN = ['Configuración']
+
+// Filtra el menú según el rol: un "admin" común nunca ve las secciones
+// de arriba; "super_admin" las ve todas.
+export const seccionesPara = rol =>
+  seccionesAdmin.filter(([nombre]) => rol === 'super_admin' || !SECCIONES_SUPER_ADMIN.includes(nombre))
+
+export default function WorkshopPanels({ section, setSection, rol }) {
   // `intencion` deja que los accesos directos del panel abran un formulario
   // en la sección de destino sin pasos intermedios.
   const [intencion, setIntencion] = useState(null)
   const limpiar = () => setIntencion(null)
+  const esSuperAdmin = rol === 'super_admin'
 
   const ir = (destino, proposito = null) => { setIntencion(proposito); setSection(destino) }
 
@@ -41,13 +56,19 @@ export default function WorkshopPanels({ section, setSection }) {
     Materiales: <PanelMateriales />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
-    Recompensas: <PanelRecompensas />,
+    Recompensas: <PanelRecompensas rol={rol} />,
     Estadísticas: <PanelEstadisticas />,
-    Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} />,
+    Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
     Configuración: <PanelConfiguracion />
   }
 
-  return vistas[section] || vistas['Panel de control']
+  // Defensa extra: aunque el menú ya oculta estos botones para un "admin"
+  // común, si por algún motivo quedara seleccionada una sección exclusiva
+  // (por ejemplo, al bajar de rol con la sesión abierta) se vuelve al
+  // panel de control en vez de mostrarla.
+  const seccionSegura = (!esSuperAdmin && SECCIONES_SUPER_ADMIN.includes(section)) ? 'Panel de control' : section
+
+  return vistas[seccionSegura] || vistas['Panel de control']
 }
 
 // ---------------------------------------------------------------------
@@ -76,6 +97,7 @@ function Dashboard({ ir }) {
         acciones={[
           { icono: '⌁', label: 'Nuevo pedido', texto: 'Cliente y productos', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
           { icono: '▱', label: 'Nuevo producto', texto: 'Precio y etapas', onClick: () => ir('Productos', 'nuevo') },
+          // "admin" y "super_admin" pueden crear cuentas (ver PanelUsuarios).
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
           { icono: '✓', label: 'Asignar tareas', texto: `${trabajo.sin_asignar} etapas sin dueño`, onClick: () => ir('Tareas') },
           { icono: '◫', label: 'Estadísticas', texto: 'Gastos y ganancias', onClick: () => ir('Estadísticas') },

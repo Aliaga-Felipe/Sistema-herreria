@@ -6,7 +6,7 @@ import './auth.css'
 import './features.css'
 import './production.css'
 import { SessionContext, api, iniciales, useSession } from './api.js'
-import WorkshopPanels, { seccionesAdmin } from './workshop-panels.jsx'
+import WorkshopPanels, { seccionesPara } from './workshop-panels.jsx'
 import MisTareas from './mis-tareas.jsx'
 // La web pública vive en /web-publica, fuera de /src, para no mezclarse
 // con los archivos del sistema interno (paneles, auth, etc.).
@@ -18,6 +18,10 @@ import Categorias from '../web-publica/Categorias.jsx'
 import Nosotros from '../web-publica/Nosotros.jsx'
 import Contacto from '../web-publica/Contacto.jsx'
 
+// "admin" y "super_admin" comparten el panel (Shell); lo que cambia entre
+// ellos es qué secciones ve cada uno (ver seccionesPara en workshop-panels.jsx).
+const esRolAdministrativo = rol => rol === 'admin' || rol === 'super_admin'
+
 function App() {
   const [session, setSession] = useState(() => { try { return JSON.parse(localStorage.getItem('atelier_session')) } catch { return null } })
   const start = data => { localStorage.setItem('atelier_session', JSON.stringify(data)); setSession(data) }
@@ -28,8 +32,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/iniciar-sesion" element={<Public><Login /></Public>} />
-          <Route path="/registro" element={<Public><Register /></Public>} />
-          <Route path="/admin" element={<Protected roles={['admin']}><Admin /></Protected>} />
+          <Route path="/admin" element={<Protected roles={['admin', 'super_admin']}><Admin /></Protected>} />
           <Route path="/mis-tareas" element={<Protected roles={['empleado']}><Empleado /></Protected>} />
 
           {/* Web pública: catálogo de la herrería, sin login. */}
@@ -50,7 +53,7 @@ function App() {
 
 function Landing() {
   const { session } = useSession()
-  return <Navigate to={session ? (session.usuario.rol === 'admin' ? '/admin' : '/mis-tareas') : '/iniciar-sesion'} replace />
+  return <Navigate to={session ? (esRolAdministrativo(session.usuario.rol) ? '/admin' : '/mis-tareas') : '/iniciar-sesion'} replace />
 }
 function Public({ children }) { const { session } = useSession(); return session ? <Landing /> : children }
 
@@ -98,7 +101,7 @@ function Login() {
     try {
       const data = await api.post('/auth/iniciar-sesion', { email, contrasena: password })
       start(data)
-      navigate(data.usuario.rol === 'admin' ? '/admin' : '/mis-tareas', { replace: true })
+      navigate(esRolAdministrativo(data.usuario.rol) ? '/admin' : '/mis-tareas', { replace: true })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
@@ -110,39 +113,6 @@ function Login() {
         {error && <p className="form-error">{error}</p>}
         <button className="primary full" disabled={busy}>{busy ? 'Ingresando...' : 'Iniciar sesión'}</button>
       </form>
-      <p className="auth-foot">¿No tenés cuenta? <NavLink to="/registro">Registrate</NavLink></p>
-    </AuthPage>
-  )
-}
-
-function Register() {
-  const navigate = useNavigate()
-  const [form, setForm] = useState({ nombre: '', email: '', password: '' })
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [busy, setBusy] = useState(false)
-  const change = key => event => setForm({ ...form, [key]: event.target.value })
-
-  const submit = async event => {
-    event.preventDefault(); setBusy(true); setError('')
-    try {
-      const data = await api.post('/auth/registro', { nombre: form.nombre, email: form.email, contrasena: form.password })
-      setNotice(`${data.mensaje} Ya podés iniciar sesión.`)
-      setTimeout(() => navigate('/iniciar-sesion'), 1300)
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
-
-  return (
-    <AuthPage title="Crear cuenta" description="Toda cuenta nueva se registra con el rol de empleado.">
-      <form className="auth-form" onSubmit={submit}>
-        <label>Nombre completo<input required value={form.nombre} onChange={change('nombre')} /></label>
-        <label>Correo electrónico<input required type="email" value={form.email} onChange={change('email')} /></label>
-        <label>Contraseña<input required minLength="8" type="password" value={form.password} onChange={change('password')} /><small>Mínimo 8 caracteres.</small></label>
-        {error && <p className="form-error">{error}</p>}
-        {notice && <p className="form-success">{notice}</p>}
-        <button className="primary full" disabled={busy}>{busy ? 'Creando...' : 'Crear cuenta'}</button>
-      </form>
-      <p className="auth-foot">¿Ya tenés una cuenta? <NavLink to="/iniciar-sesion">Iniciá sesión</NavLink></p>
     </AuthPage>
   )
 }
@@ -176,7 +146,7 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
         <header>
           <div className="crumb">{title}</div>
           <span className={`role-badge ${session.usuario.rol}`} title={session.usuario.rol}>
-            {session.usuario.rol === 'admin' ? 'A' : 'O'}
+            {session.usuario.rol === 'super_admin' ? 'S' : session.usuario.rol === 'admin' ? 'A' : 'O'}
           </span>
         </header>
         <div className="content auth-content">{children}</div>
@@ -186,10 +156,12 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
 }
 
 function Admin() {
+  const { session } = useSession()
   const [section, setSection] = useState('Panel de control')
+  const rol = session.usuario.rol
   return (
-    <Shell title={section} secciones={seccionesAdmin} seccionActiva={section} onSeccion={setSection}>
-      <WorkshopPanels section={section} setSection={setSection} />
+    <Shell title={section} secciones={seccionesPara(rol)} seccionActiva={section} onSeccion={setSection}>
+      <WorkshopPanels section={section} setSection={setSection} rol={rol} />
     </Shell>
   )
 }

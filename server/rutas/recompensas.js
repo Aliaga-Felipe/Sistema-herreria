@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, fallo } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, esAdmin, fallo } from '../comun.js'
 
 const router = Router()
 
@@ -10,7 +10,7 @@ const consultaRecompensas = `SELECT r.id, r.usuario_id, u.nombre AS empleado, r.
   FROM recompensas r LEFT JOIN usuarios u ON u.id = r.usuario_id LEFT JOIN pedidos p ON p.id = r.pedido_id`
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
-  const admin = req.user.rol === 'admin'
+  const admin = esAdmin(req.user.rol)
   const { rows } = await pool.query(`${consultaRecompensas}${admin ? '' : ' WHERE r.usuario_id = $1'} ORDER BY r.otorgado_en DESC`, admin ? [] : [req.user.id])
   res.json(rows)
 }))
