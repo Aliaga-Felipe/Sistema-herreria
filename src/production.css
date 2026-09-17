@@ -199,6 +199,13 @@
     margin: 8px 0 0;
 }
 
+/* Fila de registro diario de producción: producto, objetivo, cantidad
+   producida y el botón de guardar (ver panel-produccion.jsx). */
+.registro-grid-head,
+.registro-grid-row {
+    grid-template-columns: 1.4fr .5fr .7fr 100px;
+}
+
 /* =========================
    TABLAS DE PEDIDOS Y TAREAS
 */
@@ -343,6 +350,12 @@
     padding: 5px 0;
 }
 
+/* Ítem de presupuesto: agrega la descripción libre a la fila del pedido
+   (producto opcional, descripción, cantidad, precio, quitar). */
+.item-linea-presupuesto {
+    grid-template-columns: 1fr 1.4fr 60px 90px 26px;
+}
+
 .item-etapas {
     margin-top: 10px;
     display: grid;
@@ -440,6 +453,12 @@
     opacity: .45;
 }
 
+/* Fila de ítem de presupuesto en el detalle: descripción, precio unitario
+   y subtotal, sin las columnas de estado/responsable de una etapa. */
+.etapa-fila-presupuesto {
+    grid-template-columns: 2fr .8fr .8fr;
+}
+
 .etapa-tiempo b {
     color: var(--accent);
 }
@@ -465,6 +484,16 @@
 .productos-head,
 .productos-fila {
     grid-template-columns: 1.6fr .6fr 1fr 1fr 1fr;
+}
+
+.materiales-head,
+.materiales-fila {
+    grid-template-columns: 1.4fr .7fr .9fr .8fr 1.4fr;
+}
+
+.produccion-head,
+.produccion-fila {
+    grid-template-columns: .9fr 1.4fr .8fr .8fr 1fr;
 }
 
 .ranking-head {
@@ -534,6 +563,122 @@
 
 .config-check input {
     width: auto;
+}
+
+/* Checkbox de "producto destacado" en el formulario de producto: se
+   destaca con un recuadro y color propio (sin tocar ".config-check",
+   que se comparte con Recompensas) para que sea fácil de encontrar. */
+.config-check.destacado-check {
+    align-items: flex-start;
+    border: 1px solid #5b3e2e;
+    border-radius: 3px;
+    background: linear-gradient(180deg, rgba(232, 163, 131, 0.12), rgba(232, 163, 131, 0.03));
+    padding: 11px 13px;
+}
+
+.destacado-check input {
+    width: 17px;
+    height: 17px;
+    margin-top: 1px;
+    accent-color: #e8a383;
+}
+
+.destacado-check-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.destacado-check-texto b {
+    font-size: 12px;
+    color: #f7bb96;
+}
+
+.destacado-check-texto small {
+    font-size: 9px;
+    font-weight: 400;
+    color: #ac9d92;
+}
+
+/* =========================
+   CONFIGURACIÓN — DATOS DE LA WEB PÚBLICA
+   Mismos estilos visuales que los inputs de "Nuevos productos"
+   (ver ".modal input" / ".modal textarea" en styles.css): misma
+   tipografía, color, fondo, borde, focus y radio. Se reutiliza el
+   contenedor ".config-card" (mismo fondo/borde que Recompensas) pero
+   los campos de este formulario en particular usan ".config-card-publico"
+   para no alterar los inputs numéricos de Recompensas.
+*/
+.config-card-publico {
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.config-card-publico .config-grid {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+/* Combinador directo (">"): solo los labels de los campos del negocio,
+   nunca el label "+ Reemplazar video" del selector de archivo (ese ya
+   tiene su propio estilo de botón vía ".add-stage" y no debe tocarse). */
+.config-card-publico > .config-grid > label,
+.config-card-publico > label {
+    display: block;
+    font-weight: 700;
+    font-size: 10px;
+    margin: 13px 0;
+}
+
+.config-card-publico input,
+.config-card-publico textarea,
+.config-card-publico .campo-auto {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: #121110;
+    border: 1px solid #46403a;
+    color: var(--text);
+    padding: 10px;
+    margin-top: 7px;
+    font: 11px Manrope;
+    outline-color: #e8a383;
+}
+
+.config-card-publico textarea {
+    height: 65px;
+    resize: vertical;
+}
+
+/* El campo de descripción se ve como un input de una línea (mismo
+   alto mínimo que los demás) pero crece solo, en altura, a medida que
+   el texto ocupa más de una línea: no es un <textarea>, es un
+   <div contenteditable> con esta clase. */
+.config-card-publico .campo-auto {
+    min-height: 39px;
+    height: auto;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    cursor: text;
+}
+
+.config-card-publico .campo-auto:empty::before {
+    content: attr(data-placeholder);
+    color: #746a62;
+}
+
+.config-card-publico .campo-auto:focus {
+    outline: 1px solid #e8a383;
+    outline-offset: 0;
+}
+
+@media (max-width: 480px) {
+    .config-card-publico {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
 }
 
 .rango {

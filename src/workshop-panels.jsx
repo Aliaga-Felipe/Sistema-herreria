@@ -1,19 +1,23 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
 import { api, dinero, duracion, fecha, iniciales, useData } from './api.js'
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
-import PanelProductos from './panel-productos.jsx'
-import PanelCategorias from './panel-categorias.jsx'
+import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
+import PanelMateriales from './panel-materiales.jsx'
+import PanelProduccion from './panel-produccion.jsx'
+import PanelPresupuestos from './panel-presupuestos.jsx'
 
 export const seccionesAdmin = [
   ['Panel de control', '▦'],
   ['Pedidos', '⌁'],
+  ['Presupuestos', '⎙'],
   ['Productos', '▱'],
-  ['Categorías', '◈'],
+  ['Materiales', '◆'],
+  ['Producción diaria', '◈'],
   ['Tareas', '✓'],
   ['Recompensas', '♛'],
   ['Estadísticas', '◫'],
@@ -32,8 +36,10 @@ export default function WorkshopPanels({ section, setSection }) {
   const vistas = {
     'Panel de control': <Dashboard ir={ir} />,
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
+    Presupuestos: <PanelPresupuestos />,
     Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
-    Categorías: <PanelCategorias />,
+    Materiales: <PanelMateriales />,
+    'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
@@ -155,6 +161,54 @@ function Dashboard({ ir }) {
 }
 
 // ---------------------------------------------------------------------
+// CAMPO DE TEXTO CON CRECIMIENTO AUTOMÁTICO
+// Se ve como un input de una sola línea, pero es un <div contentEditable>:
+// no tiene el look de un <textarea> tradicional y crece en altura solo
+// cuando el texto lo necesita, sin una caja grande desde el arranque.
+// ---------------------------------------------------------------------
+function CampoAutoCrecimiento({ value, onChange, placeholder }) {
+  const ref = useRef(null)
+
+  // Solo carga el texto inicial una vez: si sincronizáramos en cada
+  // render, el cursor saltaría al principio mientras el usuario escribe.
+  useEffect(() => {
+    if (ref.current && ref.current.textContent !== (value || '')) {
+      ref.current.textContent = value || ''
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Fuerza el pegado como texto plano: evita que se peguen etiquetas o
+  // estilos que rompan la apariencia de "input" de este campo.
+  const pegar = event => {
+    event.preventDefault()
+    const texto = event.clipboardData.getData('text/plain')
+    document.execCommand('insertText', false, texto)
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="campo-auto"
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      data-placeholder={placeholder}
+      onInput={event => {
+        const nodo = event.currentTarget
+        const texto = nodo.textContent
+        // Si se borra todo el texto, algunos navegadores dejan un <br>
+        // suelto: se limpia para que ":empty" vuelva a mostrar el placeholder.
+        if (!texto) nodo.innerHTML = ''
+        onChange(texto)
+      }}
+      onPaste={pegar}
+    />
+  )
+}
+
+// ---------------------------------------------------------------------
 // DATOS DE LA WEB PÚBLICA (nombre, WhatsApp, redes, horario)
 // Reutiliza la misma tabla `configuracion` clave/valor que ya usa el
 // sistema para los parámetros de recompensas.
@@ -183,7 +237,7 @@ function ConfiguracionSitioPublico({ onGuardar }) {
   }
 
   return (
-    <form className="config-card" onSubmit={guardar}>
+    <form className="config-card config-card-publico" onSubmit={guardar}>
       <div className="card-title">Datos de la web pública</div>
       <p className="muted">Estos datos aparecen en el catálogo público: portada, pie de página, botón de WhatsApp y página de Contacto.</p>
 
@@ -221,7 +275,11 @@ function ConfiguracionSitioPublico({ onGuardar }) {
       </div>
 
       <label>Descripción breve (portada y buscadores)
-        <textarea value={valores.negocio_descripcion} onChange={cambiar('negocio_descripcion')} placeholder="Una o dos frases sobre el taller." />
+        <CampoAutoCrecimiento
+          value={valores.negocio_descripcion}
+          onChange={texto => setValores({ ...valores, negocio_descripcion: texto })}
+          placeholder="Una o dos frases sobre el taller."
+        />
       </label>
 
       <GestorVideoHero
@@ -426,6 +484,8 @@ function PanelConfiguracion() {
       {aviso && <p className="notice">{aviso}</p>}
 
       <ConfiguracionSitioPublico onGuardar={() => setAviso('Datos de la web pública actualizados.')} />
+
+      <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
 
       <ConfiguracionRecompensas onGuardar={() => setAviso('Parámetros guardados.')} />
 

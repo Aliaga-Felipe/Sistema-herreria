@@ -13,6 +13,9 @@ import pedidos from './rutas/pedidos.js'
 import recompensas from './rutas/recompensas.js'
 import estadisticas from './rutas/estadisticas.js'
 import configuracion from './rutas/configuracion.js'
+import materiales from './rutas/materiales.js'
+import produccion from './rutas/produccion.js'
+import presupuestos from './rutas/presupuestos.js'
 import publico from './rutas/publico.js'
 
 const app = express()
@@ -39,6 +42,9 @@ app.use('/api/pedidos', pedidos)
 app.use('/api/recompensas', recompensas)
 app.use('/api/estadisticas', estadisticas)
 app.use('/api/configuracion', configuracion)
+app.use('/api/materiales', materiales)
+app.use('/api/produccion', produccion)
+app.use('/api/presupuestos', presupuestos)
 
 app.use((error, _, res, __) => {
   if (error.code === '23505') return res.status(409).json({ error: 'Ya existe un registro con esos datos (correo o código repetido).' })
