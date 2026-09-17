@@ -1,0 +1,11 @@
+-- =====================================================================
+-- Migración 008: rol "super_admin"
+-- Agrega un tercer rol al enum rol_usuario. Es el único que puede ver
+-- y usar las secciones "Usuarios" y "Configuración" del panel: un
+-- "admin" común deja de verlas (ver server/rutas/usuarios.js,
+-- server/rutas/configuracion.js y src/workshop-panels.jsx).
+--
+-- Si ya ejecutaste schema.sql con esta versión no hace falta correrla
+-- aparte. Para bases existentes, aplicala una sola vez.
+-- =====================================================================
+ALTER TYPE rol_usuario ADD VALUE IF NOT EXISTS 'super_admin';

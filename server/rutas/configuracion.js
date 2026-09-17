@@ -24,7 +24,9 @@ router.get('/', auth(), asyncRoute(async (_, res) => {
 // Vista compacta usada por el frontend para formatear montos y explicar la fórmula.
 router.get('/valores', auth(), asyncRoute(async (_, res) => res.json(await leerConfiguracion())))
 
-router.put('/', auth(['admin']), asyncRoute(async (req, res) => {
+// Editar configuración (datos del negocio, recompensas, video del hero):
+// exclusivo de "super_admin", igual que la sección "Usuarios".
+router.put('/', auth(['super_admin']), asyncRoute(async (req, res) => {
   const valores = req.body || {}
   const claves = Object.keys(valores).filter(clave => clave in configuracionPorDefecto)
   if (!claves.length) throw fallo('No hay parámetros válidos para guardar.')
@@ -68,7 +70,7 @@ const uploadVideo = multer({
   fileFilter: (_, file, cb) => cb(tiposVideoPermitidos.has(file.mimetype) ? null : fallo('Formato de video no soportado. Usá MP4, WEBM u OGG.'), tiposVideoPermitidos.has(file.mimetype))
 })
 
-router.post('/video-hero', auth(['admin']), (req, res, next) => {
+router.post('/video-hero', auth(['super_admin']), (req, res, next) => {
   uploadVideo.single('video')(req, res, error => {
     if (error) return res.status(400).json({ error: error.message || 'No se pudo subir el video. Recordá que el tamaño máximo es 40 MB.' })
     next()
@@ -82,7 +84,7 @@ router.post('/video-hero', auth(['admin']), (req, res, next) => {
   res.json({ negocio_hero_video: url })
 }))
 
-router.delete('/video-hero', auth(['admin']), asyncRoute(async (_, res) => {
+router.delete('/video-hero', auth(['super_admin']), asyncRoute(async (_, res) => {
   const anterior = await pool.query("SELECT valor FROM configuracion WHERE clave = 'negocio_hero_video'")
   await guardarValor('negocio_hero_video', '')
   if (anterior.rows[0]?.valor) fs.unlink(path.join(directorioVideos, path.basename(anterior.rows[0].valor)), () => {})

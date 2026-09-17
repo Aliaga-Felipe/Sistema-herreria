@@ -1,21 +1,13 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import { pool } from '../db.js'
-import { asyncRoute, auth, fallo, rolLiteral, sign } from '../comun.js'
+import { asyncRoute, auth, fallo, sign } from '../comun.js'
 
 const router = Router()
 
-// El alta pública siempre crea empleados. El primer admin se carga a mano
-// en la base y desde ahí da de alta al resto (ver rutas/usuarios.js).
-router.post('/registro', asyncRoute(async (req, res) => {
-  const { nombre, email, contrasena } = req.body
-  if (!nombre?.trim() || !email?.trim() || !contrasena || contrasena.length < 8) throw fallo('Completá nombre, correo y una contraseña de al menos 8 caracteres.')
-  const hash = await bcrypt.hash(contrasena, 12)
-  const { rows } = await pool.query(`INSERT INTO usuarios (nombre, email, contrasena_hash, rol)
-    VALUES ($1, LOWER($2), $3, ${rolLiteral("'empleado'")})
-    RETURNING id, nombre, email, LOWER(rol::text) AS rol`, [nombre.trim(), email.trim(), hash])
-  res.status(201).json({ usuario: rows[0], mensaje: 'Cuenta creada como empleado.' })
-}))
+// No existe alta pública: las cuentas se crean únicamente desde el panel
+// (Usuarios), por un "admin" o "super_admin" (ver rutas/usuarios.js). El
+// primer super_admin se carga a mano con server/scripts/crear-admin.js.
 
 router.post('/iniciar-sesion', asyncRoute(async (req, res) => {
   const { email, contrasena } = req.body

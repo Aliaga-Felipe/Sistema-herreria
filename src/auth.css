@@ -290,6 +290,12 @@ text{
     color: #d9c9ba;
 }
 
+.role-badge.super_admin {
+    border-color: #caa15a;
+    background: #4a3a1c;
+    color: #f6cf8e;
+}
+
 
 /* =========================
    ADMINISTRACIÓN
