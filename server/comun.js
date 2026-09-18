@@ -51,6 +51,7 @@ export const configuracionPorDefecto = {
   negocio_facebook: '',
   negocio_horario: '',
   negocio_hero_video: '',
+  negocio_nosotros_imagen: '',
   costo_hora_mano_obra: '0'
 }
 
@@ -60,7 +61,7 @@ export const configuracionPorDefecto = {
 export const clavesConfiguracionPublica = [
   'negocio_nombre', 'negocio_rubro', 'negocio_eslogan', 'negocio_descripcion', 'negocio_whatsapp',
   'negocio_email', 'negocio_telefono', 'negocio_direccion', 'negocio_instagram',
-  'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'moneda'
+  'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'negocio_nosotros_imagen', 'moneda'
 ]
 
 // Genera un slug URL-friendly a partir de un texto (nombre de producto o

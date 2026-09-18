@@ -56,7 +56,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Materiales: <PanelMateriales />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
-    Recompensas: <PanelRecompensas rol={rol} />,
+    Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
     Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
     Configuración: <PanelConfiguracion />
@@ -310,6 +310,12 @@ function ConfiguracionSitioPublico({ onGuardar }) {
         onCambiar={url => setValores(previo => ({ ...previo, negocio_hero_video: url }))}
       />
 
+      <GestorImagenNosotros
+        imagenInicial={valores.negocio_nosotros_imagen}
+        token={configuracion.token}
+        onCambiar={url => setValores(previo => ({ ...previo, negocio_nosotros_imagen: url }))}
+      />
+
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">
         <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar datos públicos'}</button>
@@ -369,6 +375,85 @@ function GestorVideoHero({ videoInicial, token, onCambiar }) {
           <input type="file" accept="video/mp4,video/webm,video/ogg" onChange={subir} disabled={subiendo} style={{ display: 'none' }} />
         </label>
         {video && <button type="button" className="danger-link" onClick={quitar}>Quitar video</button>}
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------
+// IMAGEN DE LA SECCIÓN "SOBRE NOSOTROS" (Inicio y página Nosotros)
+// Igual que el video del hero: se sube/borra al instante. Admite subir un
+// archivo desde el equipo o pegar una imagen copiada (Ctrl+V) sobre el
+// recuadro; en los dos casos se termina mandando un único archivo a la
+// misma ruta del backend. Solo puede haber una imagen cargada a la vez:
+// subir una nueva reemplaza automáticamente a la anterior.
+// ---------------------------------------------------------------------
+function GestorImagenNosotros({ imagenInicial, token, onCambiar }) {
+  const [imagen, setImagen] = useState(imagenInicial || '')
+  const [subiendo, setSubiendo] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { setImagen(imagenInicial || '') }, [imagenInicial])
+
+  const subirArchivo = async archivo => {
+    if (!archivo) return
+    setSubiendo(true); setError('')
+    try {
+      const formData = new FormData()
+      formData.append('imagen', archivo)
+      const respuesta = await api.subir('/configuracion/imagen-nosotros', formData, token)
+      setImagen(respuesta.negocio_nosotros_imagen)
+      onCambiar?.(respuesta.negocio_nosotros_imagen)
+    } catch (err) { setError(err.message) } finally { setSubiendo(false) }
+  }
+
+  const subir = event => {
+    const archivo = event.target.files?.[0]
+    event.target.value = ''
+    subirArchivo(archivo)
+  }
+
+  const pegar = event => {
+    const item = Array.from(event.clipboardData?.items || []).find(item => item.type.startsWith('image/'))
+    if (!item) return
+    event.preventDefault()
+    subirArchivo(item.getAsFile())
+  }
+
+  const quitar = async () => {
+    try {
+      const respuesta = await api.del('/configuracion/imagen-nosotros', token)
+      setImagen(respuesta.negocio_nosotros_imagen)
+      onCambiar?.(respuesta.negocio_nosotros_imagen)
+    } catch (err) { setError(err.message) }
+  }
+
+  return (
+    <div className="stage-edit">
+      <div>
+        <b>Imagen de "Sobre nosotros"</b>
+        <span>Se muestra en el Inicio y en la página Nosotros de la web pública, con una animación al bajar la pantalla. Formatos JPG, PNG, WEBP o GIF, hasta 8 MB. Si no cargás una, se usa el motivo decorativo habitual.</span>
+      </div>
+
+      <div
+        tabIndex={0}
+        onPaste={pegar}
+        className="imagen-nosotros-zona"
+        title="Podés hacer clic acá y pegar una imagen copiada (Ctrl+V)."
+      >
+        {imagen
+          ? <img src={imagen} alt="Vista previa de la imagen de Sobre nosotros" className="imagen-nosotros-preview" />
+          : <span className="muted">Hacé clic acá y pegá una imagen (Ctrl+V), o subí un archivo abajo.</span>}
+      </div>
+
+      <div className="form-actions" style={{ marginTop: 8 }}>
+        <label className="add-stage" style={{ display: 'inline-flex', cursor: 'pointer' }}>
+          {subiendo ? 'Subiendo...' : imagen ? 'Reemplazar imagen' : '+ Agregar imagen'}
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={subir} disabled={subiendo} style={{ display: 'none' }} />
+        </label>
+        {imagen && <button type="button" className="danger-link" onClick={quitar}>Quitar imagen</button>}
       </div>
 
       {error && <p className="form-error">{error}</p>}

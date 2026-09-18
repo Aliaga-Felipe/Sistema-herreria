@@ -309,12 +309,12 @@
    INICIO: "PIEZAS DESTACADAS" ANIMADO AL SCROLL
    Todo centrado: el título arma sus letras desde los costados, debajo
    entra la bajada centrada, después (con movimiento mínimo, solo aparece)
-   el enlace "Ver todo el catálogo" a la derecha, y por último las fotos
-   cuadradas de los productos destacados entran volando desde los costados
-   — cada una según qué tan lejos está del centro de la fila — y quedan
-   fijas ahí; no es un loop continuo. Todo el desplazamiento lo maneja
-   framer-motion en DestacadosAnimados.jsx; acá solo va la base visual con
-   la paleta ya establecida del sitio.
+   el enlace "Ver todo el catálogo" a la derecha, y por último ese mismo
+   recorrido de scroll lleva directo al carrusel "squeeze" de productos
+   destacados (ver más abajo), con un leve ascenso + desvanecido. No hay
+   una grilla de fotos sueltas de por medio en ningún momento. Todo el
+   desplazamiento lo maneja framer-motion en DestacadosAnimados.jsx; acá
+   solo va la base visual con la paleta ya establecida del sitio.
    --------------------------------------------------------------------- */
 .destacados-animados {
   display: flex;
@@ -341,7 +341,7 @@
   will-change: transform, opacity;
 }
 
-/* Va entre la bajada y las fotos, pegado al borde derecho del contenedor. */
+/* Va entre la bajada y el carrusel, pegado al borde derecho del contenedor. */
 .destacados-cta {
   align-self: flex-end;
   will-change: opacity;
@@ -349,51 +349,87 @@
 
 .destacados-vacio { color: var(--texto-claro-muted); font-size: 0.94rem; }
 
-.destacados-logos {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 22px;
-}
-.destacados-item {
-  /* Ancho fijo (no "flex-basis" ni %) + flex-shrink:0, así las N fotos
-     miden siempre exactamente lo mismo entre sí, sin importar cuántas
-     entren en la fila o el ancho del contenedor. El nombre del producto
-     va debajo, dentro del mismo bloque, con el mismo ancho que la foto. */
-  flex: 0 0 auto;
-  width: 260px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  will-change: transform, opacity;
-}
-.destacados-logo {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  border-radius: var(--radio);
-  overflow: hidden;
-  background: var(--carbon);
-  border: 1px solid var(--borde-claro);
-}
-.destacados-logo a { display: block; width: 100%; height: 100%; transition: transform var(--transicion); }
-.destacados-logo a:hover { transform: scale(1.04); }
-.destacados-logo img { width: 100%; height: 100%; object-fit: cover; }
-.destacados-logo-sin-imagen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 1.6rem; }
-.destacados-nombre {
-  margin: 0;
-  text-align: center;
-  font-size: 0.86rem;
-  letter-spacing: 0.01em;
-  color: var(--texto-claro-muted);
-}
-@media (min-width: 720px) { .destacados-item { width: 320px; } }
+/* Envoltorio del carrusel "squeeze": lo que entra con scroll (ascenso +
+   desvanecido) al final del recorrido de arriba. Mientras se cargan los
+   productos, ocupa el mismo lugar con un simple bloque de carga (nunca
+   la vieja grilla de fotos sueltas). */
+.destacados-fase { width: 100%; will-change: transform, opacity; }
+.destacados-skeleton-carrusel { width: 100%; height: clamp(220px, 40vw, 380px); }
 
-/* Con "reducir movimiento" activo, o mientras el JS todavía no calculó el
-   scroll, todo el contenido ya queda en su posición final (ver el hook
-   usePrefiereMenosMovimiento y los valores iniciales de cada motion.*). */
-@media (prefers-reduced-motion: reduce) {
-  .destacados-logo a:hover { transform: none; }
+/* ---------------------------------------------------------------------
+   CARRUSEL "SQUEEZE" DE PRODUCTOS DESTACADOS (ver CarruselSqueeze.jsx)
+   Un panel abierto y el resto comprimidos en listones a la derecha; al
+   elegir otro producto la tira se desliza. Misma paleta y tipografía que
+   el resto del sitio, sin nada de la demo original (ni su fuente, ni sus
+   colores, ni sus imágenes).
+   --------------------------------------------------------------------- */
+.csq { width: 100%; }
+
+.csq-controles { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+.csq-flecha {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radio);
+  background: var(--madera);
+  color: var(--texto-claro);
+  transition: background var(--transicion), color var(--transicion);
+}
+.csq-flecha:hover { background: var(--arena); color: var(--negro); }
+.csq-flecha:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
+
+.csq-ventana { width: 100%; overflow: hidden; }
+.csq-tira { display: flex; height: 100%; width: max-content; }
+
+.csq-panel {
+  position: relative;
+  height: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--borde-claro);
+  background: var(--carbon);
+}
+.csq-panel:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
+
+.csq-imagen {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  max-width: none;
+  height: 100%;
+  transform: translateX(-50%);
+  object-fit: cover;
+}
+.csq-sin-imagen { display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 2rem; }
+
+.csq-chip {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  background: rgba(26, 26, 26, 0.78);
+  color: var(--arena);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: var(--radio);
+  pointer-events: none;
+}
+
+.csq-info { margin-top: 22px; display: grid; }
+.csq-info-item { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 14px; }
+.csq-info-texto { font-size: 0.95rem; }
+.csq-info-nombre { font-family: var(--fuente-display); font-size: 1.18rem; margin-right: 8px; }
+.csq-info-precio { color: var(--arena); }
+.csq-accion { align-self: flex-start; }
+
+@container (min-width: 560px) {
+  .csq-info-item { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; }
+  .csq-accion { align-self: center; }
 }
 
 /* ---------------------------------------------------------------------

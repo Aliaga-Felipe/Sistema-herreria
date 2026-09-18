@@ -4,6 +4,7 @@ import { publicApi, useMeta } from './api.js'
 import { usePublicConfig } from './PublicContext.jsx'
 import ForgePattern from './components/ForgePattern.jsx'
 import Reveal from './components/Reveal.jsx'
+import ParallaxReveal from './components/ParallaxReveal.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import DestacadosAnimados from './components/DestacadosAnimados.jsx'
 
@@ -37,14 +38,23 @@ export default function Home() {
 
       <section className="seccion-publica seccion-oscura">
         <div className="contenedor">
-          <DestacadosAnimados productos={destacados} />
+          <DestacadosAnimados productos={destacados} moneda={config.moneda} />
         </div>
       </section>
 
       <section className="seccion-publica seccion-oscura">
         <div className="contenedor">
           <div className="split-editorial">
-            <Reveal><ForgePattern className="split-editorial-img" style={{ aspectRatio: '4/5', borderRadius: '2px' }} /></Reveal>
+            <ParallaxReveal>
+              {config.negocio_nosotros_imagen
+                ? <img
+                    src={config.negocio_nosotros_imagen}
+                    alt={`Taller de ${config.negocio_nombre}`}
+                    className="split-editorial-img"
+                    style={{ aspectRatio: '4/5', borderRadius: '2px', objectFit: 'cover' }}
+                  />
+                : <ForgePattern className="split-editorial-img" style={{ aspectRatio: '4/5', borderRadius: '2px' }} />}
+            </ParallaxReveal>
             <Reveal className="texto">
               <p className="eyebrow-public">Sobre nosotros</p>
               <h2>Oficio de herrería, mirada de diseño</h2>
