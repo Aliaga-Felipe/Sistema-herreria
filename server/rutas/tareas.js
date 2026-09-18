@@ -11,7 +11,7 @@ const consultaTareas = `SELECT t.id, t.titulo, t.descripcion, t.estado, t.asigna
       'costo', e.costo::float8, 'realizada', e.realizada, 'completada_en', e.completada_en) ORDER BY e.orden)
       FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
     json_build_object('id', u.id, 'nombre', u.nombre, 'email', u.email) AS asignado
-  FROM tareas t JOIN usuarios u ON u.id = t.asignado_a LEFT JOIN tarea_etapas e ON e.tarea_id = t.id`
+  FROM tareas t LEFT JOIN usuarios u ON u.id = t.asignado_a LEFT JOIN tarea_etapas e ON e.tarea_id = t.id`
 const agrupadoTareas = ' GROUP BY t.id, u.id ORDER BY t.creado_en DESC'
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
@@ -39,6 +39,21 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     await conexion.query('COMMIT')
     res.status(201).json({ id: tarea.rows[0].id })
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+}))
+
+// Reasigna el responsable de una tarea libre (a diferencia de una etapa de
+// pedido, que se reasigna desde PATCH /pedidos/:id/etapas/:etapaId/asignar).
+// Sirve, por ejemplo, para volver a asignar una tarea que quedó sin
+// responsable porque se eliminó la cuenta del empleado que la tenía.
+router.patch('/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
+  const { asignado_a: asignadoA } = req.body
+  if (asignadoA) {
+    const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [asignadoA])
+    if (!empleado.rows[0]) throw fallo('El usuario asignado debe ser un empleado activo.')
+  }
+  const { rows } = await pool.query('UPDATE tareas SET asignado_a = $1, actualizada_en = NOW() WHERE id = $2 RETURNING id', [asignadoA || null, req.params.id])
+  if (!rows[0]) throw fallo('Tarea no encontrada.', 404)
+  res.json({ mensaje: 'Responsable actualizado.' })
 }))
 
 router.patch('/:id/estado', auth(), asyncRoute(async (req, res) => {

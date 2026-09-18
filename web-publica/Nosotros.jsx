@@ -4,6 +4,7 @@ import { useMeta } from './api.js'
 import { usePublicConfig } from './PublicContext.jsx'
 import ForgePattern from './components/ForgePattern.jsx'
 import Reveal from './components/Reveal.jsx'
+import ParallaxReveal from './components/ParallaxReveal.jsx'
 
 export default function Nosotros() {
   const config = usePublicConfig()
@@ -20,15 +21,21 @@ export default function Nosotros() {
       <section className="seccion-publica seccion-oscura" style={{ paddingTop: 0 }}>
         <div className="contenedor">
           <div className="split-editorial">
-            <Reveal>
-              <ForgePattern
-                style={{
-                  aspectRatio: '4/5',
-                  borderRadius: '2px',
-                  background: 'radial-gradient(circle at 50% 42%, rgba(122,78,45,0.4) 0%, rgba(46,42,38,0.55) 45%, var(--negro) 78%)'
-                }}
-              />
-            </Reveal>
+            <ParallaxReveal>
+              {config.negocio_nosotros_imagen
+                ? <img
+                    src={config.negocio_nosotros_imagen}
+                    alt={`Taller de ${config.negocio_nombre}`}
+                    style={{ aspectRatio: '4/5', borderRadius: '2px', width: '100%', objectFit: 'cover' }}
+                  />
+                : <ForgePattern
+                    style={{
+                      aspectRatio: '4/5',
+                      borderRadius: '2px',
+                      background: 'radial-gradient(circle at 50% 42%, rgba(122,78,45,0.4) 0%, rgba(46,42,38,0.55) 45%, var(--negro) 78%)'
+                    }}
+                  />}
+            </ParallaxReveal>
             <Reveal className="texto">
               <p className="eyebrow-public">Taller y diseño</p>
               <h2>Hierro, fuego y paciencia</h2>

@@ -11,7 +11,7 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 
 ### Base de datos
 
-- `database/schema.sql` es el esquema completo y **es idempotente**: puede ejecutarse sobre una base vacía o sobre una ya en uso sin perder datos.
+- `database/schema.sql` es el esquema completo y **es idempotente**: puede ejecutarse sobre una base vacía o sobre una ya en uso sin perder datos. Cada vez que este archivo cambia (por ejemplo, al actualizar el sistema) hay que volver a ejecutarlo contra la base real para que el cambio tenga efecto; si no tenés `psql` a mano, `node server/scripts/aplicar-schema.js` hace lo mismo usando la conexión de `.env`.
 - `database/migracion_002_produccion.sql` es el delta para bases que venían del esquema anterior (agrega productos con precio, pedidos multiproducto, semáforo, recompensas y configuración).
 - `database/migracion_003_detalle_tareas.sql` es el delta que agrega fecha de inicio, fecha de entrega y prioridad a la bandeja de tareas (`vista_tareas_empleado`), usados por el modal de detalle del panel **Tareas**. Si ya ejecutaste `schema.sql` con esta versión no hace falta correrla aparte.
 - `database/prueba-humo.mjs` recorre el flujo completo contra la API y borra al final todo lo que creó:

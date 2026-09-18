@@ -408,6 +408,14 @@ ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_responsable_id_fkey FOREI
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_pedido_id_fkey;
 ALTER TABLE recompensas ADD CONSTRAINT recompensas_pedido_id_fkey FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE;
 
+-- Al eliminar la cuenta de un empleado (ver DELETE /usuarios/:id), sus
+-- tareas libres asignadas quedan sin responsable en lugar de bloquear el
+-- borrado o perder la tarea: el admin la reasigna después desde el panel
+-- de Tareas (PATCH /tareas/:id/asignar).
+ALTER TABLE tareas ALTER COLUMN asignado_a DROP NOT NULL;
+ALTER TABLE tareas DROP CONSTRAINT IF EXISTS tareas_asignado_a_fkey;
+ALTER TABLE tareas ADD CONSTRAINT tareas_asignado_a_fkey FOREIGN KEY (asignado_a) REFERENCES usuarios(id) ON DELETE SET NULL;
+
 -- ---------------------------------------------------------------------
 -- INDICES
 -- ---------------------------------------------------------------------

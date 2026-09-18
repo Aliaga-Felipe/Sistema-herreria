@@ -76,8 +76,10 @@ router.patch('/:id/rol', auth(['admin', 'super_admin']), asyncRoute(async (req, 
   res.json(rows[0])
 }))
 
-// Alta/baja lógica: nunca se borra al usuario para no perder su historial.
-// Exclusiva de "super_admin" (no fue pedida para "admin").
+// Alta/baja lógica de cuentas de admin/super_admin: nunca se borran, para
+// no perder el historial de quién hizo qué (pedidos, tareas, recompensas).
+// Exclusiva de "super_admin". Las cuentas de empleado ya no se desactivan
+// desde acá: se eliminan de verdad con DELETE /:id, más abajo.
 router.patch('/:id/activo', auth(['super_admin']), asyncRoute(async (req, res) => {
   const { activo } = req.body
   if (typeof activo !== 'boolean') throw fallo('El campo activo debe ser booleano.')
@@ -85,6 +87,35 @@ router.patch('/:id/activo', auth(['super_admin']), asyncRoute(async (req, res) =
   const { rows } = await pool.query(`UPDATE usuarios SET activo = $1, actualizado_en = NOW() WHERE id = $2 RETURNING ${seleccion}`, [activo, req.params.id])
   if (!rows[0]) throw fallo('Usuario no encontrado.', 404)
   res.json(rows[0])
+}))
+
+// Baja definitiva: solo para cuentas de empleado (tanto si la pide un
+// "admin" común como un "super_admin" -acá no hay distinción de permisos,
+// el límite es el rol de la cuenta objetivo, no el de quien lo pide). Las
+// cuentas de admin/super_admin nunca se borran, siguen la baja lógica de
+// arriba.
+//
+// Las tareas libres que tenía asignadas NO bloquean el borrado: quedan
+// sin responsable (tareas.asignado_a pasa a NULL solo, por la relación
+// ON DELETE SET NULL definida en database/schema.sql) y el admin las
+// reasigna después desde el panel de Tareas. Los pedidos y recompensas
+// solo pueden estar vinculados a una cuenta de admin/super_admin (los
+// crea/otorga quien tiene ese rol, nunca un empleado), así que en la
+// práctica esta comprobación no debería frenar a nadie; queda como
+// resguardo por si ese supuesto cambia más adelante.
+router.delete('/:id', auth(['admin', 'super_admin']), asyncRoute(async (req, res) => {
+  const objetivo = await pool.query('SELECT nombre, LOWER(rol::text) AS rol FROM usuarios WHERE id = $1', [req.params.id])
+  if (!objetivo.rows[0]) throw fallo('Usuario no encontrado.', 404)
+  if (objetivo.rows[0].rol !== 'empleado') throw fallo('Solo se pueden eliminar cuentas de empleado.', 403)
+
+  const { rows: [conteo] } = await pool.query(`SELECT
+      (SELECT COUNT(*) FROM pedidos WHERE creado_por = $1) AS pedidos,
+      (SELECT COUNT(*) FROM recompensas WHERE otorgado_por = $1) AS recompensas`, [req.params.id])
+  const referencias = ['pedidos', 'recompensas'].filter(clave => Number(conteo[clave]) > 0)
+  if (referencias.length) throw fallo(`No se puede eliminar a ${objetivo.rows[0].nombre}: tiene ${referencias.join(', ')} asociadas a su cuenta.`, 409)
+
+  await pool.query('DELETE FROM usuarios WHERE id = $1', [req.params.id])
+  res.json({ mensaje: 'Usuario eliminado.' })
 }))
 
 // Restablecer contraseña: "super_admin" puede hacerlo con cualquier
