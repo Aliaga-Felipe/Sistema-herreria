@@ -72,6 +72,35 @@ export default function Home() {
               <span>●</span><h4>Diseño a medida</h4><p>Cada encargo se ajusta a las medidas y el estilo del espacio.</p>
             </Reveal>
           </div>
+
+          <div className="ubicacion-grid">
+            <Reveal className="ubicacion-mapa">
+              <iframe
+                title="Mapa de ubicación del taller"
+                src="https://www.google.com/maps?q=Pasaje%20Paraguay%204%2C%20Villa%20Carlos%20Paz%2C%20C%C3%B3rdoba%2C%20Argentina&output=embed"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                allowFullScreen
+              />
+            </Reveal>
+            <Reveal className="ubicacion-info">
+              <h3>Dónde nos encontramos</h3>
+              <address className="ubicacion-direccion">
+                Pasaje Paraguay 4<br />
+                Villa Carlos Paz, Córdoba<br />
+                Argentina
+              </address>
+              <div className="contacto-datos ubicacion-horario">
+                <article>
+                  <span className="icono">▷</span>
+                  <div>
+                    <b>Horario</b>
+                    <p>{config.negocio_horario || 'Completá aquí tu horario de atención (ejemplo: Lunes a viernes de 9 a 18 hs).'}</p>
+                  </div>
+                </article>
+              </div>
+            </Reveal>
+          </div>
         </div>
       </section>
 
