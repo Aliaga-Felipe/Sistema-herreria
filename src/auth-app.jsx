@@ -14,8 +14,6 @@ import PublicLayout from '../web-publica/PublicLayout.jsx'
 import Home from '../web-publica/Home.jsx'
 import Catalogo from '../web-publica/Catalogo.jsx'
 import ProductoDetalle from '../web-publica/ProductoDetalle.jsx'
-import Categorias from '../web-publica/Categorias.jsx'
-import Nosotros from '../web-publica/Nosotros.jsx'
 import Contacto from '../web-publica/Contacto.jsx'
 
 // "admin" y "super_admin" comparten el panel (Shell); lo que cambia entre
@@ -40,8 +38,6 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/productos" element={<Catalogo />} />
             <Route path="/productos/:slug" element={<ProductoDetalle />} />
-            <Route path="/categorias" element={<Categorias />} />
-            <Route path="/nosotros" element={<Nosotros />} />
             <Route path="/contacto" element={<Contacto />} />
             <Route path="*" element={<PublicNotFound />} />
           </Route>

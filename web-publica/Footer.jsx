@@ -25,8 +25,6 @@ export default function Footer() {
             <h4>Navegación</h4>
             <ul>
               <li><Link to="/productos">Productos</Link></li>
-              <li><Link to="/categorias">Categorías</Link></li>
-              <li><Link to="/nosotros">Nosotros</Link></li>
               <li><Link to="/contacto">Contacto</Link></li>
             </ul>
           </div>

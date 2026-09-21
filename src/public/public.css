@@ -365,7 +365,8 @@
 .galeria-miniaturas img { width: 100%; height: 100%; object-fit: cover; }
 
 .detalle-info .eyebrow-public { margin-bottom: 10px; }
-.detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 14px; }
+.detalle-titulo { display: flex; align-items: flex-start; gap: 26px; flex-wrap: wrap; margin-bottom: 14px; }
+.detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 0; flex: 1 1 240px; min-width: 0; }
 .detalle-precio { font-size: 1.5rem; color: var(--arena); font-family: var(--fuente-display); margin-bottom: 26px; }
 .detalle-descripcion { color: var(--texto-claro-muted); line-height: 1.75; font-size: 0.98rem; white-space: pre-line; margin-bottom: 30px; }
 .detalle-acciones { display: flex; flex-direction: column; gap: 12px; margin-bottom: 34px; }
@@ -374,6 +375,90 @@
 .detalle-meta b { color: var(--texto-claro); font-weight: 500; }
 
 .relacionados { padding: 0 0 100px; background: var(--negro); }
+
+/* ---------------------------------------------------------------------
+   CHAPITA VINTAGE (placa metálica junto al nombre del producto)
+   Se arma sólo con capas de gradientes -metal cepillado + pátina + bisel-,
+   nunca con una imagen ni con un rectángulo de color plano.
+   --------------------------------------------------------------------- */
+.chapita-vintage {
+  position: relative;
+  flex: 0 0 auto;
+  width: 150px;
+  padding: 14px 12px 12px;
+  background:
+    repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px),
+    linear-gradient(155deg, #b0a996 0%, #8a8478 42%, #5f5b52 78%, #86806f 100%);
+  border: 1px solid rgba(0,0,0,0.55);
+  border-radius: var(--radio);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.28),
+    inset 0 -2px 4px rgba(0,0,0,0.4),
+    inset 0 0 16px rgba(0,0,0,0.22);
+}
+.chapita-vintage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 18% 26%, rgba(58,44,28,0.22) 0%, transparent 34%),
+    radial-gradient(circle at 82% 78%, rgba(58,44,28,0.18) 0%, transparent 42%),
+    radial-gradient(circle at 60% 12%, rgba(0,0,0,0.14) 0%, transparent 30%);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.chapita-tornillo {
+  position: absolute;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, #ddd7c8 0%, #767059 55%, #33302a 100%);
+  box-shadow: inset 0 0 1px rgba(0,0,0,0.85), 0 1px 1px rgba(0,0,0,0.35);
+}
+.chapita-tornillo::after {
+  content: '';
+  position: absolute; top: 50%; left: 50%;
+  width: 5px; height: 1px;
+  background: rgba(28,26,22,0.85);
+  transform: translate(-50%, -50%) rotate(35deg);
+}
+.chapita-tornillo.tl { top: 6px; left: 6px; }
+.chapita-tornillo.tr { top: 6px; right: 6px; }
+.chapita-tornillo.bl { bottom: 6px; left: 6px; }
+.chapita-tornillo.br { bottom: 6px; right: 6px; }
+.chapita-contenido { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; }
+.chapita-marca {
+  font-family: var(--fuente-texto);
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2a2721;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.22);
+}
+.chapita-linea {
+  font-family: var(--fuente-display);
+  font-style: italic;
+  font-size: 0.74rem;
+  color: #383429;
+}
+.chapita-separador { width: 58%; height: 1px; margin: 1px 0; background: linear-gradient(90deg, transparent, rgba(0,0,0,0.4), transparent); }
+.chapita-edicion, .chapita-codigo {
+  font-family: var(--fuente-texto);
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #423d32;
+}
+.chapita-codigo { font-weight: 600; }
+
+@media (max-width: 560px) {
+  .detalle-titulo { gap: 16px; }
+  .chapita-vintage { width: 122px; padding: 11px 9px 9px; }
+  .chapita-marca { font-size: 0.56rem; }
+  .chapita-linea { font-size: 0.68rem; }
+  .chapita-edicion, .chapita-codigo { font-size: 0.5rem; }
+}
 
 /* ---------------------------------------------------------------------
    NOSOTROS / MATERIALES
