@@ -7,8 +7,6 @@ import logoUnAtelier from './logo-un-atelier.png'
 const enlaces = [
   { to: '/', label: 'Inicio', fin: true },
   { to: '/productos', label: 'Productos' },
-  { to: '/categorias', label: 'Categorías' },
-  { to: '/nosotros', label: 'Nosotros' },
   { to: '/contacto', label: 'Contacto' }
 ]
 

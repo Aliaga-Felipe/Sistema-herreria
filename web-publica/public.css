@@ -468,29 +468,6 @@
 .seccion-clara .tarjeta-producto-media { background: rgba(26,26,26,0.06); }
 
 /* ---------------------------------------------------------------------
-   CATEGORÍAS
-   --------------------------------------------------------------------- */
-.grilla-categorias { display: grid; grid-template-columns: 1fr; gap: 18px; }
-@media (min-width: 640px) { .grilla-categorias { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1100px) { .grilla-categorias { grid-template-columns: repeat(3, 1fr); } }
-
-.tarjeta-categoria {
-  position: relative;
-  aspect-ratio: 3 / 2;
-  border-radius: var(--radio);
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  background: var(--carbon);
-}
-.tarjeta-categoria img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1); }
-.tarjeta-categoria:hover img { transform: scale(1.07); }
-.tarjeta-categoria::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(26,26,26,0) 40%, rgba(26,26,26,0.86) 100%); }
-.tarjeta-categoria-info { position: relative; padding: 24px; color: var(--texto-claro); }
-.tarjeta-categoria-info h3 { font-size: 1.5rem; }
-.tarjeta-categoria-info span { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--arena); }
-
-/* ---------------------------------------------------------------------
    CATÁLOGO: BARRA DE FILTROS
    --------------------------------------------------------------------- */
 .catalogo-encabezado { padding-top: calc(var(--header-alto) + 48px); padding-bottom: 40px; background: var(--carbon); }
@@ -613,19 +590,82 @@
    DETALLE DE PRODUCTO
    --------------------------------------------------------------------- */
 .detalle-producto { padding-top: calc(var(--header-alto) + 24px); background: var(--negro); }
+
+.volver-productos {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; color: var(--texto-claro-muted);
+  margin-bottom: 20px;
+  transition: color var(--transicion);
+}
+.volver-productos span { font-size: 1rem; line-height: 1; }
+.volver-productos:hover { color: var(--arena); }
+
 .migas { font-size: 0.76rem; color: var(--texto-claro-muted); display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 28px; }
 .migas a:hover { color: var(--arena); }
 
 .detalle-grid { display: grid; grid-template-columns: 1fr; gap: 40px; padding-bottom: 90px; }
 @media (min-width: 960px) { .detalle-grid { grid-template-columns: 1.15fr 1fr; gap: 64px; } }
 
-.galeria-principal { aspect-ratio: 4/5; border-radius: var(--radio); overflow: hidden; background: var(--carbon); margin-bottom: 14px; }
-.galeria-principal img { width: 100%; height: 100%; object-fit: cover; }
+.galeria-principal { position: relative; aspect-ratio: 4/5; border-radius: var(--radio); overflow: hidden; background: var(--carbon); margin-bottom: 14px; }
+.galeria-principal img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
 .galeria-principal .sin-imagen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 3rem; }
+
+.galeria-flecha {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 40px; height: 40px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: 50%;
+  font-size: 1.2rem; line-height: 1;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.galeria-flecha:hover { background: var(--madera); border-color: var(--madera); }
+.galeria-flecha-izq { left: 12px; }
+.galeria-flecha-der { right: 12px; }
+
+.galeria-puntos { display: flex; justify-content: center; gap: 8px; margin: 0 0 14px; }
+.galeria-puntos button {
+  width: 8px; height: 8px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--arena); background: transparent;
+  transition: background var(--transicion), transform var(--transicion);
+}
+.galeria-puntos button.activo { background: var(--arena); transform: scale(1.2); }
+
 .galeria-miniaturas { display: flex; gap: 10px; flex-wrap: wrap; }
 .galeria-miniaturas button { width: 76px; height: 76px; border-radius: var(--radio); overflow: hidden; padding: 0; border: 1px solid var(--borde-claro); opacity: 0.55; transition: opacity var(--transicion), border-color var(--transicion); }
 .galeria-miniaturas button.activa { opacity: 1; border-color: var(--arena); }
 .galeria-miniaturas img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Lightbox de la galería: al tocar/clickear la imagen principal del
+   producto se abre una vista ampliada a pantalla completa, con el mismo
+   patrón de superposición oscura que ya usa el mapa (.mapa-negro-overlay-*)
+   para mantener consistencia visual. La X de cerrar es más grande que la
+   del mapa (44px) para que sea cómoda de tocar en celular. */
+.lightbox-overlay {
+  position: fixed; inset: 0; background: rgba(10, 9, 8, 0.92);
+  display: grid; place-items: center; padding: 24px; z-index: 600;
+  cursor: zoom-out;
+}
+.lightbox-imagen {
+  max-width: min(1100px, 92vw); max-height: 88vh;
+  width: auto; height: auto; object-fit: contain;
+  border-radius: var(--radio); cursor: default;
+}
+.lightbox-cerrar {
+  position: absolute; top: 16px; right: 16px; z-index: 2;
+  width: 44px; height: 44px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: 50%;
+  font-size: 1.6rem; line-height: 1;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.lightbox-cerrar:hover { background: var(--madera); border-color: var(--madera); }
+
+@media (max-width: 640px) {
+  .lightbox-overlay { padding: 16px; }
+  .lightbox-cerrar { top: 12px; right: 12px; }
+}
 
 .detalle-info .eyebrow-public { margin-bottom: 10px; }
 .detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 14px; }
@@ -639,17 +679,8 @@
 .relacionados { padding: 0 0 100px; background: var(--negro); }
 
 /* ---------------------------------------------------------------------
-   NOSOTROS / MATERIALES
+   SOBRE NOSOTROS (Inicio) / MATERIALES
    --------------------------------------------------------------------- */
-/* Encabezado de Nosotros: en vez del corte seco entre el carbón del
-   encabezado y el negro de la sección siguiente, el fondo se funde en
-   degradé de un tono al otro, así la transición queda integrada en vez
-   de una línea visible. Sólo aplica acá (no toca Productos/Categorías,
-   que siguen usando .catalogo-encabezado con su fondo sólido de siempre). */
-.nosotros-encabezado {
-  background: linear-gradient(180deg, var(--carbon) 0%, var(--negro) 100%);
-}
-
 .split-editorial { display: grid; grid-template-columns: 1fr; gap: 36px; align-items: center; }
 @media (min-width: 900px) { .split-editorial { grid-template-columns: 1fr 1fr; gap: 72px; } }
 .split-editorial img { border-radius: var(--radio); aspect-ratio: 4/5; object-fit: cover; width: 100%; }
@@ -670,13 +701,57 @@
 
 .ubicacion-mapa { border: 1px solid var(--borde-claro); border-radius: var(--radio); overflow: hidden; aspect-ratio: 4/3; }
 @media (min-width: 900px) { .ubicacion-mapa { aspect-ratio: auto; min-height: 320px; height: 100%; } }
-.ubicacion-mapa iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Mapa en negro elegante: filtro CSS sobre el iframe real de Google Maps
+   (sin API key). grayscale primero para eliminar todo color de base y
+   recién después invertir/oscurecer, así no quedan tonos verdes/marrones
+   en parques o zonas de agua. */
+.ubicacion-mapa iframe { width: 100%; height: 100%; border: 0; display: block; filter: grayscale(100%) invert(94%) brightness(0.82) contrast(1.2); }
 
 .ubicacion-info { display: flex; flex-direction: column; justify-content: center; }
 .ubicacion-info h3 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); margin-bottom: 18px; }
 .ubicacion-direccion { font-style: normal; line-height: 1.8; opacity: 0.82; font-size: 1rem; margin: 0 0 8px; }
 .ubicacion-horario { margin-top: 18px; }
 .ubicacion-grid .ubicacion-horario article { border-bottom: none; padding: 16px 0 0; }
+
+/* Tarjeta interactiva del mapa: inclinación 3D sutil al pasar el mouse
+   (whileHover, no seguimiento continuo, porque el iframe de Google Maps es
+   de otro origen y no deja llegar los eventos de mouse al documento padre)
+   y botón "Ampliar" para abrir el mapa en una superposición más grande. El
+   mapa en sí conserva su paneo/zoom nativo sin interferencias. */
+.mapa-negro { position: relative; width: 100%; height: 100%; border-radius: var(--radio); overflow: hidden; }
+.mapa-negro-ampliar {
+  position: absolute; top: 14px; right: 14px; z-index: 2;
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: var(--radio);
+  font-family: var(--fuente-texto); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--transicion), border-color var(--transicion), color var(--transicion);
+}
+.mapa-negro-ampliar:hover { background: var(--madera); border-color: var(--madera); color: var(--texto-claro); }
+
+.mapa-negro-overlay-fondo {
+  position: fixed; inset: 0; background: rgba(10, 9, 8, 0.86); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 24px; z-index: 200;
+}
+.mapa-negro-overlay-caja {
+  position: relative; width: min(920px, 100%); aspect-ratio: 16/10; max-height: 86vh;
+  background: var(--carbon); border: 1px solid var(--borde-claro); border-radius: var(--radio); overflow: hidden;
+}
+.mapa-negro-overlay-caja iframe { width: 100%; height: 100%; border: 0; display: block; filter: grayscale(100%) invert(94%) brightness(0.82) contrast(1.2); }
+.mapa-negro-overlay-cerrar {
+  position: absolute; top: 10px; right: 10px; z-index: 2; width: 34px; height: 34px;
+  display: grid; place-items: center; background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: var(--radio); font-size: 1.3rem; line-height: 1;
+  cursor: pointer;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.mapa-negro-overlay-cerrar:hover { background: var(--madera); border-color: var(--madera); }
+
+@media (max-width: 640px) {
+  .mapa-negro-overlay-caja { aspect-ratio: 3/4; max-height: 82vh; }
+  .mapa-negro-ampliar span { display: none; }
+}
 
 /* ---------------------------------------------------------------------
    CTA FINAL

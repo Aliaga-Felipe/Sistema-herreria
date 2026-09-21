@@ -5,8 +5,11 @@ import { usePublicConfig } from './PublicContext.jsx'
 import ForgePattern from './components/ForgePattern.jsx'
 import Reveal from './components/Reveal.jsx'
 import ParallaxReveal from './components/ParallaxReveal.jsx'
+import TextoParallax from './components/TextoParallax.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import DestacadosAnimados from './components/DestacadosAnimados.jsx'
+import MapaUbicacion from './components/MapaUbicacion.jsx'
+import MaterialesGrid from './components/MaterialesGrid.jsx'
 
 export default function Home() {
   const config = usePublicConfig()
@@ -30,7 +33,6 @@ export default function Home() {
           <p>{config.negocio_descripcion || 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida para transformar espacios.'}</p>
           <div className="hero-acciones">
             <Link className="btn-public btn-madera" to="/productos">Explorar colección</Link>
-            <Link className="btn-public btn-fantasma" to="/nosotros">Conocer el taller</Link>
           </div>
         </div>
         <span className="hero-scroll">Desplazate para ver más</span>
@@ -55,7 +57,7 @@ export default function Home() {
                   />
                 : <ForgePattern className="split-editorial-img" style={{ aspectRatio: '4/5', borderRadius: '2px' }} />}
             </ParallaxReveal>
-            <Reveal className="texto">
+            <TextoParallax className="texto">
               <p className="eyebrow-public">Sobre nosotros</p>
               <h2>Oficio de herrería, mirada de diseño</h2>
               <p>
@@ -64,36 +66,13 @@ export default function Home() {
                 Trabajamos con hierro macizo y maderas nobles, pensando cada mueble para que acompañe un espacio
                 durante años, no de temporada.
               </p>
-              <Link className="btn-public btn-fantasma" to="/nosotros">Conocer más del taller</Link>
-            </Reveal>
+            </TextoParallax>
           </div>
 
-          <div className="materiales-grid">
-            <Reveal as="article" className="material-item">
-              <span>◆</span><h4>Hierro macizo</h4><p>Estructuras soldadas a mano, pensadas para resistir el uso diario.</p>
-            </Reveal>
-            <Reveal as="article" className="material-item">
-              <span>◈</span><h4>Maderas nobles</h4><p>Combinamos el hierro con maderas seleccionadas por veta y dureza.</p>
-            </Reveal>
-            <Reveal as="article" className="material-item">
-              <span>▲</span><h4>Terminación a fuego</h4><p>Pátinas y terminaciones que protegen la pieza sin perder su carácter.</p>
-            </Reveal>
-            <Reveal as="article" className="material-item">
-              <span>●</span><h4>Diseño a medida</h4><p>Cada encargo se ajusta a las medidas y el estilo del espacio.</p>
-            </Reveal>
-          </div>
+          <MaterialesGrid />
 
           <div className="ubicacion-grid">
-            <Reveal className="ubicacion-mapa">
-              <iframe
-                title="Mapa de ubicación del taller"
-                src="https://www.google.com/maps?q=Pasaje%20Paraguay%204%2C%20Villa%20Carlos%20Paz%2C%20C%C3%B3rdoba%2C%20Argentina&output=embed"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                allowFullScreen
-              />
-            </Reveal>
-            <Reveal className="ubicacion-info">
+            <TextoParallax className="ubicacion-info">
               <h3>Dónde nos encontramos</h3>
               <address className="ubicacion-direccion">
                 Pasaje Paraguay 4<br />
@@ -109,7 +88,13 @@ export default function Home() {
                   </div>
                 </article>
               </div>
-            </Reveal>
+            </TextoParallax>
+            <ParallaxReveal className="ubicacion-mapa">
+              <MapaUbicacion
+                titulo="Mapa de ubicación del taller"
+                src="https://www.google.com/maps?q=Pasaje%20Paraguay%204%2C%20Villa%20Carlos%20Paz%2C%20C%C3%B3rdoba%2C%20Argentina&output=embed"
+              />
+            </ParallaxReveal>
           </div>
         </div>
       </section>

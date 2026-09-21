@@ -156,6 +156,12 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAUL
 -- Horas-hombre de fabricación, usadas junto al costo por hora configurable
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
+-- Chapita vintage opcional ("PC N° ...") que se muestra junto al nombre del
+-- producto en la web pública (ver ProductoDetalle.jsx). Nullable a propósito:
+-- si está vacía, la web no muestra ninguna chapita (ver publico.js/
+-- panel-productos.jsx). VARCHAR y no numérico para no perder ceros a la
+-- izquierda (por ejemplo "014").
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
 
 -- Genera un slug para productos que todavia no lo tienen (instalaciones
 -- existentes). Los productos nuevos reciben su slug desde la API.
