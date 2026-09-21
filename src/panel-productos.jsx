@@ -179,20 +179,11 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
   const costoManoObra = (Number(horasHombre) || 0) * costoHora
   const costoCalculadoTotal = costoMateriales + costoManoObra
 
-  // Un producto no puede compartir el mismo ID de pieza con otro (el
-  // mismo producto puede conservar el suyo). Esta validación da feedback
-  // inmediato; la garantía real de unicidad la da la restricción UNIQUE
-  // de la base (ver server/rutas/productos.js).
-  const idPiezaDuplicado = Boolean(
-    idPieza.trim() && (productosExistentes || []).some(otro => otro.id !== producto.id && (otro.id_pieza || '').trim() === idPieza.trim())
-  )
-
   const enviar = async event => {
     event.preventDefault()
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
     if (etapas.some(etapa => !etapa.nombre.trim() || Number(etapa.minutos_estimados) <= 0)) return setError('Cada etapa necesita nombre y una duración mayor a cero.')
     if (materiales.some(item => !item.material_id || Number(item.cantidad) <= 0)) return setError('Cada material necesita elegirse y tener una cantidad mayor a cero.')
-    if (idPiezaDuplicado) return setError(`El ID de pieza "${idPieza.trim()}" ya existe. Elegí otro ID.`)
     setBusy(true); setError('')
     try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, chapita_id: chapitaId, etapas, materiales }) }
     catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -220,21 +211,7 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
           <label>Horas-hombre de fabricación
             <input min="0" step="0.25" type="number" value={horasHombre} onChange={event => setHorasHombre(event.target.value)} placeholder="0" />
           </label>
-
-          <label>ID de pieza
-            <input
-              value={idPieza}
-              onChange={event => setIdPieza(event.target.value)}
-              placeholder="Ej. 001"
-              maxLength={20}
-              aria-invalid={idPiezaDuplicado}
-              style={idPiezaDuplicado ? { borderColor: '#f4a08d' } : undefined}
-            />
-          </label>
         </div>
-        {idPiezaDuplicado
-          ? <p className="form-error" style={{ marginTop: -10 }}>El ID de pieza "{idPieza.trim()}" ya existe. Elegí otro ID.</p>
-          : <p className="muted" style={{ marginTop: -10 }}>Identifica la pieza en la chapita vintage de la web pública ("PC N° {idPieza.trim() || '···'}"). Se sugiere automáticamente pero podés cambiarlo; dejalo vacío para no mostrar chapita.</p>}
 
         <label>Descripción
           <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
