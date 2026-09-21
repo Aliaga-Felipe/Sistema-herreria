@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, fallo, sincronizarPedido } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, esAdmin, fallo, sincronizarPedido } from '../comun.js'
 
 const router = Router()
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
@@ -30,7 +30,7 @@ const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_e
 const filtroEmpleado = ' WHERE EXISTS (SELECT 1 FROM pedido_etapas e WHERE e.pedido_id = p.id AND e.responsable_id = $1)'
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
-  const admin = req.user.rol === 'admin'
+  const admin = esAdmin(req.user.rol)
   const { rows } = await pool.query(`${consultaPedidos}${admin ? '' : filtroEmpleado} ORDER BY p.prioridad DESC, p.creado_en DESC`, admin ? [] : [req.user.id])
   res.json(rows)
 }))
@@ -38,7 +38,7 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
 router.get('/:id', auth(), asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`${consultaPedidos} WHERE p.id = $1`, [req.params.id])
   if (!rows[0]) throw fallo('Pedido no encontrado.', 404)
-  if (req.user.rol !== 'admin' && !rows[0].etapas.some(etapa => String(etapa.responsable_id) === String(req.user.id))) throw fallo('No tenés permisos sobre este pedido.', 403)
+  if (!esAdmin(req.user.rol) && !rows[0].etapas.some(etapa => String(etapa.responsable_id) === String(req.user.id))) throw fallo('No tenés permisos sobre este pedido.', 403)
   res.json(rows[0])
 }))
 

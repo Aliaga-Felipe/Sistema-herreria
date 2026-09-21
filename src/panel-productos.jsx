@@ -51,7 +51,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
       categoria_id: producto.categoria_id || null,
       destacado: Boolean(producto.destacado),
       horas_hombre: Number(producto.horas_hombre) || 0,
-      id_pieza: producto.id_pieza?.trim() || null,
+      chapita_id: producto.chapita_id?.trim() || null,
       etapas: producto.etapas.map(etapa => ({ ...etapa, costo: Number(etapa.costo), minutos_estimados: Number(etapa.minutos_estimados) })),
       materiales: producto.materiales.map(item => ({ material_id: item.material_id, cantidad: Number(item.cantidad) }))
     }
@@ -158,10 +158,7 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
   const [categoriaId, setCategoriaId] = useState(producto.categoria_id || '')
   const [destacado, setDestacado] = useState(Boolean(producto.destacado))
   const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ?? 0)
-  // Al crear un producto nuevo se sugiere automáticamente el próximo ID
-  // libre; al editar uno existente se muestra el que ya tiene. En ambos
-  // casos el admin puede cambiarlo a mano antes de guardar.
-  const [idPieza, setIdPieza] = useState(editar ? (producto.id_pieza || '') : sugerirIdPieza(productosExistentes || []))
+  const [chapitaId, setChapitaId] = useState(producto.chapita_id || '')
   const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, costo, minutos_estimados }) => ({ nombre, costo, minutos_estimados })) : etapasSugeridas)
   const [materiales, setMateriales] = useState(producto.materiales?.length ? producto.materiales.map(({ material_id, cantidad }) => ({ material_id, cantidad })) : [])
   const [error, setError] = useState('')
@@ -197,7 +194,7 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
     if (materiales.some(item => !item.material_id || Number(item.cantidad) <= 0)) return setError('Cada material necesita elegirse y tener una cantidad mayor a cero.')
     if (idPiezaDuplicado) return setError(`El ID de pieza "${idPieza.trim()}" ya existe. Elegí otro ID.`)
     setBusy(true); setError('')
-    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, id_pieza: idPieza, etapas, materiales }) }
+    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, chapita_id: chapitaId, etapas, materiales }) }
     catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
@@ -249,6 +246,11 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
             <b>★ Producto destacado</b>
             <small>Se muestra en la sección "Productos destacados" de la portada de la web</small>
           </span>
+        </label>
+
+        <label>ID de chapita (opcional)
+          <input value={chapitaId} onChange={event => setChapitaId(event.target.value)} placeholder="Ej. 014" maxLength={20} />
+          <small>Si lo completás, en la página del producto de la web pública aparece una chapita vintage con "PC N° {chapitaId.trim() || '...'}" junto al nombre. Dejalo vacío para no mostrar ninguna chapita.</small>
         </label>
 
         {editar

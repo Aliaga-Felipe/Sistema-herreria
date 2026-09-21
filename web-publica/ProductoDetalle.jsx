@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
 import { dinero, publicApi, useMeta } from './api.js'
 import { usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
@@ -13,14 +14,60 @@ export default function ProductoDetalle() {
   const [producto, setProducto] = useState(null)
   const [error, setError] = useState(false)
   const [activa, setActiva] = useState(0)
+  const [amplificada, setAmplificada] = useState(false)
 
   useEffect(() => {
-    setProducto(null); setError(false); setActiva(0)
+    setProducto(null); setError(false); setActiva(0); setAmplificada(false)
     publicApi.producto(slug).then(setProducto).catch(() => setError(true))
     window.scrollTo({ top: 0 })
   }, [slug])
 
   useMeta(producto?.nombre, producto?.descripcion?.slice(0, 160))
+
+  // Imágenes del producto actual (vacío mientras todavía no cargó). Se
+  // calculan acá arriba —y no más abajo, después de los "return" de
+  // carga/error— porque el carrusel automático (el useEffect siguiente)
+  // es un hook y los hooks no pueden quedar detrás de un return
+  // condicional: React exige llamarlos siempre en el mismo orden.
+  const imagenes = producto?.imagenes?.length ? producto.imagenes : []
+  const hayVarias = imagenes.length > 1
+  const irAnterior = () => setActiva(indice => (indice - 1 + imagenes.length) % imagenes.length)
+  const irSiguiente = () => setActiva(indice => (indice + 1) % imagenes.length)
+
+  // Carrusel automático: cada 3s avanza a la siguiente imagen y vuelve a
+  // la primera al llegar al final. No se activa con una sola imagen.
+  // Se pausa por completo mientras el lightbox está abierto (no se crea
+  // ningún intervalo en ese caso, así la imagen ampliada queda fija y el
+  // contador no sigue corriendo de fondo) y se reinicia limpio —desde la
+  // imagen actual, nunca desde la primera— cada vez que cambia `activa`
+  // (incluida una navegación manual con flechas/puntos) o que se cierra
+  // el lightbox. El cleanup limpia el intervalo en cada re-ejecución y al
+  // desmontar, así nunca queda más de un temporizador corriendo, incluso
+  // si el usuario cambia de producto rápido (el efecto de arriba resetea
+  // `activa`, lo que dispara este efecto de nuevo desde cero).
+  useEffect(() => {
+    if (!hayVarias || amplificada) return
+    const id = setInterval(() => {
+      setActiva(indice => (indice + 1) % imagenes.length)
+    }, 3000)
+    return () => clearInterval(id)
+  }, [hayVarias, amplificada, imagenes.length, activa])
+
+  // Mientras el lightbox está abierto: bloquea el scroll de fondo (para
+  // que tocar/scrollear detrás no mueva la página) y permite cerrar con
+  // Escape además de la X, sin afectar nada del resto del sitio porque
+  // ambos efectos se deshacen apenas `amplificada` vuelve a false.
+  useEffect(() => {
+    if (!amplificada) return
+    const estiloPrevio = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const alTeclear = event => { if (event.key === 'Escape') setAmplificada(false) }
+    window.addEventListener('keydown', alTeclear)
+    return () => {
+      document.body.style.overflow = estiloPrevio
+      window.removeEventListener('keydown', alTeclear)
+    }
+  }, [amplificada])
 
   if (error) {
     return (
@@ -49,12 +96,15 @@ export default function ProductoDetalle() {
     )
   }
 
-  const imagenes = producto.imagenes?.length ? producto.imagenes : []
   const mensaje = `Hola, quisiera consultar por el producto: ${producto.nombre}`
 
   return (
     <div className="detalle-producto">
       <div className="contenedor">
+        <Link to="/productos" className="volver-productos">
+          <span aria-hidden="true">←</span> Volver a productos
+        </Link>
+
         <p className="migas">
           <Link to="/">Inicio</Link> / <Link to="/productos">Productos</Link>
           {producto.categoria_nombre && <> / <Link to={`/productos?categoria=${producto.categoria_slug}`}>{producto.categoria_nombre}</Link></>}
@@ -64,11 +114,50 @@ export default function ProductoDetalle() {
         <div className="detalle-grid">
           <div>
             <div className="galeria-principal">
-              {imagenes.length
-                ? <img src={imagenes[activa]?.url} alt={producto.nombre} />
-                : <span className="sin-imagen">▱</span>}
+              {imagenes.length ? (
+                <AnimatePresence initial={false}>
+                  <motion.img
+                    key={imagenes[activa].id}
+                    src={imagenes[activa].url}
+                    alt={producto.nombre}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    onClick={() => setAmplificada(true)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Ampliar imagen"
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') setAmplificada(true) }}
+                  />
+                </AnimatePresence>
+              ) : (
+                <span className="sin-imagen">▱</span>
+              )}
+
+              {hayVarias && (
+                <>
+                  <button type="button" className="galeria-flecha galeria-flecha-izq" onClick={irAnterior} aria-label="Imagen anterior">‹</button>
+                  <button type="button" className="galeria-flecha galeria-flecha-der" onClick={irSiguiente} aria-label="Imagen siguiente">›</button>
+                </>
+              )}
             </div>
-            {imagenes.length > 1 && (
+
+            {hayVarias && (
+              <div className="galeria-puntos">
+                {imagenes.map((imagen, indice) => (
+                  <button
+                    key={imagen.id}
+                    type="button"
+                    className={indice === activa ? 'activo' : ''}
+                    onClick={() => setActiva(indice)}
+                    aria-label={`Ver imagen ${indice + 1} de ${imagenes.length}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {hayVarias && (
               <div className="galeria-miniaturas">
                 {imagenes.map((imagen, indice) => (
                   <button key={imagen.id} className={indice === activa ? 'activa' : ''} onClick={() => setActiva(indice)}>
@@ -111,6 +200,42 @@ export default function ProductoDetalle() {
           </div>
         </section>
       )}
+
+      <AnimatePresence>
+        {amplificada && Boolean(imagenes.length) && (
+          <motion.div
+            className="lightbox-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            onClick={() => setAmplificada(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${producto.nombre} — imagen ampliada`}
+          >
+            <button
+              type="button"
+              className="lightbox-cerrar"
+              onClick={event => { event.stopPropagation(); setAmplificada(false) }}
+              aria-label="Cerrar imagen ampliada"
+            >
+              ×
+            </button>
+            <motion.img
+              key={imagenes[activa].id}
+              className="lightbox-imagen"
+              src={imagenes[activa].url}
+              alt={producto.nombre}
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              onClick={event => event.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

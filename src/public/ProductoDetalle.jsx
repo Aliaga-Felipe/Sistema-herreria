@@ -5,6 +5,7 @@ import { usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import ProductCard from './components/ProductCard.jsx'
 import SectionTitle from './components/SectionTitle.jsx'
+import ChapitaVintage from './components/ChapitaVintage.jsx'
 
 export default function ProductoDetalle() {
   const { slug } = useParams()
@@ -80,7 +81,10 @@ export default function ProductoDetalle() {
 
           <div className="detalle-info">
             {producto.categoria_nombre && <p className="eyebrow-public">{producto.categoria_nombre}</p>}
-            <h1>{producto.nombre}</h1>
+            <div className="detalle-titulo">
+              <h1>{producto.nombre}</h1>
+              {producto.chapita_id && <ChapitaVintage numero={producto.chapita_id} />}
+            </div>
             <p className="detalle-precio">{dinero(producto.precio_venta, config.moneda)}</p>
             {producto.descripcion && <p className="detalle-descripcion">{producto.descripcion}</p>}
 

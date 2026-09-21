@@ -9,10 +9,19 @@ export const auth = (roles = []) => (req, res, next) => {
   try {
     const user = jwt.verify(req.headers.authorization?.replace('Bearer ', ''), secret)
     user.rol = normalizedRole(user.rol)
-    if (roles.length && !roles.includes(user.rol)) return res.status(403).json({ error: 'No tenés permisos para esta acción.' })
+    // "super_admin" es el nivel máximo de permisos del sistema: supera
+    // cualquier comprobación de rol hecha acá, sin excepción. Esta es la
+    // función centralizada de permisos (todas las rutas pasan por acá), así
+    // que este único bypass alcanza para darle acceso a toda la aplicación.
+    if (roles.length && user.rol !== 'super_admin' && !roles.includes(user.rol)) return res.status(403).json({ error: 'No tenés permisos para esta acción.' })
     req.user = user; next()
   } catch { res.status(401).json({ error: 'Sesión no válida o vencida.' }) }
 }
+
+// Helper compartido: ¿este rol tiene la visión/permisos de nivel
+// administrativo de una ruta (ve y gestiona todo, no solo lo propio)?
+// "admin" y "super_admin" lo cumplen los dos.
+export const esAdmin = rol => rol === 'admin' || rol === 'super_admin'
 
 // El enum rol_usuario puede estar en minúscula o mayúscula según cómo se creó la base.
 export const rolLiteral = parametro => `(SELECT enumlabel::rol_usuario FROM pg_enum WHERE enumtypid = 'rol_usuario'::regtype AND LOWER(enumlabel) = ${parametro})`
@@ -42,6 +51,7 @@ export const configuracionPorDefecto = {
   negocio_facebook: '',
   negocio_horario: '',
   negocio_hero_video: '',
+  negocio_nosotros_imagen: '',
   costo_hora_mano_obra: '0'
 }
 
@@ -51,7 +61,7 @@ export const configuracionPorDefecto = {
 export const clavesConfiguracionPublica = [
   'negocio_nombre', 'negocio_rubro', 'negocio_eslogan', 'negocio_descripcion', 'negocio_whatsapp',
   'negocio_email', 'negocio_telefono', 'negocio_direccion', 'negocio_instagram',
-  'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'moneda'
+  'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'negocio_nosotros_imagen', 'moneda'
 ]
 
 // Genera un slug URL-friendly a partir de un texto (nombre de producto o

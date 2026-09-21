@@ -9,7 +9,7 @@
 -- ---------------------------------------------------------------------
 -- TIPOS ENUMERADOS
 -- ---------------------------------------------------------------------
-DO $$ BEGIN CREATE TYPE rol_usuario AS ENUM ('admin', 'empleado'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE rol_usuario AS ENUM ('admin', 'empleado', 'super_admin'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'REALIZADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE estado_pedido AS ENUM ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE estado_etapa AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'COMPLETADA', 'CANCELADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -156,6 +156,12 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAUL
 -- Horas-hombre de fabricación, usadas junto al costo por hora configurable
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
+-- Chapita vintage opcional ("PC N° ...") que se muestra junto al nombre del
+-- producto en la web pública (ver ProductoDetalle.jsx). Nullable a propósito:
+-- si está vacía, la web no muestra ninguna chapita (ver publico.js/
+-- panel-productos.jsx). VARCHAR y no numérico para no perder ceros a la
+-- izquierda (por ejemplo "014").
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
 
 -- Identificador visible de la pieza ("chapita" vintage numerada), único
 -- por producto. Es un campo propio, distinto de la clave primaria interna
@@ -417,6 +423,14 @@ ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_responsable_id_fkey FOREI
 
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_pedido_id_fkey;
 ALTER TABLE recompensas ADD CONSTRAINT recompensas_pedido_id_fkey FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE;
+
+-- Al eliminar la cuenta de un empleado (ver DELETE /usuarios/:id), sus
+-- tareas libres asignadas quedan sin responsable en lugar de bloquear el
+-- borrado o perder la tarea: el admin la reasigna después desde el panel
+-- de Tareas (PATCH /tareas/:id/asignar).
+ALTER TABLE tareas ALTER COLUMN asignado_a DROP NOT NULL;
+ALTER TABLE tareas DROP CONSTRAINT IF EXISTS tareas_asignado_a_fkey;
+ALTER TABLE tareas ADD CONSTRAINT tareas_asignado_a_fkey FOREIGN KEY (asignado_a) REFERENCES usuarios(id) ON DELETE SET NULL;
 
 -- ---------------------------------------------------------------------
 -- INDICES

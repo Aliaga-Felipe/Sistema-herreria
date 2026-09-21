@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, calcularSemaforo, decimal, entero, fallo, leerConfiguracion, registrarRecompensa, sincronizarPedido } from '../comun.js'
+import { asyncRoute, auth, calcularSemaforo, decimal, entero, esAdmin, fallo, leerConfiguracion, registrarRecompensa, sincronizarPedido } from '../comun.js'
 
 const router = Router()
 const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecución', minutos: 120 }, { nombre: 'Control de calidad', minutos: 20 }]
@@ -11,11 +11,11 @@ const consultaTareas = `SELECT t.id, t.titulo, t.descripcion, t.estado, t.asigna
       'costo', e.costo::float8, 'realizada', e.realizada, 'completada_en', e.completada_en) ORDER BY e.orden)
       FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
     json_build_object('id', u.id, 'nombre', u.nombre, 'email', u.email) AS asignado
-  FROM tareas t JOIN usuarios u ON u.id = t.asignado_a LEFT JOIN tarea_etapas e ON e.tarea_id = t.id`
+  FROM tareas t LEFT JOIN usuarios u ON u.id = t.asignado_a LEFT JOIN tarea_etapas e ON e.tarea_id = t.id`
 const agrupadoTareas = ' GROUP BY t.id, u.id ORDER BY t.creado_en DESC'
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
-  const admin = req.user.rol === 'admin'
+  const admin = esAdmin(req.user.rol)
   const { rows } = await pool.query(`${consultaTareas}${admin ? '' : ' WHERE t.asignado_a = $1'}${agrupadoTareas}`, admin ? [] : [req.user.id])
   res.json(rows)
 }))
@@ -41,6 +41,21 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
+// Reasigna el responsable de una tarea libre (a diferencia de una etapa de
+// pedido, que se reasigna desde PATCH /pedidos/:id/etapas/:etapaId/asignar).
+// Sirve, por ejemplo, para volver a asignar una tarea que quedó sin
+// responsable porque se eliminó la cuenta del empleado que la tenía.
+router.patch('/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
+  const { asignado_a: asignadoA } = req.body
+  if (asignadoA) {
+    const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [asignadoA])
+    if (!empleado.rows[0]) throw fallo('El usuario asignado debe ser un empleado activo.')
+  }
+  const { rows } = await pool.query('UPDATE tareas SET asignado_a = $1, actualizada_en = NOW() WHERE id = $2 RETURNING id', [asignadoA || null, req.params.id])
+  if (!rows[0]) throw fallo('Tarea no encontrada.', 404)
+  res.json({ mensaje: 'Responsable actualizado.' })
+}))
+
 router.patch('/:id/estado', auth(), asyncRoute(async (req, res) => {
   const { estado } = req.body
   if (!['PENDIENTE', 'EN_PROGRESO', 'REALIZADA'].includes(estado)) throw fallo('Estado inválido.')
@@ -48,8 +63,8 @@ router.patch('/:id/estado', auth(), asyncRoute(async (req, res) => {
     const pendientes = await pool.query('SELECT COUNT(*)::int AS pendientes FROM tarea_etapas WHERE tarea_id = $1 AND NOT realizada', [req.params.id])
     if (pendientes.rows[0].pendientes) throw fallo('Completá todas las etapas antes de finalizar la tarea.')
   }
-  const propia = req.user.rol === 'admin' ? '' : ' AND asignado_a = $3'
-  const valores = req.user.rol === 'admin' ? [estado, req.params.id] : [estado, req.params.id, req.user.id]
+  const propia = esAdmin(req.user.rol) ? '' : ' AND asignado_a = $3'
+  const valores = esAdmin(req.user.rol) ? [estado, req.params.id] : [estado, req.params.id, req.user.id]
   const { rows } = await pool.query(`UPDATE tareas SET estado = $1, actualizada_en = NOW(),
     finalizada_en = CASE WHEN $1 = 'REALIZADA' THEN COALESCE(finalizada_en, NOW()) ELSE NULL END
     WHERE id = $2${propia} RETURNING id, estado`, valores)
@@ -63,8 +78,8 @@ router.patch('/:tareaId/etapas/:etapaId', auth(), asyncRoute(async (req, res) =>
   const { realizada, minutos_reales: minutosReales } = req.body
   if (typeof realizada !== 'boolean') throw fallo('El campo realizada debe ser booleano.')
   if (!realizada) {
-    const propia = req.user.rol === 'admin' ? '' : ' AND t.asignado_a = $3'
-    const valores = req.user.rol === 'admin' ? [req.params.etapaId, req.params.tareaId] : [req.params.etapaId, req.params.tareaId, req.user.id]
+    const propia = esAdmin(req.user.rol) ? '' : ' AND t.asignado_a = $3'
+    const valores = esAdmin(req.user.rol) ? [req.params.etapaId, req.params.tareaId] : [req.params.etapaId, req.params.tareaId, req.user.id]
     const { rows } = await pool.query(`UPDATE tarea_etapas e SET realizada = FALSE, completada_en = NULL, minutos_reales = NULL, semaforo = NULL
       FROM tareas t WHERE e.id = $1 AND e.tarea_id = $2 AND t.id = e.tarea_id${propia} RETURNING e.id`, valores)
     if (!rows[0]) throw fallo('Etapa no encontrada o sin permisos.', 404)
@@ -79,8 +94,8 @@ router.patch('/:tareaId/etapas/:etapaId', auth(), asyncRoute(async (req, res) =>
 // Reúne las etapas de pedido y las de tareas libres asignadas a la persona.
 // ---------------------------------------------------------------------
 router.get('/asignadas/mias', auth(), asyncRoute(async (req, res) => {
-  const empleadoId = req.user.rol === 'admin' && req.query.empleado_id ? req.query.empleado_id : req.user.id
-  const admin = req.user.rol === 'admin' && req.query.todas === 'true'
+  const empleadoId = esAdmin(req.user.rol) && req.query.empleado_id ? req.query.empleado_id : req.user.id
+  const admin = esAdmin(req.user.rol) && req.query.todas === 'true'
   const { rows } = await pool.query(`SELECT v.*, u.nombre AS responsable
     FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a
     ${admin ? '' : 'WHERE v.asignado_a = $1'}
@@ -91,8 +106,8 @@ router.get('/asignadas/mias', auth(), asyncRoute(async (req, res) => {
 // Marca una etapa como iniciada (sirve para medir el tiempo transcurrido).
 router.patch('/asignadas/:origen/:id/iniciar', auth(), asyncRoute(async (req, res) => {
   if (req.params.origen !== 'PEDIDO') return res.json({ mensaje: 'Las tareas libres no registran inicio.' })
-  const propia = req.user.rol === 'admin' ? '' : ' AND responsable_id = $2'
-  const valores = req.user.rol === 'admin' ? [req.params.id] : [req.params.id, req.user.id]
+  const propia = esAdmin(req.user.rol) ? '' : ' AND responsable_id = $2'
+  const valores = esAdmin(req.user.rol) ? [req.params.id] : [req.params.id, req.user.id]
   const { rows } = await pool.query(`UPDATE pedido_etapas SET estado = 'EN_PROGRESO', iniciado_en = COALESCE(iniciado_en, NOW())
     WHERE id = $1 AND estado <> 'COMPLETADA'${propia} RETURNING id, iniciado_en, estado`, valores)
   if (!rows[0]) throw fallo('Etapa no encontrada o sin permisos.', 404)
@@ -115,9 +130,9 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
-    const propia = req.user.rol === 'admin' ? '' : ' AND responsable_id = $2'
+    const propia = esAdmin(req.user.rol) ? '' : ' AND responsable_id = $2'
     const etapa = (await conexion.query(`SELECT id, pedido_id, nombre, responsable_id, minutos_estimados FROM pedido_etapas WHERE id = $1${propia} FOR UPDATE`,
-      req.user.rol === 'admin' ? [req.params.id] : [req.params.id, req.user.id])).rows[0]
+      esAdmin(req.user.rol) ? [req.params.id] : [req.params.id, req.user.id])).rows[0]
     if (!etapa) throw fallo('Etapa no encontrada o sin permisos.', 404)
 
     const config = await leerConfiguracion(conexion)
@@ -142,10 +157,10 @@ async function completarEtapaTarea({ etapaId, tareaId = null, minutosReales, usu
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
-    const propia = usuario.rol === 'admin' ? '' : ' AND t.asignado_a = $2'
+    const propia = esAdmin(usuario.rol) ? '' : ' AND t.asignado_a = $2'
     const etapa = (await conexion.query(`SELECT e.id, e.tarea_id, e.nombre, e.minutos_estimados, t.asignado_a
       FROM tarea_etapas e JOIN tareas t ON t.id = e.tarea_id WHERE e.id = $1${propia}`,
-      usuario.rol === 'admin' ? [etapaId] : [etapaId, usuario.id])).rows[0]
+      esAdmin(usuario.rol) ? [etapaId] : [etapaId, usuario.id])).rows[0]
     if (!etapa || (tareaId && String(etapa.tarea_id) !== String(tareaId))) throw fallo('Etapa no encontrada o sin permisos.', 404)
 
     const config = await leerConfiguracion(conexion)

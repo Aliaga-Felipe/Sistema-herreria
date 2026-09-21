@@ -24,7 +24,9 @@ router.get('/', auth(), asyncRoute(async (_, res) => {
 // Vista compacta usada por el frontend para formatear montos y explicar la fórmula.
 router.get('/valores', auth(), asyncRoute(async (_, res) => res.json(await leerConfiguracion())))
 
-router.put('/', auth(['admin']), asyncRoute(async (req, res) => {
+// Editar configuración (datos del negocio, recompensas, video del hero):
+// exclusivo de "super_admin", igual que la sección "Usuarios".
+router.put('/', auth(['super_admin']), asyncRoute(async (req, res) => {
   const valores = req.body || {}
   const claves = Object.keys(valores).filter(clave => clave in configuracionPorDefecto)
   if (!claves.length) throw fallo('No hay parámetros válidos para guardar.')
@@ -68,7 +70,7 @@ const uploadVideo = multer({
   fileFilter: (_, file, cb) => cb(tiposVideoPermitidos.has(file.mimetype) ? null : fallo('Formato de video no soportado. Usá MP4, WEBM u OGG.'), tiposVideoPermitidos.has(file.mimetype))
 })
 
-router.post('/video-hero', auth(['admin']), (req, res, next) => {
+router.post('/video-hero', auth(['super_admin']), (req, res, next) => {
   uploadVideo.single('video')(req, res, error => {
     if (error) return res.status(400).json({ error: error.message || 'No se pudo subir el video. Recordá que el tamaño máximo es 40 MB.' })
     next()
@@ -82,11 +84,54 @@ router.post('/video-hero', auth(['admin']), (req, res, next) => {
   res.json({ negocio_hero_video: url })
 }))
 
-router.delete('/video-hero', auth(['admin']), asyncRoute(async (_, res) => {
+router.delete('/video-hero', auth(['super_admin']), asyncRoute(async (_, res) => {
   const anterior = await pool.query("SELECT valor FROM configuracion WHERE clave = 'negocio_hero_video'")
   await guardarValor('negocio_hero_video', '')
   if (anterior.rows[0]?.valor) fs.unlink(path.join(directorioVideos, path.basename(anterior.rows[0].valor)), () => {})
   res.json({ negocio_hero_video: '' })
+}))
+
+// -----------------------------------------------------------------------
+// IMAGEN DE LA SECCIÓN "SOBRE NOSOTROS" (web pública)
+// Una única imagen para toda la web (Inicio y la página Nosotros),
+// guardada en disco y referenciada desde la clave "negocio_nosotros_imagen"
+// de la tabla configuracion. Al subir una nueva reemplaza a la anterior:
+// no queda más de una imagen cargada a la vez. Sirve tanto para "subir
+// desde mis archivos" como para "pegar una imagen" (el frontend arma el
+// mismo tipo de archivo en los dos casos y lo manda a esta única ruta).
+// -----------------------------------------------------------------------
+const tiposImagenPermitidos = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const uploadImagenNosotros = multer({
+  storage: multer.diskStorage({
+    destination: (_, __, cb) => cb(null, directorioVideos),
+    filename: (_, file, cb) => {
+      const extension = path.extname(file.originalname).toLowerCase() || '.jpg'
+      cb(null, `nosotros-${Date.now()}${extension}`)
+    }
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => cb(tiposImagenPermitidos.has(file.mimetype) ? null : fallo('Formato de imagen no soportado. Usá JPG, PNG, WEBP o GIF.'), tiposImagenPermitidos.has(file.mimetype))
+})
+
+router.post('/imagen-nosotros', auth(['super_admin']), (req, res, next) => {
+  uploadImagenNosotros.single('imagen')(req, res, error => {
+    if (error) return res.status(400).json({ error: error.message || 'No se pudo subir la imagen. Recordá que el tamaño máximo es 8 MB.' })
+    next()
+  })
+}, asyncRoute(async (req, res) => {
+  if (!req.file) throw fallo('Adjuntá una imagen.')
+  const anterior = await pool.query("SELECT valor FROM configuracion WHERE clave = 'negocio_nosotros_imagen'")
+  const url = `/uploads/sitio/${req.file.filename}`
+  await guardarValor('negocio_nosotros_imagen', url)
+  if (anterior.rows[0]?.valor) fs.unlink(path.join(directorioVideos, path.basename(anterior.rows[0].valor)), () => {})
+  res.json({ negocio_nosotros_imagen: url })
+}))
+
+router.delete('/imagen-nosotros', auth(['super_admin']), asyncRoute(async (_, res) => {
+  const anterior = await pool.query("SELECT valor FROM configuracion WHERE clave = 'negocio_nosotros_imagen'")
+  await guardarValor('negocio_nosotros_imagen', '')
+  if (anterior.rows[0]?.valor) fs.unlink(path.join(directorioVideos, path.basename(anterior.rows[0].valor)), () => {})
+  res.json({ negocio_nosotros_imagen: '' })
 }))
 
 export default router

@@ -2,7 +2,12 @@ import React, { useEffect, useState } from 'react'
 import { api, dinero, duracion, fecha, useData } from './api.js'
 import { Actions, Empty, Heading, Modal, Stat, useAviso } from './ui.jsx'
 
-export default function PanelRecompensas() {
+export default function PanelRecompensas({ rol }) {
+  // Editar los parámetros de la fórmula (ConfiguracionRecompensas) sigue
+  // siendo exclusivo de "super_admin" (misma restricción que en
+  // rutas/configuracion.js: PUT /configuracion). Un "admin" común ahora
+  // puede verlos acá, en la sección Recompensas, pero en modo solo lectura.
+  const esSuperAdmin = rol === 'super_admin'
   const recompensas = useData('/recompensas')
   const ranking = useData('/recompensas/ranking')
   const empleados = useData('/usuarios/empleados')
@@ -46,7 +51,7 @@ export default function PanelRecompensas() {
         <Stat label="Empleados premiados" value={new Set(recompensas.data.map(item => item.usuario_id)).size} />
       </section>
 
-      <ConfiguracionRecompensas onGuardar={() => mostrar('Parámetros de recompensa actualizados.')} />
+      <ConfiguracionRecompensas soloLectura={!esSuperAdmin} onGuardar={() => mostrar('Parámetros de recompensa actualizados.')} />
 
       <section className="section-heading">
         <div><h2>Rendimiento por empleado</h2><p>Semáforos acumulados y bonos ganados por cada persona.</p></div>
@@ -114,7 +119,7 @@ export default function PanelRecompensas() {
 // PARÁMETROS DE LA FÓRMULA (editables por el admin)
 // bono = (minutos ahorrados / 60) × valor hora × factor de ahorro
 // ---------------------------------------------------------------------
-export function ConfiguracionRecompensas({ onGuardar }) {
+export function ConfiguracionRecompensas({ onGuardar, soloLectura = false }) {
   const configuracion = useData('/configuracion/valores', {})
   const [valores, setValores] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -127,6 +132,7 @@ export function ConfiguracionRecompensas({ onGuardar }) {
 
   const guardar = async event => {
     event.preventDefault()
+    if (soloLectura) return
     setBusy(true); setError('')
     try {
       const guardados = await api.put('/configuracion', valores, configuracion.token)
@@ -149,24 +155,24 @@ export function ConfiguracionRecompensas({ onGuardar }) {
 
       <div className="form-grid config-grid">
         <label>Valor de la hora de taller
-          <input min="0" step="0.01" type="number" value={valores.recompensa_valor_hora} onChange={cambiar('recompensa_valor_hora')} />
+          <input disabled={soloLectura} min="0" step="0.01" type="number" value={valores.recompensa_valor_hora} onChange={cambiar('recompensa_valor_hora')} />
         </label>
 
         <label>Factor sobre el ahorro (0 a 1)
-          <input min="0" max="1" step="0.05" type="number" value={valores.recompensa_factor_ahorro} onChange={cambiar('recompensa_factor_ahorro')} />
+          <input disabled={soloLectura} min="0" max="1" step="0.05" type="number" value={valores.recompensa_factor_ahorro} onChange={cambiar('recompensa_factor_ahorro')} />
         </label>
 
         <label>Bono mínimo en verde
-          <input min="0" step="0.01" type="number" value={valores.recompensa_bono_minimo} onChange={cambiar('recompensa_bono_minimo')} />
+          <input disabled={soloLectura} min="0" step="0.01" type="number" value={valores.recompensa_bono_minimo} onChange={cambiar('recompensa_bono_minimo')} />
         </label>
 
         <label>Tolerancia del semáforo (0.1 = 10%)
-          <input min="0" max="1" step="0.01" type="number" value={valores.semaforo_tolerancia} onChange={cambiar('semaforo_tolerancia')} />
+          <input disabled={soloLectura} min="0" max="1" step="0.01" type="number" value={valores.semaforo_tolerancia} onChange={cambiar('semaforo_tolerancia')} />
         </label>
       </div>
 
       <label className="config-check">
-        <input type="checkbox" checked={String(valores.recompensa_activa) === 'true'} onChange={cambiar('recompensa_activa')} />
+        <input disabled={soloLectura} type="checkbox" checked={String(valores.recompensa_activa) === 'true'} onChange={cambiar('recompensa_activa')} />
         Generar recompensas automáticamente al cerrar una etapa en verde
       </label>
 
@@ -174,7 +180,9 @@ export function ConfiguracionRecompensas({ onGuardar }) {
 
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">
-        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar parámetros'}</button>
+        {soloLectura
+          ? <p className="muted">Solo un super_admin puede modificar estos parámetros.</p>
+          : <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar parámetros'}</button>}
       </div>
     </form>
   )

@@ -309,12 +309,12 @@
    INICIO: "PIEZAS DESTACADAS" ANIMADO AL SCROLL
    Todo centrado: el título arma sus letras desde los costados, debajo
    entra la bajada centrada, después (con movimiento mínimo, solo aparece)
-   el enlace "Ver todo el catálogo" a la derecha, y por último las fotos
-   cuadradas de los productos destacados entran volando desde los costados
-   — cada una según qué tan lejos está del centro de la fila — y quedan
-   fijas ahí; no es un loop continuo. Todo el desplazamiento lo maneja
-   framer-motion en DestacadosAnimados.jsx; acá solo va la base visual con
-   la paleta ya establecida del sitio.
+   el enlace "Ver todo el catálogo" a la derecha, y por último ese mismo
+   recorrido de scroll lleva directo al carrusel "squeeze" de productos
+   destacados (ver más abajo), con un leve ascenso + desvanecido. No hay
+   una grilla de fotos sueltas de por medio en ningún momento. Todo el
+   desplazamiento lo maneja framer-motion en DestacadosAnimados.jsx; acá
+   solo va la base visual con la paleta ya establecida del sitio.
    --------------------------------------------------------------------- */
 .destacados-animados {
   display: flex;
@@ -341,7 +341,7 @@
   will-change: transform, opacity;
 }
 
-/* Va entre la bajada y las fotos, pegado al borde derecho del contenedor. */
+/* Va entre la bajada y el carrusel, pegado al borde derecho del contenedor. */
 .destacados-cta {
   align-self: flex-end;
   will-change: opacity;
@@ -349,51 +349,87 @@
 
 .destacados-vacio { color: var(--texto-claro-muted); font-size: 0.94rem; }
 
-.destacados-logos {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 22px;
-}
-.destacados-item {
-  /* Ancho fijo (no "flex-basis" ni %) + flex-shrink:0, así las N fotos
-     miden siempre exactamente lo mismo entre sí, sin importar cuántas
-     entren en la fila o el ancho del contenedor. El nombre del producto
-     va debajo, dentro del mismo bloque, con el mismo ancho que la foto. */
-  flex: 0 0 auto;
-  width: 260px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  will-change: transform, opacity;
-}
-.destacados-logo {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  border-radius: var(--radio);
-  overflow: hidden;
-  background: var(--carbon);
-  border: 1px solid var(--borde-claro);
-}
-.destacados-logo a { display: block; width: 100%; height: 100%; transition: transform var(--transicion); }
-.destacados-logo a:hover { transform: scale(1.04); }
-.destacados-logo img { width: 100%; height: 100%; object-fit: cover; }
-.destacados-logo-sin-imagen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 1.6rem; }
-.destacados-nombre {
-  margin: 0;
-  text-align: center;
-  font-size: 0.86rem;
-  letter-spacing: 0.01em;
-  color: var(--texto-claro-muted);
-}
-@media (min-width: 720px) { .destacados-item { width: 320px; } }
+/* Envoltorio del carrusel "squeeze": lo que entra con scroll (ascenso +
+   desvanecido) al final del recorrido de arriba. Mientras se cargan los
+   productos, ocupa el mismo lugar con un simple bloque de carga (nunca
+   la vieja grilla de fotos sueltas). */
+.destacados-fase { width: 100%; will-change: transform, opacity; }
+.destacados-skeleton-carrusel { width: 100%; height: clamp(220px, 40vw, 380px); }
 
-/* Con "reducir movimiento" activo, o mientras el JS todavía no calculó el
-   scroll, todo el contenido ya queda en su posición final (ver el hook
-   usePrefiereMenosMovimiento y los valores iniciales de cada motion.*). */
-@media (prefers-reduced-motion: reduce) {
-  .destacados-logo a:hover { transform: none; }
+/* ---------------------------------------------------------------------
+   CARRUSEL "SQUEEZE" DE PRODUCTOS DESTACADOS (ver CarruselSqueeze.jsx)
+   Un panel abierto y el resto comprimidos en listones a la derecha; al
+   elegir otro producto la tira se desliza. Misma paleta y tipografía que
+   el resto del sitio, sin nada de la demo original (ni su fuente, ni sus
+   colores, ni sus imágenes).
+   --------------------------------------------------------------------- */
+.csq { width: 100%; }
+
+.csq-controles { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+.csq-flecha {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radio);
+  background: var(--madera);
+  color: var(--texto-claro);
+  transition: background var(--transicion), color var(--transicion);
+}
+.csq-flecha:hover { background: var(--arena); color: var(--negro); }
+.csq-flecha:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
+
+.csq-ventana { width: 100%; overflow: hidden; }
+.csq-tira { display: flex; height: 100%; width: max-content; }
+
+.csq-panel {
+  position: relative;
+  height: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--borde-claro);
+  background: var(--carbon);
+}
+.csq-panel:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
+
+.csq-imagen {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  max-width: none;
+  height: 100%;
+  transform: translateX(-50%);
+  object-fit: cover;
+}
+.csq-sin-imagen { display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 2rem; }
+
+.csq-chip {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  background: rgba(26, 26, 26, 0.78);
+  color: var(--arena);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: var(--radio);
+  pointer-events: none;
+}
+
+.csq-info { margin-top: 22px; display: grid; }
+.csq-info-item { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 14px; }
+.csq-info-texto { font-size: 0.95rem; }
+.csq-info-nombre { font-family: var(--fuente-display); font-size: 1.18rem; margin-right: 8px; }
+.csq-info-precio { color: var(--arena); }
+.csq-accion { align-self: flex-start; }
+
+@container (min-width: 560px) {
+  .csq-info-item { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; }
+  .csq-accion { align-self: center; }
 }
 
 /* ---------------------------------------------------------------------
@@ -430,29 +466,6 @@
 
 /* Grilla compacta usada dentro de la sección "destacados" en fondo claro */
 .seccion-clara .tarjeta-producto-media { background: rgba(26,26,26,0.06); }
-
-/* ---------------------------------------------------------------------
-   CATEGORÍAS
-   --------------------------------------------------------------------- */
-.grilla-categorias { display: grid; grid-template-columns: 1fr; gap: 18px; }
-@media (min-width: 640px) { .grilla-categorias { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1100px) { .grilla-categorias { grid-template-columns: repeat(3, 1fr); } }
-
-.tarjeta-categoria {
-  position: relative;
-  aspect-ratio: 3 / 2;
-  border-radius: var(--radio);
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  background: var(--carbon);
-}
-.tarjeta-categoria img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1); }
-.tarjeta-categoria:hover img { transform: scale(1.07); }
-.tarjeta-categoria::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(26,26,26,0) 40%, rgba(26,26,26,0.86) 100%); }
-.tarjeta-categoria-info { position: relative; padding: 24px; color: var(--texto-claro); }
-.tarjeta-categoria-info h3 { font-size: 1.5rem; }
-.tarjeta-categoria-info span { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--arena); }
 
 /* ---------------------------------------------------------------------
    CATÁLOGO: BARRA DE FILTROS
@@ -577,19 +590,82 @@
    DETALLE DE PRODUCTO
    --------------------------------------------------------------------- */
 .detalle-producto { padding-top: calc(var(--header-alto) + 24px); background: var(--negro); }
+
+.volver-productos {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; color: var(--texto-claro-muted);
+  margin-bottom: 20px;
+  transition: color var(--transicion);
+}
+.volver-productos span { font-size: 1rem; line-height: 1; }
+.volver-productos:hover { color: var(--arena); }
+
 .migas { font-size: 0.76rem; color: var(--texto-claro-muted); display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 28px; }
 .migas a:hover { color: var(--arena); }
 
 .detalle-grid { display: grid; grid-template-columns: 1fr; gap: 40px; padding-bottom: 90px; }
 @media (min-width: 960px) { .detalle-grid { grid-template-columns: 1.15fr 1fr; gap: 64px; } }
 
-.galeria-principal { aspect-ratio: 4/5; border-radius: var(--radio); overflow: hidden; background: var(--carbon); margin-bottom: 14px; }
-.galeria-principal img { width: 100%; height: 100%; object-fit: cover; }
+.galeria-principal { position: relative; aspect-ratio: 4/5; border-radius: var(--radio); overflow: hidden; background: var(--carbon); margin-bottom: 14px; }
+.galeria-principal img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
 .galeria-principal .sin-imagen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 3rem; }
+
+.galeria-flecha {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 40px; height: 40px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: 50%;
+  font-size: 1.2rem; line-height: 1;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.galeria-flecha:hover { background: var(--madera); border-color: var(--madera); }
+.galeria-flecha-izq { left: 12px; }
+.galeria-flecha-der { right: 12px; }
+
+.galeria-puntos { display: flex; justify-content: center; gap: 8px; margin: 0 0 14px; }
+.galeria-puntos button {
+  width: 8px; height: 8px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--arena); background: transparent;
+  transition: background var(--transicion), transform var(--transicion);
+}
+.galeria-puntos button.activo { background: var(--arena); transform: scale(1.2); }
+
 .galeria-miniaturas { display: flex; gap: 10px; flex-wrap: wrap; }
 .galeria-miniaturas button { width: 76px; height: 76px; border-radius: var(--radio); overflow: hidden; padding: 0; border: 1px solid var(--borde-claro); opacity: 0.55; transition: opacity var(--transicion), border-color var(--transicion); }
 .galeria-miniaturas button.activa { opacity: 1; border-color: var(--arena); }
 .galeria-miniaturas img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Lightbox de la galería: al tocar/clickear la imagen principal del
+   producto se abre una vista ampliada a pantalla completa, con el mismo
+   patrón de superposición oscura que ya usa el mapa (.mapa-negro-overlay-*)
+   para mantener consistencia visual. La X de cerrar es más grande que la
+   del mapa (44px) para que sea cómoda de tocar en celular. */
+.lightbox-overlay {
+  position: fixed; inset: 0; background: rgba(10, 9, 8, 0.92);
+  display: grid; place-items: center; padding: 24px; z-index: 600;
+  cursor: zoom-out;
+}
+.lightbox-imagen {
+  max-width: min(1100px, 92vw); max-height: 88vh;
+  width: auto; height: auto; object-fit: contain;
+  border-radius: var(--radio); cursor: default;
+}
+.lightbox-cerrar {
+  position: absolute; top: 16px; right: 16px; z-index: 2;
+  width: 44px; height: 44px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: 50%;
+  font-size: 1.6rem; line-height: 1;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.lightbox-cerrar:hover { background: var(--madera); border-color: var(--madera); }
+
+@media (max-width: 640px) {
+  .lightbox-overlay { padding: 16px; }
+  .lightbox-cerrar { top: 12px; right: 12px; }
+}
 
 .detalle-info .eyebrow-public { margin-bottom: 10px; }
 .detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 0; }
@@ -614,17 +690,8 @@
 .relacionados { padding: 0 0 100px; background: var(--negro); }
 
 /* ---------------------------------------------------------------------
-   NOSOTROS / MATERIALES
+   SOBRE NOSOTROS (Inicio) / MATERIALES
    --------------------------------------------------------------------- */
-/* Encabezado de Nosotros: en vez del corte seco entre el carbón del
-   encabezado y el negro de la sección siguiente, el fondo se funde en
-   degradé de un tono al otro, así la transición queda integrada en vez
-   de una línea visible. Sólo aplica acá (no toca Productos/Categorías,
-   que siguen usando .catalogo-encabezado con su fondo sólido de siempre). */
-.nosotros-encabezado {
-  background: linear-gradient(180deg, var(--carbon) 0%, var(--negro) 100%);
-}
-
 .split-editorial { display: grid; grid-template-columns: 1fr; gap: 36px; align-items: center; }
 @media (min-width: 900px) { .split-editorial { grid-template-columns: 1fr 1fr; gap: 72px; } }
 .split-editorial img { border-radius: var(--radio); aspect-ratio: 4/5; object-fit: cover; width: 100%; }
@@ -645,13 +712,57 @@
 
 .ubicacion-mapa { border: 1px solid var(--borde-claro); border-radius: var(--radio); overflow: hidden; aspect-ratio: 4/3; }
 @media (min-width: 900px) { .ubicacion-mapa { aspect-ratio: auto; min-height: 320px; height: 100%; } }
-.ubicacion-mapa iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Mapa en negro elegante: filtro CSS sobre el iframe real de Google Maps
+   (sin API key). grayscale primero para eliminar todo color de base y
+   recién después invertir/oscurecer, así no quedan tonos verdes/marrones
+   en parques o zonas de agua. */
+.ubicacion-mapa iframe { width: 100%; height: 100%; border: 0; display: block; filter: grayscale(100%) invert(94%) brightness(0.82) contrast(1.2); }
 
 .ubicacion-info { display: flex; flex-direction: column; justify-content: center; }
 .ubicacion-info h3 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); margin-bottom: 18px; }
 .ubicacion-direccion { font-style: normal; line-height: 1.8; opacity: 0.82; font-size: 1rem; margin: 0 0 8px; }
 .ubicacion-horario { margin-top: 18px; }
 .ubicacion-grid .ubicacion-horario article { border-bottom: none; padding: 16px 0 0; }
+
+/* Tarjeta interactiva del mapa: inclinación 3D sutil al pasar el mouse
+   (whileHover, no seguimiento continuo, porque el iframe de Google Maps es
+   de otro origen y no deja llegar los eventos de mouse al documento padre)
+   y botón "Ampliar" para abrir el mapa en una superposición más grande. El
+   mapa en sí conserva su paneo/zoom nativo sin interferencias. */
+.mapa-negro { position: relative; width: 100%; height: 100%; border-radius: var(--radio); overflow: hidden; }
+.mapa-negro-ampliar {
+  position: absolute; top: 14px; right: 14px; z-index: 2;
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: var(--radio);
+  font-family: var(--fuente-texto); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--transicion), border-color var(--transicion), color var(--transicion);
+}
+.mapa-negro-ampliar:hover { background: var(--madera); border-color: var(--madera); color: var(--texto-claro); }
+
+.mapa-negro-overlay-fondo {
+  position: fixed; inset: 0; background: rgba(10, 9, 8, 0.86); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 24px; z-index: 200;
+}
+.mapa-negro-overlay-caja {
+  position: relative; width: min(920px, 100%); aspect-ratio: 16/10; max-height: 86vh;
+  background: var(--carbon); border: 1px solid var(--borde-claro); border-radius: var(--radio); overflow: hidden;
+}
+.mapa-negro-overlay-caja iframe { width: 100%; height: 100%; border: 0; display: block; filter: grayscale(100%) invert(94%) brightness(0.82) contrast(1.2); }
+.mapa-negro-overlay-cerrar {
+  position: absolute; top: 10px; right: 10px; z-index: 2; width: 34px; height: 34px;
+  display: grid; place-items: center; background: rgba(26, 26, 26, 0.78); color: var(--texto-claro);
+  border: 1px solid var(--borde-claro); border-radius: var(--radio); font-size: 1.3rem; line-height: 1;
+  cursor: pointer;
+  transition: background var(--transicion), border-color var(--transicion);
+}
+.mapa-negro-overlay-cerrar:hover { background: var(--madera); border-color: var(--madera); }
+
+@media (max-width: 640px) {
+  .mapa-negro-overlay-caja { aspect-ratio: 3/4; max-height: 82vh; }
+  .mapa-negro-ampliar span { display: none; }
+}
 
 /* ---------------------------------------------------------------------
    CTA FINAL

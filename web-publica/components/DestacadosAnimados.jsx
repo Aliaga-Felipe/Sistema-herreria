@@ -1,15 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import CarruselSqueeze from './CarruselSqueeze.jsx'
 
 // Sección animada de "Piezas destacadas" en el Inicio: a medida que se
 // desplaza hacia esta sección, el título centrado arma sus letras desde
-// los costados, debajo entra la bajada centrada, después el botón "Ver
-// todo el catálogo" (a la derecha, con un movimiento mínimo) y por último
-// las fotos cuadradas de los productos destacados entran volando desde los
-// costados, cada una a su propio ritmo según qué tan lejos está del
-// centro. Una vez que terminan de entrar quedan quietas: no es un loop
-// continuo, es pura animación de scroll (useScroll + useTransform).
+// los costados, debajo entra la bajada centrada y después el botón "Ver
+// todo el catálogo" (a la derecha, con un movimiento mínimo). Ese mismo
+// recorrido de scroll termina llevando directo al carrusel de productos
+// destacados (CarruselSqueeze.jsx): sus paneles entran con la misma
+// animación que arma el título, letra por letra (cada uno desde el
+// costado que le toca según su posición en la fila, convergiendo al
+// centro con la misma curva de desvanecido). No hay una grilla de fotos
+// "vieja" de por medio en ningún momento: la animación de entrada lleva
+// directo al carrusel. No es un loop continuo, es pura animación de
+// scroll (useScroll + useTransform).
 
 const TITULO = 'PRODUCTOS DESTACADOS'
 
@@ -44,33 +49,7 @@ function LetraTitulo({ char, indice, centro, progreso, reducido }) {
   )
 }
 
-// Foto cuadrada de un producto destacado: entra volando desde el costado
-// que le toca según su posición respecto del centro de la fila, y una vez
-// que el scroll pasa ese tramo queda fija en su lugar (no vuelve a moverse).
-// Debajo de la foto va el nombre del producto, dentro del mismo bloque
-// animado para que entre junto con la foto.
-function FotoProducto({ producto, indice, centro, progreso, reducido }) {
-  const distancia = indice - centro
-  const x = useTransform(progreso, [0, 1], [reducido ? 0 : distancia * 60, 0])
-  const y = useTransform(progreso, [0, 1], [reducido ? 0 : Math.abs(distancia) * 24, 0])
-  const escala = useTransform(progreso, [0, 1], [reducido ? 1 : 0.7, 1])
-  const opacidad = useTransform(progreso, [0, 0.5, 1], [reducido ? 1 : 0, reducido ? 1 : 0.35, 1])
-
-  return (
-    <motion.div className="destacados-item" style={{ x, y, scale: escala, opacity: opacidad }}>
-      <div className="destacados-logo">
-        <Link to={`/productos/${producto.slug}`} aria-label={producto.nombre} title={producto.nombre}>
-          {producto.imagen_principal
-            ? <img src={producto.imagen_principal} alt={producto.nombre} loading="lazy" />
-            : <span className="destacados-logo-sin-imagen">▱</span>}
-        </Link>
-      </div>
-      <p className="destacados-nombre">{producto.nombre}</p>
-    </motion.div>
-  )
-}
-
-export default function DestacadosAnimados({ productos }) {
+export default function DestacadosAnimados({ productos, moneda }) {
   const ref = useRef(null)
   const reducido = usePrefiereMenosMovimiento()
 
@@ -83,14 +62,17 @@ export default function DestacadosAnimados({ productos }) {
   const opacidadSubtitulo = useTransform(scrollYProgress, [0.25, 0.45], [0, 1])
   const ySubtitulo = useTransform(scrollYProgress, [0.25, 0.45], [14, 0])
   const opacidadCta = useTransform(scrollYProgress, [0.4, 0.58], [0, 1])
-  const progresoFotos = useTransform(scrollYProgress, [0.52, 0.88], [0, 1])
+  // Último tramo del mismo recorrido: en vez de hacer entrar fotos sueltas
+  // en una grilla vieja, lleva directo al carrusel con la misma animación
+  // que arma el título letra por letra (cada panel entra desde el costado
+  // que le toca según su posición en la fila, convergiendo al centro).
+  // "progresoCarrusel" es ese 0→1, igual que "progresoTitulo" arriba.
+  const progresoCarrusel = useTransform(scrollYProgress, [0.58, 0.92], [0, 1])
 
   const letras = TITULO.split('')
   const centroLetras = Math.floor(letras.length / 2)
   const cargando = productos === null
   const vacio = !cargando && productos.length === 0
-  const items = cargando ? Array.from({ length: 4 }) : productos
-  const centroFotos = Math.floor(items.length / 2)
 
   return (
     <div className="destacados-animados" ref={ref}>
@@ -111,13 +93,13 @@ export default function DestacadosAnimados({ productos }) {
 
       {vacio ? (
         <p className="destacados-vacio">Todavía no hay productos destacados. Muy pronto vas a poder verlos acá.</p>
+      ) : cargando ? (
+        <motion.div className="destacados-fase" style={{ opacity: reducido ? 1 : progresoCarrusel }}>
+          <div className="destacados-skeleton-carrusel skeleton" />
+        </motion.div>
       ) : (
-        <div className="destacados-logos">
-          {items.map((producto, indice) => (
-            cargando
-              ? <div key={indice} className="destacados-item"><div className="destacados-logo skeleton" /></div>
-              : <FotoProducto key={producto.id} producto={producto} indice={indice} centro={centroFotos} progreso={progresoFotos} reducido={reducido} />
-          ))}
+        <div className="destacados-fase">
+          <CarruselSqueeze productos={productos} moneda={moneda} progresoEntrada={progresoCarrusel} />
         </div>
       )}
     </div>
