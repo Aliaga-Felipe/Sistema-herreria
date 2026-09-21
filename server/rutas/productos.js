@@ -9,7 +9,7 @@ import { asyncRoute, auth, decimal, entero, fallo, leerConfiguracion, slugify } 
 
 const router = Router()
 
-const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.slug, p.creado_en,
+const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.slug, p.id_pieza, p.creado_en,
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre,
     COALESCE(SUM(e.costo), 0)::float8 AS costo_total,
     COALESCE(SUM(e.minutos_estimados), 0)::int AS minutos_totales,
@@ -96,6 +96,19 @@ const generarSlugUnico = async (cliente, nombre, idExcluir = null) => {
   }
 }
 
+// El ID de pieza identifica el producto en la chapita vintage de la web
+// pública ("PC N° 001", etc). Es opcional y de uso libre (números o
+// letras), se recorta y se limita a 20 caracteres para que entre en la
+// columna. La unicidad real la garantiza la restricción UNIQUE de la
+// base (productos_id_pieza_key, ver migracion_008_id_pieza.sql): acá
+// sólo se normaliza el valor, no se valida que esté libre.
+const normalizarIdPieza = idPieza => {
+  const valor = idPieza?.toString().trim() || ''
+  if (!valor) return null
+  if (valor.length > 20) throw fallo('El ID de pieza no puede superar los 20 caracteres.')
+  return valor
+}
+
 const validarCategoria = async categoriaId => {
   if (categoriaId === null || categoriaId === undefined || categoriaId === '') return null
   const { rows } = await pool.query('SELECT id FROM categorias WHERE id = $1', [categoriaId])
@@ -116,7 +129,7 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 }))
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [] } = req.body
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [], id_pieza = null } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = decimal(precio_venta)
   if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
@@ -124,25 +137,30 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
+  const idPieza = normalizarIdPieza(id_pieza)
 
   const cliente = await pool.connect()
   try {
     await cliente.query('BEGIN')
     const slug = await generarSlugUnico(cliente, nombre.trim())
     const { rows } = await cliente.query(
-      'INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre]
+      'INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre, id_pieza) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre, idPieza]
     )
     await guardarEtapas(cliente, rows[0].id, normalizadas)
     await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     const creado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.status(201).json((await conCostoCalculado(creado.rows))[0])
-  } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'productos_id_pieza_key') throw fallo(`El ID de pieza "${idPieza}" ya existe. Elegí otro ID.`, 409)
+    throw error
+  } finally { cliente.release() }
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [] } = req.body
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0, materiales = [], id_pieza = null } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = decimal(precio_venta)
   if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
@@ -150,6 +168,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
+  const idPieza = normalizarIdPieza(id_pieza)
 
   const cliente = await pool.connect()
   try {
@@ -162,8 +181,8 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
       : await generarSlugUnico(cliente, nombre.trim(), req.params.id)
 
     const { rows } = await cliente.query(
-      'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, horas_hombre = $7, actualizado_en = NOW() WHERE id = $8 RETURNING id',
-      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre, req.params.id]
+      'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, horas_hombre = $7, id_pieza = $8, actualizado_en = NOW() WHERE id = $9 RETURNING id',
+      [nombre.trim(), descripcion?.trim() || null, precio, categoriaValida, slug, Boolean(destacado), horasHombre, idPieza, req.params.id]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
     // Los pedidos ya generados guardan copia de nombre, costo y minutos,
@@ -173,7 +192,11 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
     await cliente.query('COMMIT')
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.json((await conCostoCalculado(actualizado.rows))[0])
-  } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'productos_id_pieza_key') throw fallo(`El ID de pieza "${idPieza}" ya existe. Elegí otro ID.`, 409)
+    throw error
+  } finally { cliente.release() }
 }))
 
 router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {

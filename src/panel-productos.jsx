@@ -10,6 +10,23 @@ const etapasSugeridas = [
   { nombre: 'Pintura y terminación', costo: 0, minutos_estimados: 45 }
 ]
 
+// Sugiere el próximo ID de pieza libre (para prellenar el campo al crear
+// un producto nuevo): completa huecos en vez de ir siempre al final, con
+// formato de ceros a la izquierda (001, 002... 099, 100...). Sólo mira
+// los ID numéricos ya usados; un ID con letras no cuenta para la sugerencia
+// pero el admin puede seguir escribiendo el que quiera a mano.
+const sugerirIdPieza = productos => {
+  const usados = new Set(
+    productos
+      .map(producto => (producto.id_pieza || '').trim())
+      .filter(valor => /^\d+$/.test(valor))
+      .map(valor => parseInt(valor, 10))
+  )
+  let siguiente = 1
+  while (usados.has(siguiente)) siguiente++
+  return String(siguiente).padStart(3, '0')
+}
+
 export default function PanelProductos({ intencion, limpiarIntencion }) {
   const productos = useData('/productos')
   const categorias = useData('/categorias')
@@ -34,6 +51,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
       categoria_id: producto.categoria_id || null,
       destacado: Boolean(producto.destacado),
       horas_hombre: Number(producto.horas_hombre) || 0,
+      id_pieza: producto.id_pieza?.trim() || null,
       etapas: producto.etapas.map(etapa => ({ ...etapa, costo: Number(etapa.costo), minutos_estimados: Number(etapa.minutos_estimados) })),
       materiales: producto.materiales.map(item => ({ material_id: item.material_id, cantidad: Number(item.cantidad) }))
     }
@@ -119,6 +137,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
       {editando && (
         <ProductoModal
           producto={editando}
+          productosExistentes={productos.data}
           categorias={categorias.data}
           materialesDisponibles={materiales.data}
           costoHora={Number(configuracion.data.costo_hora_mano_obra) || 0}
@@ -131,7 +150,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   )
 }
 
-function ProductoModal({ producto, categorias, materialesDisponibles, costoHora, token, close, save }) {
+function ProductoModal({ producto, productosExistentes, categorias, materialesDisponibles, costoHora, token, close, save }) {
   const editar = Boolean(producto.id)
   const [nombre, setNombre] = useState(producto.nombre || '')
   const [descripcion, setDescripcion] = useState(producto.descripcion || '')
@@ -139,6 +158,10 @@ function ProductoModal({ producto, categorias, materialesDisponibles, costoHora,
   const [categoriaId, setCategoriaId] = useState(producto.categoria_id || '')
   const [destacado, setDestacado] = useState(Boolean(producto.destacado))
   const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ?? 0)
+  // Al crear un producto nuevo se sugiere automáticamente el próximo ID
+  // libre; al editar uno existente se muestra el que ya tiene. En ambos
+  // casos el admin puede cambiarlo a mano antes de guardar.
+  const [idPieza, setIdPieza] = useState(editar ? (producto.id_pieza || '') : sugerirIdPieza(productosExistentes || []))
   const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, costo, minutos_estimados }) => ({ nombre, costo, minutos_estimados })) : etapasSugeridas)
   const [materiales, setMateriales] = useState(producto.materiales?.length ? producto.materiales.map(({ material_id, cantidad }) => ({ material_id, cantidad })) : [])
   const [error, setError] = useState('')
@@ -159,13 +182,22 @@ function ProductoModal({ producto, categorias, materialesDisponibles, costoHora,
   const costoManoObra = (Number(horasHombre) || 0) * costoHora
   const costoCalculadoTotal = costoMateriales + costoManoObra
 
+  // Un producto no puede compartir el mismo ID de pieza con otro (el
+  // mismo producto puede conservar el suyo). Esta validación da feedback
+  // inmediato; la garantía real de unicidad la da la restricción UNIQUE
+  // de la base (ver server/rutas/productos.js).
+  const idPiezaDuplicado = Boolean(
+    idPieza.trim() && (productosExistentes || []).some(otro => otro.id !== producto.id && (otro.id_pieza || '').trim() === idPieza.trim())
+  )
+
   const enviar = async event => {
     event.preventDefault()
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
     if (etapas.some(etapa => !etapa.nombre.trim() || Number(etapa.minutos_estimados) <= 0)) return setError('Cada etapa necesita nombre y una duración mayor a cero.')
     if (materiales.some(item => !item.material_id || Number(item.cantidad) <= 0)) return setError('Cada material necesita elegirse y tener una cantidad mayor a cero.')
+    if (idPiezaDuplicado) return setError(`El ID de pieza "${idPieza.trim()}" ya existe. Elegí otro ID.`)
     setBusy(true); setError('')
-    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, etapas, materiales }) }
+    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, id_pieza: idPieza, etapas, materiales }) }
     catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
@@ -191,7 +223,21 @@ function ProductoModal({ producto, categorias, materialesDisponibles, costoHora,
           <label>Horas-hombre de fabricación
             <input min="0" step="0.25" type="number" value={horasHombre} onChange={event => setHorasHombre(event.target.value)} placeholder="0" />
           </label>
+
+          <label>ID de pieza
+            <input
+              value={idPieza}
+              onChange={event => setIdPieza(event.target.value)}
+              placeholder="Ej. 001"
+              maxLength={20}
+              aria-invalid={idPiezaDuplicado}
+              style={idPiezaDuplicado ? { borderColor: '#f4a08d' } : undefined}
+            />
+          </label>
         </div>
+        {idPiezaDuplicado
+          ? <p className="form-error" style={{ marginTop: -10 }}>El ID de pieza "{idPieza.trim()}" ya existe. Elegí otro ID.</p>
+          : <p className="muted" style={{ marginTop: -10 }}>Identifica la pieza en la chapita vintage de la web pública ("PC N° {idPieza.trim() || '···'}"). Se sugiere automáticamente pero podés cambiarlo; dejalo vacío para no mostrar chapita.</p>}
 
         <label>Descripción
           <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />

@@ -157,6 +157,16 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAUL
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
 
+-- Identificador visible de la pieza ("chapita" vintage numerada), único
+-- por producto. Es un campo propio, distinto de la clave primaria interna
+-- (productos.id): el admin lo carga/edita a mano (con sugerencia
+-- automática desde el panel) y es el que se muestra en la web pública.
+-- Nullable a propósito: los productos existentes sin ID asignado
+-- simplemente no muestran chapita (ver ChapitaProducto.jsx).
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS id_pieza VARCHAR(20);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_id_pieza_key;
+ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
+
 -- Genera un slug para productos que todavia no lo tienen (instalaciones
 -- existentes). Los productos nuevos reciben su slug desde la API.
 UPDATE productos SET slug = LOWER(
