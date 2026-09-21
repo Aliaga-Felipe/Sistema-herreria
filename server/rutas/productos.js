@@ -96,6 +96,19 @@ const generarSlugUnico = async (cliente, nombre, idExcluir = null) => {
   }
 }
 
+// El ID de pieza identifica el producto en la chapita vintage de la web
+// pública ("PC N° 001", etc). Es opcional y de uso libre (números o
+// letras), se recorta y se limita a 20 caracteres para que entre en la
+// columna. La unicidad real la garantiza la restricción UNIQUE de la
+// base (productos_id_pieza_key, ver migracion_008_id_pieza.sql): acá
+// sólo se normaliza el valor, no se valida que esté libre.
+const normalizarIdPieza = idPieza => {
+  const valor = idPieza?.toString().trim() || ''
+  if (!valor) return null
+  if (valor.length > 20) throw fallo('El ID de pieza no puede superar los 20 caracteres.')
+  return valor
+}
+
 const validarCategoria = async categoriaId => {
   if (categoriaId === null || categoriaId === undefined || categoriaId === '') return null
   const { rows } = await pool.query('SELECT id FROM categorias WHERE id = $1', [categoriaId])
@@ -125,6 +138,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
+  const idPieza = normalizarIdPieza(id_pieza)
 
   const cliente = await pool.connect()
   try {
@@ -139,7 +153,11 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     await cliente.query('COMMIT')
     const creado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.status(201).json((await conCostoCalculado(creado.rows))[0])
-  } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'productos_id_pieza_key') throw fallo(`El ID de pieza "${idPieza}" ya existe. Elegí otro ID.`, 409)
+    throw error
+  } finally { cliente.release() }
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
@@ -152,6 +170,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
+  const idPieza = normalizarIdPieza(id_pieza)
 
   const cliente = await pool.connect()
   try {
@@ -175,7 +194,11 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
     await cliente.query('COMMIT')
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.json((await conCostoCalculado(actualizado.rows))[0])
-  } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'productos_id_pieza_key') throw fallo(`El ID de pieza "${idPieza}" ya existe. Elegí otro ID.`, 409)
+    throw error
+  } finally { cliente.release() }
 }))
 
 router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
