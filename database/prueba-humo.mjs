@@ -70,6 +70,30 @@ try {
   ok('producto creado con precio y etapas', producto.etapas.length === 3 && producto.precio_venta === 400000)
   ok('costo y margen calculados', producto.costo_total === 100000 && producto.margen === 300000, `costo ${producto.costo_total} margen ${producto.margen}`)
 
+  // --- integración con el catálogo de WhatsApp (ver server/meta-whatsapp.js) ---
+  // No se hace ninguna llamada real a Meta: en este entorno de prueba
+  // WHATSAPP_SYNC_ENABLED no está en "true", así que la sincronización se
+  // omite. Lo que se prueba es que un producto borrador nace con el estado
+  // correcto, que reintentar sin la integración habilitada da un error
+  // claro (y no rompe nada) y que publicar un producto completo con
+  // categoría no falla aunque intente sincronizar en segundo plano.
+  ok('producto borrador nace sin sincronizar', producto.whatsapp_sync_estado === 'NO_SINCRONIZADO', producto.whatsapp_sync_estado)
+
+  let reintentoSinHabilitar = null
+  try { await llamar(`/productos/${producto.id}/whatsapp/reintentar`, { method: 'POST', cuerpo: {} }, token) }
+  catch (error) { reintentoSinHabilitar = error.message }
+  ok('reintentar sin la integración habilitada da un error claro (no crashea)', Boolean(reintentoSinHabilitar) && /habilitada|400/i.test(reintentoSinHabilitar), reintentoSinHabilitar)
+
+  const categoriaMesas = (await pool.query("SELECT id FROM categorias WHERE slug = 'mesas' LIMIT 1")).rows[0]
+  const productoPublicado = await llamar('/productos', { method: 'POST', cuerpo: {
+    nombre: `Mesa publicada ${marca}`, descripcion: 'Mesa de prueba', historia: 'Historia de prueba', precio_venta: 250000,
+    categoria_id: categoriaMesas?.id || null, chapita_id: `H${Date.now()}`.slice(0, 20), publicado: true,
+    etapas: [{ nombre: 'Corte', minutos_estimados: 60 }]
+  } }, token)
+  creados.productos.push(productoPublicado.id)
+  ok('producto publicado se guarda igual aunque WhatsApp esté apagado', productoPublicado.publicado === true)
+  ok('el guardado no se rompe por la sincronización en segundo plano', productoPublicado.whatsapp_sync_estado === 'NO_SINCRONIZADO', productoPublicado.whatsapp_sync_estado)
+
   // --- pedido con dos unidades ------------------------------------------
   // El pedido no asigna empleados: las etapas se asignan después, una por
   // una, desde Tareas (PATCH /tareas/asignadas/:origen/:id/asignar).

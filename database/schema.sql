@@ -14,6 +14,7 @@ DO $$ BEGIN CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'REALI
 DO $$ BEGIN CREATE TYPE estado_pedido AS ENUM ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE estado_etapa AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'COMPLETADA', 'CANCELADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE semaforo_rendimiento AS ENUM ('VERDE', 'AMARILLO', 'ROJO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE whatsapp_sync_estado AS ENUM ('NO_SINCRONIZADO', 'PENDIENTE', 'SINCRONIZADO', 'ERROR'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Algunas bases creadas con versiones anteriores tienen estado_etapa con
 -- las etiquetas EN_PROCESO/BLOQUEADA. Se agregan las que usa la API sin
@@ -178,6 +179,19 @@ ALTER TABLE productos ADD CONSTRAINT productos_chapita_id_key UNIQUE (chapita_id
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS medidas VARCHAR(200);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_producto NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS historia TEXT;
+
+-- Integracion con el catalogo de WhatsApp Business (ver server/meta-whatsapp.js
+-- e INTEGRACION_WHATSAPP.md). whatsapp_retailer_id es un identificador propio
+-- y estable derivado del id interno -NO reutiliza chapita_id (la chapita
+-- vintage que ve el publico) ni id_pieza (columna sin uso)-. whatsapp_product_id
+-- es el id que devuelve Meta, solo informativo/diagnostico.
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_retailer_id VARCHAR(80);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_whatsapp_retailer_id_key;
+ALTER TABLE productos ADD CONSTRAINT productos_whatsapp_retailer_id_key UNIQUE (whatsapp_retailer_id);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_product_id VARCHAR(80);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_estado whatsapp_sync_estado NOT NULL DEFAULT 'NO_SINCRONIZADO';
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_error TEXT;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_actualizado_en TIMESTAMPTZ;
 
 -- Genera un slug para productos que todavia no lo tienen (instalaciones
 -- existentes). Los productos nuevos reciben su slug desde la API.
