@@ -59,7 +59,7 @@ try {
 
   // --- producto con etapas --------------------------------------------
   const producto = await llamar('/productos', { method: 'POST', cuerpo: {
-    nombre: `Portón ${marca}`, descripcion: 'Producto de prueba', precio_venta: 400000,
+    nombre: `Portón ${marca}`, descripcion: 'Producto de prueba', historia: 'Historia de prueba', precio_venta: 400000,
     etapas: [
       { nombre: 'Corte', costo: 30000, minutos_estimados: 120 },
       { nombre: 'Soldadura', costo: 50000, minutos_estimados: 240 },
@@ -74,7 +74,6 @@ try {
   // El pedido no asigna empleados: las etapas se asignan después, una por
   // una, desde Tareas (PATCH /tareas/asignadas/:origen/:id/asignar).
   const pedido = await llamar('/pedidos', { method: 'POST', cuerpo: {
-    cliente: { nombre: `Cliente ${marca}`, telefono: '11 5555-5555', direccion: 'Av. Siempreviva 742', notas: 'Timbre 3' },
     fecha_entrega: '2026-12-01', prioridad: 1, notas: 'Pedido de prueba',
     items: [{ producto_id: producto.id, cantidad: 2 }]
   } }, token)
@@ -83,7 +82,7 @@ try {
   ok('etapas desplegadas por item', pedido.etapas.length === 3)
   ok('cantidad multiplica costo y tiempo', pedido.etapas[0].minutos_estimados === 240 && pedido.etapas[0].costo_estimado === 60000)
   ok('total del pedido', pedido.total === 800000, String(pedido.total))
-  ok('datos del cliente guardados', pedido.cliente.telefono === '11 5555-5555' && pedido.cliente.direccion === 'Av. Siempreviva 742')
+  ok('el pedido no guarda datos de cliente', !('cliente' in pedido))
 
   ok('las etapas del pedido nacen sin asignar', pedido.etapas.every(etapa => !etapa.responsable_id))
   for (const etapa of pedido.etapas) {
@@ -165,7 +164,6 @@ try {
 } finally {
   // --- limpieza ----------------------------------------------------------
   for (const id of creados.pedidos) await pool.query('DELETE FROM pedidos WHERE id = $1', [id])
-  await pool.query('DELETE FROM clientes WHERE nombre LIKE $1', [`Cliente ${marca}%`])
   for (const id of creados.productos) await pool.query('DELETE FROM productos WHERE id = $1', [id])
   await pool.query('DELETE FROM recompensas WHERE usuario_id = ANY($1)', [creados.usuarios])
   for (const id of creados.usuarios) await pool.query('DELETE FROM usuarios WHERE id = $1', [id])

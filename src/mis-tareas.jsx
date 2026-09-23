@@ -12,6 +12,11 @@ export default function MisTareas() {
 
   const pendientes = tareas.data.filter(tarea => tarea.estado !== 'COMPLETADA')
   const completadas = tareas.data.filter(tarea => tarea.estado === 'COMPLETADA')
+  // Una sola lista en orden fijo (pedido/tarea y número de etapa): al marcar
+  // una etapa como terminada NO desaparece ni cambia de lugar, queda en la
+  // misma posición mostrando el estado "Completada".
+  const ordenadas = [...tareas.data].sort((a, b) =>
+    a.origen.localeCompare(b.origen) || Number(a.contenedor_id) - Number(b.contenedor_id) || (a.orden || 0) - (b.orden || 0))
   const acumulado = recompensas.data.reduce((total, recompensa) => total + Number(recompensa.monto || 0), 0)
 
   const iniciar = async tarea => {
@@ -50,31 +55,22 @@ export default function MisTareas() {
       {tareas.loading ? <p>Cargando tus tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : (
         <>
           <section className="section-heading">
-            <div><h2>Pendientes</h2><p>Etapas asignadas que todavía no cerraste.</p></div>
+            <div><h2>Mis etapas</h2><p>{pendientes.length} pendientes · {completadas.length} completadas. Las etapas que terminás quedan en la lista marcadas como completadas.</p></div>
           </section>
 
-          {pendientes.length ? (
+          {ordenadas.length ? (
             <div className="task-list">
-              {pendientes.map(tarea => (
-                <TarjetaTarea key={`${tarea.origen}-${tarea.id}`} tarea={tarea} onIniciar={iniciar} onCerrar={() => setCerrando(tarea)} />
+              {ordenadas.map(tarea => (
+                <TarjetaTarea
+                  key={`${tarea.origen}-${tarea.id}`}
+                  tarea={tarea}
+                  onIniciar={iniciar}
+                  onCerrar={tarea.estado === 'COMPLETADA' ? undefined : () => setCerrando(tarea)}
+                />
               ))}
             </div>
           ) : (
-            <Empty title="No tenés tareas pendientes" text="Cuando el administrador te asigne una etapa de un pedido, va a aparecer acá." />
-          )}
-
-          {completadas.length > 0 && (
-            <>
-              <section className="section-heading">
-                <div><h2>Historial</h2><p>Etapas cerradas y su resultado en el semáforo.</p></div>
-              </section>
-
-              <div className="task-list">
-                {completadas.map(tarea => (
-                  <TarjetaTarea key={`${tarea.origen}-${tarea.id}`} tarea={tarea} />
-                ))}
-              </div>
-            </>
+            <Empty title="No tenés tareas asignadas" text="Cuando el administrador te asigne una etapa de un pedido, va a aparecer acá." />
           )}
         </>
       )}
@@ -95,7 +91,7 @@ function TarjetaTarea({ tarea, onIniciar, onCerrar }) {
           <h3>{tarea.etapa}</h3>
           <p>{tarea.titulo} · {tarea.referencia}</p>
         </div>
-        <span className="assigned">{tarea.cliente}</span>
+        {completada && <span className="sello-completada">✓ Completada</span>}
       </div>
 
       <div className="tarea-tiempos">

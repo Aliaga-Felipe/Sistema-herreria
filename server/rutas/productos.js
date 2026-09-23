@@ -9,7 +9,7 @@ import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, decimal, entero, fallo, le
 
 const router = Router()
 
-const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.slug, p.creado_en,
+const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.publicado, p.slug, p.creado_en,
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre, p.chapita_id,
     p.medidas, p.costo_producto::float8 AS costo_producto, p.historia,
     COALESCE(SUM(e.minutos_estimados), 0)::int AS minutos_totales,
@@ -94,12 +94,14 @@ const generarSlugUnico = async (cliente, nombre, idExcluir = null) => {
   }
 }
 
-// Categoría OPCIONAL: vacía = producto sin categoría. Si viene, tiene que
-// ser una de las tres categorías fijas (Mesas, Mesas ratonas, Fogoneros).
+// Categoría OPCIONAL en borradores: vacía = producto sin categoría. Si
+// viene, tiene que ser una de las tres categorías fijas (Mesas, Mesitas
+// ratoneras, Fogoneros). Para publicar en la web es obligatoria (ver
+// validarPublicacion).
 const validarCategoria = async categoriaId => {
   if (categoriaId === null || categoriaId === undefined || categoriaId === '') return null
   const { rows } = await pool.query('SELECT id FROM categorias WHERE id = $1 AND slug = ANY($2::text[])', [categoriaId, SLUGS_CATEGORIAS_PRODUCTO])
-  if (!rows[0]) throw fallo('La categoría seleccionada no existe. Elegí Mesas, Mesas ratonas o Fogoneros.')
+  if (!rows[0]) throw fallo('La categoría seleccionada no existe. Elegí Mesas, Mesitas ratoneras o Fogoneros.')
   return categoriaId
 }
 
@@ -122,15 +124,33 @@ const normalizarChapita = valor => {
   return chapita
 }
 
-// Campos que el alta/edición de producto nunca puede guardar vacíos:
-// nombre (validado aparte, antes de llegar acá), descripción técnica e
-// historia. Categoría y horas-hombre son OPCIONALES (horas-hombre vacío se
-// guarda en 0, sin costo de mano de obra). El ID de producto se completa
-// solo si llega vacío (ver generarChapitaId). El resto (costo del
-// producto, duración de cada etapa, medidas) también es opcional.
-const validarCamposObligatorios = ({ descripcionNormalizada, historiaNormalizada }) => {
-  if (!descripcionNormalizada) throw fallo('Indicá la descripción técnica del producto.')
-  if (!historiaNormalizada) throw fallo('Indicá la historia del producto.')
+// Precio de venta: opcional en un borrador (vacío se guarda en 0), pero
+// nunca negativo.
+const normalizarPrecio = valor => {
+  if (valor === undefined || valor === null || valor === '') return 0
+  const precio = decimal(valor)
+  if (precio < 0) throw fallo('El precio de venta no puede ser negativo.')
+  return precio
+}
+
+// Reglas de guardado:
+// - BORRADOR (sin "Publicar en la web"): sólo el nombre es obligatorio. El
+//   precio, la descripción técnica, la historia, la categoría y el ID
+//   pueden quedar vacíos (el ID se genera solo, ver generarChapitaId).
+// - PUBLICADO: nombre, ID, precio (> 0), descripción técnica, historia y
+//   categoría son obligatorios. Si falta alguno, no se guarda y el mensaje
+//   dice exactamente qué falta. La base de datos aplica la misma regla
+//   (restricción productos_publicado_completo, ver schema.sql), así que un
+//   producto incompleto nunca puede quedar visible en la web pública.
+const validarPublicacion = ({ nombre, chapitaId, precio, descripcion, historia, categoriaId }) => {
+  const faltantes = []
+  if (!nombre) faltantes.push('nombre')
+  if (!chapitaId) faltantes.push('ID de producto')
+  if (!(precio > 0)) faltantes.push('precio de venta (mayor a cero)')
+  if (!descripcion) faltantes.push('descripción técnica')
+  if (!historia) faltantes.push('historia del producto')
+  if (!categoriaId) faltantes.push('categoría')
+  if (faltantes.length) throw fallo(`Para publicar el producto en la web falta completar: ${faltantes.join(', ')}.`)
 }
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
@@ -146,11 +166,10 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 }))
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
-  const precio = decimal(precio_venta)
-  if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
+  const precio = normalizarPrecio(precio_venta)
   const horasHombre = Math.max(0, decimal(horas_hombre))
   let chapitaId = normalizarChapita(chapita_id)
   const costoProducto = Math.max(0, decimal(costo_producto))
@@ -159,7 +178,8 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const historiaNormalizada = normalizarHistoria(historia)
   const normalizadas = normalizarEtapas(etapas)
   const categoriaValida = await validarCategoria(categoria_id)
-  validarCamposObligatorios({ descripcionNormalizada, historiaNormalizada })
+  // Al publicar, el ID tiene que venir cargado (no se autocompleta).
+  if (publicado === true) validarPublicacion({ nombre: nombre.trim(), chapitaId, precio, descripcion: descripcionNormalizada, historia: historiaNormalizada, categoriaId: categoriaValida })
 
   const cliente = await pool.connect()
   try {
@@ -167,9 +187,9 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     if (!chapitaId) chapitaId = await generarChapitaId(cliente)
     const slug = await generarSlugUnico(cliente, nombre.trim())
     const { rows } = await cliente.query(
-      `INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre, chapita_id, medidas, costo_producto, historia)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-      [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada]
+      `INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre, chapita_id, medidas, costo_producto, historia, publicado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, publicado === true]
     )
     await guardarEtapas(cliente, rows[0].id, normalizadas)
     await cliente.query('COMMIT')
@@ -178,16 +198,16 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   } catch (error) {
     await cliente.query('ROLLBACK')
     if (error.code === '23505' && error.constraint === 'productos_chapita_id_key') throw fallo(`El ID de producto "${chapitaId}" ya existe. Elegí otro.`, 409)
+    if (error.constraint === 'productos_publicado_completo') throw fallo('Para publicar el producto en la web falta completar datos obligatorios.')
     throw error
   } finally { cliente.release() }
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
-  const precio = decimal(precio_venta)
-  if (precio <= 0) throw fallo('El precio de venta debe ser mayor a cero.')
+  const precio = normalizarPrecio(precio_venta)
   const horasHombre = Math.max(0, decimal(horas_hombre))
   let chapitaId = normalizarChapita(chapita_id)
   const costoProducto = Math.max(0, decimal(costo_producto))
@@ -196,16 +216,19 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const historiaNormalizada = normalizarHistoria(historia)
   const normalizadas = normalizarEtapas(etapas)
   const categoriaValida = await validarCategoria(categoria_id)
-  validarCamposObligatorios({ descripcionNormalizada, historiaNormalizada })
 
   const cliente = await pool.connect()
   try {
     await cliente.query('BEGIN')
-    const actual = await cliente.query('SELECT nombre, slug, chapita_id FROM productos WHERE id = $1', [req.params.id])
+    const actual = await cliente.query('SELECT nombre, slug, chapita_id, publicado FROM productos WHERE id = $1', [req.params.id])
     if (!actual.rows[0]) throw fallo('Producto no encontrado.', 404)
+    // Queda publicado si se pide publicarlo, o si ya lo estaba y el cuerpo
+    // no trae el campo: en ambos casos se exigen los datos obligatorios.
+    const quedaPublicado = typeof publicado === 'boolean' ? publicado : actual.rows[0].publicado
+    if (quedaPublicado) validarPublicacion({ nombre: nombre.trim(), chapitaId: chapitaId || actual.rows[0].chapita_id, precio, descripcion: descripcionNormalizada, historia: historiaNormalizada, categoriaId: categoriaValida })
     // Al editar se conserva el ID actual salvo que el admin lo cambie a
     // mano; si llega vacío se mantiene el que tenía (o se genera uno si el
-    // producto nunca tuvo).
+    // producto nunca tuvo). Al publicar, el ID ya se exigió arriba.
     if (!chapitaId) chapitaId = actual.rows[0].chapita_id || await generarChapitaId(cliente)
     // Sólo regenera el slug si cambió el nombre, para no romper enlaces ya compartidos.
     const slug = actual.rows[0].nombre === nombre.trim() && actual.rows[0].slug
@@ -214,9 +237,12 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
 
     const { rows } = await cliente.query(
       `UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, horas_hombre = $7,
-         chapita_id = $8, medidas = $9, costo_producto = $10, historia = $11, actualizado_en = NOW() WHERE id = $12 RETURNING id`,
+         chapita_id = $8, medidas = $9, costo_producto = $10, historia = $11,
+         publicado = COALESCE($13::boolean, publicado), actualizado_en = NOW() WHERE id = $12 RETURNING id`,
       [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre,
-        chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, req.params.id]
+        chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, req.params.id,
+        // "Publicar en la web": si no viene en el cuerpo se conserva el valor actual.
+        typeof publicado === 'boolean' ? publicado : null]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
     // Los pedidos ya generados guardan copia de nombre y costo de mano de
@@ -229,6 +255,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   } catch (error) {
     await cliente.query('ROLLBACK')
     if (error.code === '23505' && error.constraint === 'productos_chapita_id_key') throw fallo(`El ID de producto "${chapitaId}" ya existe. Elegí otro.`, 409)
+    if (error.constraint === 'productos_publicado_completo') throw fallo('Para publicar el producto en la web falta completar datos obligatorios.')
     throw error
   } finally { cliente.release() }
 }))

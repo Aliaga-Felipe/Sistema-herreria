@@ -93,7 +93,7 @@ export const clavesConfiguracionPublica = [
 // producto es opcional.
 export const CATEGORIAS_PRODUCTO = [
   { slug: 'mesas', nombre: 'Mesas' },
-  { slug: 'mesas-ratonas', nombre: 'Mesas ratonas' },
+  { slug: 'mesitas-ratoneras', nombre: 'Mesitas ratoneras' },
   { slug: 'fogoneros', nombre: 'Fogoneros' }
 ]
 export const SLUGS_CATEGORIAS_PRODUCTO = CATEGORIAS_PRODUCTO.map(categoria => categoria.slug)
