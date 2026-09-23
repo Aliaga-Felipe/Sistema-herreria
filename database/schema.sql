@@ -156,32 +156,6 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NUL
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
 ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_chapita_id_key;
 ALTER TABLE productos ADD CONSTRAINT productos_chapita_id_key UNIQUE (chapita_id);
--- Identificador visible de la pieza ("chapita" vintage numerada), único
--- por producto. Es un campo propio, distinto de la clave primaria interna
--- (productos.id): el admin lo carga/edita a mano (con sugerencia
--- automática desde el panel) y es el que se muestra en la web pública.
--- Nullable a propósito: los productos existentes sin ID asignado
--- simplemente no muestran chapita (ver ChapitaProducto.jsx).
-ALTER TABLE productos ADD COLUMN IF NOT EXISTS id_pieza VARCHAR(20);
-
--- "chapita_id" fue una columna anterior para esta misma idea: quedó
--- cableada en el backend y el panel, pero nunca en la web pública actual
--- (que ya usa id_pieza). Si existe, se migran sus valores a id_pieza (sin
--- pisar los que ya estén cargados) y se borra, para dejar una sola fuente
--- de verdad. Si algún producto tenía los dos campos cargados con valores
--- distintos, la restricción UNIQUE de abajo puede fallar: revisar ese caso
--- a mano antes de reintentar.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'productos' AND column_name = 'chapita_id') THEN
-    UPDATE productos SET id_pieza = chapita_id WHERE id_pieza IS NULL AND chapita_id IS NOT NULL;
-    ALTER TABLE productos DROP COLUMN chapita_id;
-  END IF;
-END $$;
-
-ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_id_pieza_key;
-ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
-
 -- Medidas (texto libre, ej. "120 x 60 x 75 cm"), costo del producto
 -- (número de referencia cargado a mano por el admin, reemplaza al viejo
 -- costo por etapa) e historia del producto (texto editorial, distinto de
