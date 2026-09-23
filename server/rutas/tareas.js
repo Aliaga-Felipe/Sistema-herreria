@@ -41,19 +41,54 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
-// Reasigna el responsable de una tarea libre (a diferencia de una etapa de
-// pedido, que se reasigna desde PATCH /pedidos/:id/etapas/:etapaId/asignar).
-// Sirve, por ejemplo, para volver a asignar una tarea que quedó sin
-// responsable porque se eliminó la cuenta del empleado que la tenía.
+// La asignación de empleados vive SOLO en la sección "Tareas": los pedidos
+// son informativos y ya no asignan responsables (ver rutas/pedidos.js).
+const validarEmpleadoActivo = async empleadoId => {
+  if (!empleadoId) return null
+  const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [empleadoId])
+  if (!empleado.rows[0]) throw fallo('El usuario asignado debe ser un empleado activo.')
+  return empleadoId
+}
+
+// Reasigna el responsable de una tarea libre completa. Sirve, por ejemplo,
+// para volver a asignar una tarea que quedó sin responsable porque se
+// eliminó la cuenta del empleado que la tenía.
 router.patch('/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
-  const { asignado_a: asignadoA } = req.body
-  if (asignadoA) {
-    const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [asignadoA])
-    if (!empleado.rows[0]) throw fallo('El usuario asignado debe ser un empleado activo.')
-  }
-  const { rows } = await pool.query('UPDATE tareas SET asignado_a = $1, actualizada_en = NOW() WHERE id = $2 RETURNING id', [asignadoA || null, req.params.id])
+  const asignadoA = await validarEmpleadoActivo(req.body.asignado_a)
+  const { rows } = await pool.query('UPDATE tareas SET asignado_a = $1, actualizada_en = NOW() WHERE id = $2 RETURNING id', [asignadoA, req.params.id])
   if (!rows[0]) throw fallo('Tarea no encontrada.', 404)
   res.json({ mensaje: 'Responsable actualizado.' })
+}))
+
+// Asigna (o libera) el empleado de UNA etapa concreta de un producto, desde
+// la sección Tareas. Mismos identificadores que devuelve /asignadas/mias
+// (origen + id de la etapa):
+// - PEDIDO: etapa de un producto dentro de un pedido (pedido_etapas).
+// - TAREA: etapa de una tarea libre; las tareas libres tienen un único
+//   responsable, así que se reasigna la tarea a la que pertenece la etapa.
+// Una etapa ya completada no se reasigna, para no alterar el historial de
+// semáforo y recompensas de quien la hizo.
+router.patch('/asignadas/:origen/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
+  const responsable = await validarEmpleadoActivo(req.body.responsable_id)
+
+  if (req.params.origen === 'PEDIDO') {
+    const actual = (await pool.query('SELECT id, estado FROM pedido_etapas WHERE id = $1', [req.params.id])).rows[0]
+    if (!actual) throw fallo('Etapa no encontrada.', 404)
+    if (actual.estado === 'COMPLETADA') throw fallo('La etapa ya está completada: no se puede reasignar.')
+    await pool.query('UPDATE pedido_etapas SET responsable_id = $1 WHERE id = $2', [responsable, req.params.id])
+  } else if (req.params.origen === 'TAREA') {
+    const etapa = (await pool.query('SELECT tarea_id, realizada FROM tarea_etapas WHERE id = $1', [req.params.id])).rows[0]
+    if (!etapa) throw fallo('Etapa no encontrada.', 404)
+    if (etapa.realizada) throw fallo('La etapa ya está completada: no se puede reasignar.')
+    await pool.query('UPDATE tareas SET asignado_a = $1, actualizada_en = NOW() WHERE id = $2', [responsable, etapa.tarea_id])
+  } else {
+    throw fallo('Origen de tarea desconocido.')
+  }
+
+  const { rows } = await pool.query(`SELECT v.*, u.nombre AS responsable
+    FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a
+    WHERE v.origen = $1 AND v.id = $2`, [req.params.origen, req.params.id])
+  res.json(rows[0])
 }))
 
 router.patch('/:id/estado', auth(), asyncRoute(async (req, res) => {

@@ -80,7 +80,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('negocio_facebook', '', 'URL del Facebook (opcional, se oculta si esta vacio).'),
   ('negocio_horario', 'Lunes a viernes de 9 a 18 hs', 'Horario de atencion mostrado en Contacto.'),
   ('negocio_hero_video', '', 'URL del video de fondo del hero de portada (opcional, se sube desde Configuracion).'),
-  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de materiales + mano de obra.')
+  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.')
 ON CONFLICT (clave) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -148,6 +148,14 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAUL
 -- Horas-hombre de fabricación, usadas junto al costo por hora configurable
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
+-- Chapita vintage opcional ("PC N° ...") que se muestra junto al nombre del
+-- producto en la web pública (ver ProductoDetalle.jsx). Nullable a propósito:
+-- si está vacía, la web no muestra ninguna chapita (ver publico.js/
+-- panel-productos.jsx). VARCHAR y no numérico para no perder ceros a la
+-- izquierda (por ejemplo "014").
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_chapita_id_key;
+ALTER TABLE productos ADD CONSTRAINT productos_chapita_id_key UNIQUE (chapita_id);
 -- Identificador visible de la pieza ("chapita" vintage numerada), único
 -- por producto. Es un campo propio, distinto de la clave primaria interna
 -- (productos.id): el admin lo carga/edita a mano (con sugerencia
@@ -173,6 +181,14 @@ END $$;
 
 ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_id_pieza_key;
 ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
+
+-- Medidas (texto libre, ej. "120 x 60 x 75 cm"), costo del producto
+-- (número de referencia cargado a mano por el admin, reemplaza al viejo
+-- costo por etapa) e historia del producto (texto editorial, distinto de
+-- la descripción técnica ya existente: ver ProductoDetalle.jsx).
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS medidas VARCHAR(200);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_producto NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS historia TEXT;
 
 -- Genera un slug para productos que todavia no lo tienen (instalaciones
 -- existentes). Los productos nuevos reciben su slug desde la API.
@@ -216,30 +232,16 @@ ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NUL
 ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT NULL DEFAULT 60;
 
 -- ---------------------------------------------------------------------
--- MATERIALES Y COSTEO DE PRODUCTOS
--- El costo de materiales + mano de obra se calcula al leer el producto
--- (cantidad × precio de cada material, más horas_hombre × costo de la
--- hora configurado abajo) y se muestra desglosado junto al costo por
--- etapas ya existente, sin reemplazarlo.
+-- MATERIALES (ELIMINADO)
+-- La sección Materiales se quitó de la aplicación por completo: ningún
+-- endpoint ni pantalla la usa. Se borran sus tablas si todavía existen.
+-- El costo de un producto queda en mano de obra (horas_hombre × costo de
+-- la hora configurado abajo) + costo del producto cargado a mano.
+-- pedido_items.costo_materiales_unitario se conserva solo para no alterar
+-- el costo guardado de pedidos viejos (los nuevos lo guardan en 0).
 -- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS materiales (
-  id BIGSERIAL PRIMARY KEY,
-  nombre VARCHAR(150) NOT NULL,
-  unidad_medida VARCHAR(30) NOT NULL DEFAULT 'unidad',
-  precio_unitario NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (precio_unitario >= 0),
-  activo BOOLEAN NOT NULL DEFAULT TRUE,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS producto_materiales (
-  id BIGSERIAL PRIMARY KEY,
-  producto_id BIGINT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
-  material_id BIGINT NOT NULL REFERENCES materiales(id) ON DELETE CASCADE,
-  cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
-  UNIQUE (producto_id, material_id)
-);
-CREATE INDEX IF NOT EXISTS idx_producto_materiales_producto ON producto_materiales(producto_id);
+DROP TABLE IF EXISTS producto_materiales;
+DROP TABLE IF EXISTS materiales;
 
 -- ---------------------------------------------------------------------
 -- PRODUCCIÓN DIARIA Y RECOMPENSAS POR OBJETIVO
@@ -321,6 +323,14 @@ CREATE TABLE IF NOT EXISTS pedido_items (
   cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
   precio_unitario NUMERIC(12,2) NOT NULL DEFAULT 0
 );
+-- Copia del costo de mano de obra (y, en pedidos anteriores a la baja de
+-- Materiales, del costo de materiales) POR UNIDAD del producto,
+-- tomada al crear el pedido (mismo criterio que ya se usaba para copiar
+-- costo/duración de las etapas: editar el producto después no altera lo
+-- que ya está en producción). Reemplaza a la suma de costo por etapa como
+-- fuente del costo estimado del pedido (ver server/rutas/pedidos.js).
+ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS costo_materiales_unitario NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS costo_mano_obra_unitario NUMERIC(12,2) NOT NULL DEFAULT 0;
 
 -- Cada etapa de cada item del pedido es la unidad de trabajo asignable.
 CREATE TABLE IF NOT EXISTS pedido_etapas (
@@ -539,18 +549,22 @@ WHERE LOWER(u.rol::text) = 'empleado'
 GROUP BY u.id;
 
 -- ---------------------------------------------------------------------
--- CATEGORIAS INICIALES (solo si la tabla esta vacia)
+-- CATEGORIAS DE PRODUCTO (lista fija)
+-- Las categorías disponibles son exactamente tres: Mesas, Mesas ratonas y
+-- Fogoneros (mismos slugs que usa CATEGORIAS_PRODUCTO en server/comun.js).
+-- La categoría de un producto es opcional. Cualquier otra categoría se
+-- elimina y sus productos quedan "sin categoría" (siguen visibles en la
+-- web pública cuando no se filtra por categoría).
 -- ---------------------------------------------------------------------
-INSERT INTO categorias (nombre, slug, descripcion, orden)
-SELECT * FROM (VALUES
-  ('Mesas', 'mesas', 'Mesas de hierro y madera para comedor, centro y exterior.', 1),
-  ('Sillas y bancos', 'sillas-y-bancos', 'Asientos forjados, individuales y bancos largos.', 2),
-  ('Estanterías', 'estanterias', 'Estanterías y racks de hierro para el hogar y el comercio.', 3),
-  ('Portones y rejas', 'portones-y-rejas', 'Portones, rejas y cerramientos a medida.', 4),
-  ('Decoración', 'decoracion', 'Piezas decorativas y objetos utilitarios en hierro.', 5),
-  ('Iluminación', 'iluminacion', 'Lámparas y artefactos de iluminación forjados.', 6)
-) AS datos(nombre, slug, descripcion, orden)
-WHERE NOT EXISTS (SELECT 1 FROM categorias);
+INSERT INTO categorias (nombre, slug, descripcion, orden, activo) VALUES
+  ('Mesas', 'mesas', 'Mesas de hierro y madera para comedor y exterior.', 1, TRUE),
+  ('Mesas ratonas', 'mesas-ratonas', 'Mesas ratonas y de centro en hierro y madera.', 2, TRUE),
+  ('Fogoneros', 'fogoneros', 'Fogoneros de hierro para exterior.', 3, TRUE)
+ON CONFLICT (slug) DO UPDATE SET nombre = EXCLUDED.nombre, orden = EXCLUDED.orden, activo = TRUE;
+
+UPDATE productos SET categoria_id = NULL
+WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesas-ratonas', 'fogoneros'));
+DELETE FROM categorias WHERE slug NOT IN ('mesas', 'mesas-ratonas', 'fogoneros');
 
 -- ---------------------------------------------------------------------
 -- PRIMER ADMINISTRADOR

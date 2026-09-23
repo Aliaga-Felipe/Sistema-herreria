@@ -5,14 +5,15 @@ import React from 'react'
 // Placa metálica vintage que identifica la pieza, como una "ficha" física
 // del taller. El asset gráfico (marca, "Vintage Design" y el molde de la
 // placa, con fondo transparente) es fijo y vive en /public/chapita-vintage.png;
-// lo único variable por producto es el número de serie, que es el ID de
-// pieza propio del producto (productos.id_pieza, ver
-// database/migracion_008_id_pieza.sql — distinto de productos.id, la
-// clave primaria interna) y se superpone con texto.
+// lo único variable por producto es el número de serie, que es EXACTAMENTE
+// el "ID de producto (chapita)" guardado desde el panel (productos.
+// chapita_id — distinto de productos.id, la clave primaria interna) y se
+// superpone con texto. Ese ID se genera solo al crear el producto y el
+// admin lo puede editar; lo que se guarda es lo que se ve acá.
 //
-// Si el producto no tiene id_pieza cargado (columna NULL, caso normal en
-// productos a los que todavía no se les asignó un ID) el componente no
-// renderiza nada: no hay chapita vacía ni hueco en el layout.
+// Si el producto no tiene chapita_id cargado (productos viejos a los que
+// todavía no se les asignó un ID) el componente no renderiza nada: no hay
+// chapita vacía ni hueco en el layout.
 // ---------------------------------------------------------------------
 export default function ChapitaProducto({ idPieza }) {
   if (!idPieza) return null

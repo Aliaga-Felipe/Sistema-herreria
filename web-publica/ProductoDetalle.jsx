@@ -8,16 +8,29 @@ import ProductCard from './components/ProductCard.jsx'
 import SectionTitle from './components/SectionTitle.jsx'
 import ChapitaProducto from './components/ChapitaProducto.jsx'
 
+// Variantes del carrusel de imágenes del producto: la imagen entra desde
+// el lado hacia donde se navega (deslizamiento sutil + leve escala,
+// combinados con el fundido que ya tenía) y la anterior sale hacia el
+// lado opuesto, en vez de solo desvanecerse en el lugar. `direccion` es
+// -1 (anterior) o 1 (siguiente/automático), y llega como prop `custom`
+// del motion.img que usa estas variantes.
+const variantesGaleria = {
+  entra: direccion => ({ opacity: 0, x: direccion * 36, scale: 1.02 }),
+  centro: { opacity: 1, x: 0, scale: 1 },
+  sale: direccion => ({ opacity: 0, x: direccion * -36, scale: 0.98 })
+}
+
 export default function ProductoDetalle() {
   const { slug } = useParams()
   const config = usePublicConfig()
   const [producto, setProducto] = useState(null)
   const [error, setError] = useState(false)
   const [activa, setActiva] = useState(0)
+  const [direccion, setDireccion] = useState(1)
   const [amplificada, setAmplificada] = useState(false)
 
   useEffect(() => {
-    setProducto(null); setError(false); setActiva(0); setAmplificada(false)
+    setProducto(null); setError(false); setActiva(0); setDireccion(1); setAmplificada(false)
     publicApi.producto(slug).then(setProducto).catch(() => setError(true))
     window.scrollTo({ top: 0 })
   }, [slug])
@@ -31,8 +44,17 @@ export default function ProductoDetalle() {
   // condicional: React exige llamarlos siempre en el mismo orden.
   const imagenes = producto?.imagenes?.length ? producto.imagenes : []
   const hayVarias = imagenes.length > 1
-  const irAnterior = () => setActiva(indice => (indice - 1 + imagenes.length) % imagenes.length)
-  const irSiguiente = () => setActiva(indice => (indice + 1) % imagenes.length)
+  // La dirección (-1 anterior, 1 siguiente) viaja como prop `custom` al
+  // motion.img de abajo: hace que la imagen que entra se deslice desde el
+  // lado hacia donde se está navegando (y la que sale se vaya para el
+  // lado opuesto) en vez de solo desvanecerse en el lugar, para que el
+  // carrusel se sienta más fluido. Las flechas fijan la dirección de
+  // forma explícita (avanzar/retroceder es siempre hacia el mismo lado,
+  // incluso cuando el índice da la vuelta de la última imagen a la
+  // primera); ir a un punto o miniatura puntual la infiere del índice.
+  const irAnterior = () => { setDireccion(-1); setActiva(indice => (indice - 1 + imagenes.length) % imagenes.length) }
+  const irSiguiente = () => { setDireccion(1); setActiva(indice => (indice + 1) % imagenes.length) }
+  const irA = indice => { setDireccion(indice > activa ? 1 : indice < activa ? -1 : direccion); setActiva(indice) }
 
   // Carrusel automático: cada 3s avanza a la siguiente imagen y vuelve a
   // la primera al llegar al final. No se activa con una sola imagen.
@@ -48,6 +70,7 @@ export default function ProductoDetalle() {
   useEffect(() => {
     if (!hayVarias || amplificada) return
     const id = setInterval(() => {
+      setDireccion(1)
       setActiva(indice => (indice + 1) % imagenes.length)
     }, 3000)
     return () => clearInterval(id)
@@ -115,15 +138,17 @@ export default function ProductoDetalle() {
           <div>
             <div className="galeria-principal">
               {imagenes.length ? (
-                <AnimatePresence initial={false}>
+                <AnimatePresence initial={false} custom={direccion}>
                   <motion.img
                     key={imagenes[activa].id}
                     src={imagenes[activa].url}
                     alt={producto.nombre}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    custom={direccion}
+                    variants={variantesGaleria}
+                    initial="entra"
+                    animate="centro"
+                    exit="sale"
+                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                     onClick={() => setAmplificada(true)}
                     role="button"
                     tabIndex={0}
@@ -150,7 +175,7 @@ export default function ProductoDetalle() {
                     key={imagen.id}
                     type="button"
                     className={indice === activa ? 'activo' : ''}
-                    onClick={() => setActiva(indice)}
+                    onClick={() => irA(indice)}
                     aria-label={`Ver imagen ${indice + 1} de ${imagenes.length}`}
                   />
                 ))}
@@ -160,7 +185,7 @@ export default function ProductoDetalle() {
             {hayVarias && (
               <div className="galeria-miniaturas">
                 {imagenes.map((imagen, indice) => (
-                  <button key={imagen.id} className={indice === activa ? 'activa' : ''} onClick={() => setActiva(indice)}>
+                  <button key={imagen.id} className={indice === activa ? 'activa' : ''} onClick={() => irA(indice)}>
                     <img src={imagen.url} alt={`${producto.nombre} ${indice + 1}`} loading="lazy" />
                   </button>
                 ))}
@@ -172,9 +197,18 @@ export default function ProductoDetalle() {
             {producto.categoria_nombre && <p className="eyebrow-public">{producto.categoria_nombre}</p>}
             <div className="detalle-titulo-fila">
               <h1>{producto.nombre}</h1>
-              <ChapitaProducto idPieza={producto.id_pieza} />
+              <ChapitaProducto idPieza={producto.chapita_id} />
             </div>
             <p className="detalle-precio">{dinero(producto.precio_venta, config.moneda)}</p>
+
+            {producto.historia && <p className="detalle-historia">{producto.historia}</p>}
+
+            {producto.medidas && (
+              <div className="detalle-especificaciones">
+                <span className="detalle-medidas"><b>Medidas</b> {producto.medidas}</span>
+              </div>
+            )}
+
             {producto.descripcion && <p className="detalle-descripcion">{producto.descripcion}</p>}
 
             <div className="detalle-acciones">

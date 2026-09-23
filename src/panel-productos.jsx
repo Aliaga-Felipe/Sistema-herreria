@@ -1,24 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api, dinero, duracion, useData } from './api.js'
-import { Actions, Empty, Heading, Modal, useAviso } from './ui.jsx'
+import { Actions, CampoNumero, Empty, Heading, Modal, useAviso } from './ui.jsx'
 
-const etapaVacia = () => ({ nombre: '', costo: 0, minutos_estimados: 60 })
+const etapaVacia = () => ({ nombre: '', minutos_estimados: 60 })
 const etapasSugeridas = [
-  { nombre: 'Diseño y medidas', costo: 0, minutos_estimados: 30 },
-  { nombre: 'Corte de material', costo: 0, minutos_estimados: 60 },
-  { nombre: 'Soldadura', costo: 0, minutos_estimados: 120 },
-  { nombre: 'Pintura y terminación', costo: 0, minutos_estimados: 45 }
+  { nombre: 'Diseño y medidas', minutos_estimados: 30 },
+  { nombre: 'Corte de material', minutos_estimados: 60 },
+  { nombre: 'Soldadura', minutos_estimados: 120 },
+  { nombre: 'Pintura y terminación', minutos_estimados: 45 }
 ]
 
-// Sugiere el próximo ID de pieza libre (para prellenar el campo al crear
-// un producto nuevo): completa huecos en vez de ir siempre al final, con
-// formato de ceros a la izquierda (001, 002... 099, 100...). Sólo mira
-// los ID numéricos ya usados; un ID con letras no cuenta para la sugerencia
-// pero el admin puede seguir escribiendo el que quiera a mano.
-const sugerirIdPieza = productos => {
+// Genera automáticamente el próximo ID de producto (chapita) libre para
+// prellenar el campo al crear un producto nuevo: completa huecos en vez de
+// ir siempre al final, con formato de ceros a la izquierda (001, 002...
+// 099, 100...). Sólo mira los ID numéricos ya usados; un ID con letras no
+// cuenta para la sugerencia pero el admin puede seguir escribiendo el que
+// quiera a mano. El ID que se guarda es el que muestra la chapita de la
+// web pública. El backend aplica el mismo criterio si el ID llega vacío
+// (ver generarChapitaId en server/rutas/productos.js).
+export const sugerirIdPieza = productos => {
   const usados = new Set(
     productos
-      .map(producto => (producto.id_pieza || '').trim())
+      .map(producto => (producto.chapita_id || '').trim())
       .filter(valor => /^\d+$/.test(valor))
       .map(valor => parseInt(valor, 10))
   )
@@ -27,40 +30,56 @@ const sugerirIdPieza = productos => {
   return String(siguiente).padStart(3, '0')
 }
 
+// Arma el cuerpo que espera POST/PUT /productos a partir del estado del
+// formulario (ProductoModal). Se exporta para que otras pantallas que
+// también dan de alta productos (como "+ Nuevo producto" desde el alta de
+// un pedido, ver panel-pedidos.jsx) reutilicen exactamente la misma lógica
+// en vez de duplicarla.
+export const construirCuerpoProducto = producto => ({
+  nombre: producto.nombre,
+  descripcion: producto.descripcion,
+  precio_venta: Number(producto.precio_venta),
+  categoria_id: producto.categoria_id || null,
+  destacado: Boolean(producto.destacado),
+  horas_hombre: Number(producto.horas_hombre) || 0,
+  chapita_id: producto.chapita_id?.trim() || null,
+  medidas: producto.medidas?.trim() || '',
+  costo_producto: Number(producto.costo_producto) || 0,
+  historia: producto.historia?.trim() || '',
+  etapas: producto.etapas.map(etapa => ({ ...etapa, minutos_estimados: Number(etapa.minutos_estimados) }))
+})
+
 export default function PanelProductos({ intencion, limpiarIntencion }) {
   const productos = useData('/productos')
   const categorias = useData('/categorias')
-  const materiales = useData('/materiales?activos=true')
   const configuracion = useData('/configuracion/valores', {})
   const { mostrar, nodo } = useAviso()
   const [editando, setEditando] = useState(null)
 
+  // Abre el formulario de producto nuevo con un ID de chapita ya generado
+  // (editable a mano).
+  const nuevoProducto = () => setEditando({ chapita_id: sugerirIdPieza(productos.data || []) })
+
+  // Al editar se conserva el ID actual del producto. Sólo si un producto
+  // viejo nunca tuvo ID se le propone uno generado.
+  const editarProducto = producto => setEditando(producto.chapita_id ? producto : { ...producto, chapita_id: sugerirIdPieza(productos.data || []) })
+
   // El panel principal puede abrir el formulario directamente.
   useEffect(() => {
-    if (intencion === 'nuevo') { setEditando({}); limpiarIntencion?.() }
+    if (intencion === 'nuevo') { nuevoProducto(); limpiarIntencion?.() }
   }, [intencion])
 
-  // Guarda el producto pero NO cierra el modal: si es nuevo, lo deja
-  // abierto ya con id asignado para que el admin pueda cargar fotos sin
-  // pasos extra. El admin cierra el modal cuando termina.
+  // Guarda el producto y cierra el modal solo si el guardado tuvo éxito.
+  // Si save() tira un error (validación o servidor), ProductoModal lo
+  // atrapa y mantiene el formulario abierto mostrando el mensaje.
   const guardar = async producto => {
-    const cuerpo = {
-      nombre: producto.nombre,
-      descripcion: producto.descripcion,
-      precio_venta: Number(producto.precio_venta),
-      categoria_id: producto.categoria_id || null,
-      destacado: Boolean(producto.destacado),
-      horas_hombre: Number(producto.horas_hombre) || 0,
-      id_pieza: producto.id_pieza?.trim() || null,
-      etapas: producto.etapas.map(etapa => ({ ...etapa, costo: Number(etapa.costo), minutos_estimados: Number(etapa.minutos_estimados) })),
-      materiales: producto.materiales.map(item => ({ material_id: item.material_id, cantidad: Number(item.cantidad) }))
-    }
-    const resultado = producto.id
+    const cuerpo = construirCuerpoProducto(producto)
+    producto.id
       ? await api.put(`/productos/${producto.id}`, cuerpo, productos.token)
       : await api.post('/productos', cuerpo, productos.token)
     await productos.load()
-    mostrar(producto.id ? 'Producto actualizado.' : 'Producto creado. Ahora podés agregarle fotos.')
-    setEditando(resultado)
+    mostrar(producto.id ? 'Producto actualizado.' : 'Producto creado. Abrilo de nuevo para cargarle fotos.')
+    setEditando(null)
   }
 
   const eliminar = async producto => {
@@ -83,7 +102,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   return (
     <>
       <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. Lo que cargues acá es lo que se ve en la web pública.">
-        <button className="primary" onClick={() => setEditando({})}>+ Nuevo producto</button>
+        <button className="primary" onClick={nuevoProducto}>+ Nuevo producto</button>
       </Heading>
 
       {nodo}
@@ -97,41 +116,47 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 : <div className="product-symbol">▱</div>}
 
               <div className="product-info">
-                <h3>{producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}</h3>
-                <p>{producto.categoria_nombre || 'Sin categoría'}</p>
+                <h3>
+                  {producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}
+                  {!producto.activo && <span className="badge-inactivo">Inactivo</span>}
+                </h3>
+                <p>
+                  {producto.categoria_nombre || 'Sin categoría'}
+                  {producto.chapita_id ? ` · ID ${producto.chapita_id}` : ''}
+                  {producto.medidas ? ` · ${producto.medidas}` : ''}
+                </p>
                 <p>{producto.descripcion || 'Sin descripción.'}</p>
 
                 <div className="product-numbers">
                   <span><small>Precio</small><b>{dinero(producto.precio_venta)}</b></span>
-                  <span><small>Costo etapas</small><b>{dinero(producto.costo_total)}</b></span>
                   <span className={producto.margen >= 0 ? 'positivo' : 'negativo'}><small>Margen</small><b>{dinero(producto.margen)}</b></span>
                   <span><small>Duración</small><b>{duracion(producto.minutos_totales)}</b></span>
+                  <span><small>Horas-hombre</small><b>{producto.horas_hombre || '—'}</b></span>
                 </div>
 
                 <div className="product-numbers">
-                  <span><small>Materiales</small><b>{dinero(producto.costo_materiales)}</b></span>
                   <span><small>Mano de obra</small><b>{dinero(producto.costo_mano_obra)}</b></span>
-                  <span><small>Costo materiales + M.O.</small><b>{dinero(producto.costo_calculado_total)}</b></span>
-                  <span><small>Horas-hombre</small><b>{producto.horas_hombre}</b></span>
+                  <span><small>Costo producto</small><b>{dinero(producto.costo_producto)}</b></span>
+                  <span><small>Costo total</small><b>{dinero(producto.costo_calculado_total)}</b></span>
                 </div>
 
                 <div className="tags">
                   {producto.etapas.map(etapa => (
-                    <span key={etapa.id}>{etapa.orden}. {etapa.nombre} · {duracion(etapa.minutos_estimados)} · {dinero(etapa.costo)}</span>
+                    <span key={etapa.id}>{etapa.orden}. {etapa.nombre} · {duracion(etapa.minutos_estimados)}</span>
                   ))}
                 </div>
               </div>
 
               <div className="card-buttons">
-                <button onClick={() => setEditando(producto)}>Editar</button>
-                <button onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar' : 'Activar'}</button>
+                <button onClick={() => editarProducto(producto)}>Editar</button>
+                <button className={producto.activo ? '' : 'activar-resaltado'} onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar' : 'Activar'}</button>
                 <button className="danger-link" onClick={() => eliminar(producto)}>Eliminar</button>
               </div>
             </article>
           ))}
         </section>
       ) : (
-        <Empty title="No hay productos cargados" text="Creá el primer producto con sus etapas de fabricación." action={() => setEditando({})} label="Crear producto" />
+        <Empty title="No hay productos cargados" text="Creá el primer producto con sus etapas de fabricación." action={nuevoProducto} label="Crear producto" />
       )}
 
       {editando && (
@@ -139,7 +164,6 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
           producto={editando}
           productosExistentes={productos.data}
           categorias={categorias.data}
-          materialesDisponibles={materiales.data}
           costoHora={Number(configuracion.data.costo_hora_mano_obra) || 0}
           token={productos.token}
           close={() => setEditando(null)}
@@ -150,71 +174,105 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   )
 }
 
-function ProductoModal({ producto, productosExistentes, categorias, materialesDisponibles, costoHora, token, close, save }) {
+export function ProductoModal({ producto, productosExistentes, categorias, costoHora, token, close, save }) {
   const editar = Boolean(producto.id)
   const [nombre, setNombre] = useState(producto.nombre || '')
   const [descripcion, setDescripcion] = useState(producto.descripcion || '')
   const [precio, setPrecio] = useState(producto.precio_venta ?? '')
   const [categoriaId, setCategoriaId] = useState(producto.categoria_id || '')
   const [destacado, setDestacado] = useState(Boolean(producto.destacado))
-  const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ?? 0)
-  const [idPieza, setIdPieza] = useState(producto.id_pieza || (editar ? '' : sugerirIdPieza(productosExistentes)))
-  const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, costo, minutos_estimados }) => ({ nombre, costo, minutos_estimados })) : etapasSugeridas)
-  const [materiales, setMateriales] = useState(producto.materiales?.length ? producto.materiales.map(({ material_id, cantidad }) => ({ material_id, cantidad })) : [])
+  // Horas-hombre es opcional: vacío = sin cargar (se guarda en 0).
+  const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ? producto.horas_hombre : '')
+  const [chapitaId, setChapitaId] = useState(producto.chapita_id || '')
+  const [medidas, setMedidas] = useState(producto.medidas || '')
+  const [costoProducto, setCostoProducto] = useState(producto.costo_producto ?? 0)
+  const [historia, setHistoria] = useState(producto.historia || '')
+  const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, minutos_estimados }) => ({ nombre, minutos_estimados })) : etapasSugeridas)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const cambiarEtapa = (indice, campo, valor) =>
     setEtapas(etapas.map((etapa, posicion) => (posicion === indice ? { ...etapa, [campo]: valor } : etapa)))
 
-  const cambiarMaterial = (indice, campo, valor) =>
-    setMateriales(materiales.map((item, posicion) => (posicion === indice ? { ...item, [campo]: valor } : item)))
-
-  const costoTotal = etapas.reduce((total, etapa) => total + (Number(etapa.costo) || 0), 0)
   const minutosTotal = etapas.reduce((total, etapa) => total + (Number(etapa.minutos_estimados) || 0), 0)
-  const margen = (Number(precio) || 0) - costoTotal
 
-  const detalleMaterial = id => materialesDisponibles.find(material => String(material.id) === String(id))
-  const costoMateriales = materiales.reduce((total, item) => total + (Number(item.cantidad) || 0) * (detalleMaterial(item.material_id)?.precio_unitario || 0), 0)
-  const costoManoObra = (Number(horasHombre) || 0) * costoHora
-  const costoCalculadoTotal = costoMateriales + costoManoObra
-
+  // Campos obligatorios (no pueden guardarse vacíos): nombre, ID de
+  // producto (se genera solo, pero es editable), precio de venta,
+  // descripción técnica e historia. Categoría, horas-hombre, costo del
+  // producto, medidas y la duración de cada etapa son opcionales (de cada
+  // etapa sólo se exige el nombre). El backend valida los mismos campos
+  // (ver validarCamposObligatorios en server/rutas/productos.js), así que
+  // esto es una segunda capa, no la única.
   const enviar = async event => {
     event.preventDefault()
+    if (!nombre.trim()) return setError('Indicá el nombre del producto.')
+    const chapitaTrim = chapitaId.trim()
+    if (!chapitaTrim) return setError('Indicá el ID de producto (chapita).')
+    if (productosExistentes.some(existente => String(existente.chapita_id || '').trim() === chapitaTrim && existente.id !== producto.id)) {
+      return setError(`El ID de producto "${chapitaTrim}" ya existe. Elegí otro.`)
+    }
+    if (!(Number(precio) > 0)) return setError('El precio de venta debe ser mayor a cero.')
+    if (horasHombre !== '' && !(Number(horasHombre) >= 0)) return setError('Las horas-hombre no pueden ser negativas.')
+    if (!descripcion.trim()) return setError('Completá la descripción técnica del producto.')
+    if (!historia.trim()) return setError('Completá la historia del producto.')
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
-    if (etapas.some(etapa => !etapa.nombre.trim() || Number(etapa.minutos_estimados) <= 0)) return setError('Cada etapa necesita nombre y una duración mayor a cero.')
-    if (materiales.some(item => !item.material_id || Number(item.cantidad) <= 0)) return setError('Cada material necesita elegirse y tener una cantidad mayor a cero.')
+    if (etapas.some(etapa => !etapa.nombre.trim())) return setError('Cada etapa necesita un nombre.')
+    if (medidas.trim().length > 200) return setError('Las medidas no pueden superar los 200 caracteres.')
     setBusy(true); setError('')
-    try { await save({ id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, horas_hombre: horasHombre, id_pieza: idPieza, etapas, materiales }) }
-    catch (err) { setError(err.message) } finally { setBusy(false) }
+    try {
+      await save({
+        id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado,
+        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, etapas
+      })
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
   return (
     <Modal title={editar ? 'Editar producto' : 'Nuevo producto'} subtitle="Definí el precio, la categoría, las fotos y las etapas de fabricación." close={close} ancho="720px">
       <form onSubmit={enviar}>
-        <label>Nombre del producto
-          <input required value={nombre} onChange={event => setNombre(event.target.value)} placeholder="Ej. Portón de hierro forjado" />
-        </label>
-
         <div className="form-grid config-grid">
-          <label>Categoría
+          <label>Nombre del producto
+            <input required value={nombre} onChange={event => setNombre(event.target.value)} placeholder="Ej. Mesa ratona de hierro forjado" />
+          </label>
+
+          <label>ID de producto (chapita)
+            <input required value={chapitaId} onChange={event => setChapitaId(event.target.value)} placeholder="Ej. 014" maxLength={20} title="Se genera automáticamente; podés cambiarlo. Es el número que muestra la chapita en la web pública." />
+          </label>
+        </div>
+
+        <div className="form-grid config-grid datos-fabricacion">
+          <label>Categoría (opcional)
             <select value={categoriaId} onChange={event => setCategoriaId(event.target.value)}>
               <option value="">Sin categoría</option>
               {categorias.map(categoria => <option key={categoria.id} value={categoria.id}>{categoria.nombre}{categoria.activo ? '' : ' (oculta)'}</option>)}
             </select>
           </label>
 
-          <label>Precio de venta
-            <input required min="1" step="0.01" type="number" value={precio} onChange={event => setPrecio(event.target.value)} placeholder="0" />
+          <label>Horas-hombre (opcional)
+            <CampoNumero min="0" step="0.25" value={horasHombre} onChange={setHorasHombre} placeholder="0" />
           </label>
 
-          <label>Horas-hombre de fabricación
-            <input min="0" step="0.25" type="number" value={horasHombre} onChange={event => setHorasHombre(event.target.value)} placeholder="0" />
+          <label>Medidas (opcional)
+            <input maxLength={200} value={medidas} onChange={event => setMedidas(event.target.value)} placeholder='Ej. 2.10 x 1.20 m' />
           </label>
         </div>
 
-        <label>Descripción
-          <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
+        <div className="form-grid config-grid">
+          <label>Precio de venta
+            <CampoNumero required min="1" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
+          </label>
+
+          <label>Costo del producto (opcional)
+            <CampoNumero min="0" step="0.01" value={costoProducto} onChange={setCostoProducto} placeholder="0" />
+          </label>
+        </div>
+
+        <label>Descripción técnica
+          <textarea required value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
+        </label>
+
+        <label>Historia del producto
+          <textarea required className="historia-input" value={historia} onChange={event => setHistoria(event.target.value)} placeholder="El relato detrás de esta pieza: de dónde salió la idea, qué la inspiró, qué la hace única. Se muestra en la web pública con un estilo editorial, distinto de la descripción técnica." />
         </label>
 
         <label className="config-check destacado-check">
@@ -225,11 +283,6 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
           </span>
         </label>
 
-        <label>ID de pieza / chapita (opcional)
-          <input value={idPieza} onChange={event => setIdPieza(event.target.value)} placeholder="Ej. 014" maxLength={20} />
-          <small>Si lo completás, en la página del producto de la web pública aparece una chapita vintage con "PC N° {idPieza.trim() || '...'}" junto al nombre. Dejalo vacío para no mostrar ninguna chapita.</small>
-        </label>
-
         {editar
           ? <GestorImagenes productoId={producto.id} imagenesIniciales={producto.imagenes || []} token={token} />
           : <p className="muted" style={{ marginTop: 4 }}>Guardá el producto para poder cargarle fotos.</p>}
@@ -237,70 +290,25 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
         <div className="stage-edit">
           <div>
             <b>Etapas de fabricación</b>
-            <span>Nombre, costo y duración estimada de cada etapa. Esto es información interna: nunca se muestra en la web pública.</span>
+            <span>Nombre de cada etapa, para asignar tareas; la duración estimada es opcional. Esto es información interna: nunca se muestra en la web pública.</span>
           </div>
 
-          <div className="stage-grid-head">
-            <small>#</small><small>Etapa</small><small>Costo</small><small>Minutos</small><small />
+          <div className="etapa-grid-head">
+            <small>#</small><small>Etapa</small><small>Minutos (opcional)</small><small />
           </div>
 
           {etapas.map((etapa, indice) => (
-            <div className="stage-grid-row" key={indice}>
+            <div className="etapa-grid-row" key={indice}>
               <small>{indice + 1}</small>
               <input required value={etapa.nombre} onChange={event => cambiarEtapa(indice, 'nombre', event.target.value)} placeholder="Nombre de la etapa" />
-              <input required min="0" step="0.01" type="number" value={etapa.costo} onChange={event => cambiarEtapa(indice, 'costo', event.target.value)} />
-              <input required min="1" type="number" value={etapa.minutos_estimados} onChange={event => cambiarEtapa(indice, 'minutos_estimados', event.target.value)} />
+              <input min="0" type="number" value={etapa.minutos_estimados} onChange={event => cambiarEtapa(indice, 'minutos_estimados', event.target.value)} placeholder="0" />
               <button type="button" onClick={() => setEtapas(etapas.filter((_, posicion) => posicion !== indice))}>×</button>
             </div>
           ))}
 
           <button type="button" className="add-stage" onClick={() => setEtapas([...etapas, etapaVacia()])}>+ Agregar etapa</button>
 
-          <p className="stage-total">
-            Costo total {dinero(costoTotal)} · Duración {duracion(minutosTotal)} ·
-            <b className={margen >= 0 ? ' positivo' : ' negativo'}> Margen {dinero(margen)}</b>
-          </p>
-        </div>
-
-        <div className="stage-edit">
-          <div>
-            <b>Materiales y costo calculado</b>
-            <span>Cantidad de cada material que usa este producto. El costo se calcula solo: materiales cargados aquí + horas-hombre × costo de la hora (configurable en Configuración).</span>
-          </div>
-
-          {materialesDisponibles.length ? (
-            <>
-              <div className="stage-grid-head">
-                <small>#</small><small>Material</small><small>Cantidad</small><small>Subtotal</small><small />
-              </div>
-
-              {materiales.map((item, indice) => {
-                const material = detalleMaterial(item.material_id)
-                const subtotal = (Number(item.cantidad) || 0) * (material?.precio_unitario || 0)
-                return (
-                  <div className="stage-grid-row" key={indice}>
-                    <small>{indice + 1}</small>
-                    <select required value={item.material_id} onChange={event => cambiarMaterial(indice, 'material_id', event.target.value)}>
-                      <option value="">Seleccionar material</option>
-                      {materialesDisponibles.map(opcion => <option key={opcion.id} value={opcion.id}>{opcion.nombre} ({opcion.unidad_medida}) — {dinero(opcion.precio_unitario)}</option>)}
-                    </select>
-                    <input required min="0.001" step="0.001" type="number" value={item.cantidad} onChange={event => cambiarMaterial(indice, 'cantidad', event.target.value)} placeholder={material?.unidad_medida || 'Cantidad'} />
-                    <span>{dinero(subtotal)}</span>
-                    <button type="button" onClick={() => setMateriales(materiales.filter((_, posicion) => posicion !== indice))}>×</button>
-                  </div>
-                )
-              })}
-
-              <button type="button" className="add-stage" onClick={() => setMateriales([...materiales, { material_id: '', cantidad: 1 }])}>+ Agregar material</button>
-            </>
-          ) : (
-            <p className="muted">Todavía no cargaste materiales en el catálogo. Hacelo desde la sección "Materiales" del panel.</p>
-          )}
-
-          <p className="stage-total">
-            Materiales {dinero(costoMateriales)} · Mano de obra {dinero(costoManoObra)} ({horasHombre || 0} h × {dinero(costoHora)}) ·
-            <b> Costo calculado total {dinero(costoCalculadoTotal)}</b>
-          </p>
+          <p className="stage-total">Duración total {duracion(minutosTotal)}</p>
         </div>
 
         {error && <p className="form-error">{error}</p>}
@@ -313,7 +321,7 @@ function ProductoModal({ producto, productosExistentes, categorias, materialesDi
 // ---------------------------------------------------------------------
 // COSTO POR HORA DE MANO DE OBRA (editable por el admin)
 // Se usa junto a las horas-hombre de cada producto para calcular su costo
-// de mano de obra dentro del costo materiales + mano de obra.
+// de mano de obra.
 // ---------------------------------------------------------------------
 export function ConfiguracionCosteo({ onGuardar }) {
   const configuracion = useData('/configuracion/valores', {})
@@ -336,11 +344,11 @@ export function ConfiguracionCosteo({ onGuardar }) {
   return (
     <form className="config-card" onSubmit={guardar}>
       <div className="card-title">Costo de la mano de obra</div>
-      <p className="muted">Se multiplica por las horas-hombre de cada producto para calcular su costo de mano de obra, dentro del costo materiales + mano de obra.</p>
+      <p className="muted">Se multiplica por las horas-hombre de cada producto para calcular su costo de mano de obra.</p>
 
       <div className="form-grid config-grid">
         <label>Costo por hora
-          <input min="0" step="0.01" type="number" value={valor} onChange={event => setValor(event.target.value)} />
+          <CampoNumero min="0" step="0.01" value={valor} onChange={setValor} />
         </label>
       </div>
 

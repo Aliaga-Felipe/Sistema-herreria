@@ -199,6 +199,102 @@
     margin: 8px 0 0;
 }
 
+/* Selector de fecha Día → Mes → Año (ver SelectorFecha en panel-pedidos.jsx):
+   tres <select> en fila, mismo estilo que ".modal select" (styles.css). */
+.fecha-selector {
+    display: flex;
+    gap: 6px;
+}
+
+.fecha-selector select {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Botón "+ Crear producto nuevo" dentro de cada línea de producto del
+   alta de pedido (ver PedidoModal en panel-pedidos.jsx): mismo estilo que
+   ".add-stage" pero sin el margen superior grande, porque va pegado a la
+   línea de selección de producto, no al final de una lista. */
+.nuevo-producto-inline {
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+/* Grilla de etapas de fabricación: igual que .stage-grid-row/.stage-grid-head
+   (que sigue usando la sección de materiales) pero sin la columna de costo,
+   que se sacó del formulario de producto: ahora el costo del producto se
+   arma con materiales + mano de obra + costo del producto (ver panel-productos.jsx). */
+.etapa-grid-head,
+.etapa-grid-row {
+    display: grid;
+    grid-template-columns: 20px 1fr 80px 26px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.etapa-grid-head small {
+    font-size: 8px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.etapa-grid-row input {
+    background: #12100f;
+    border: 1px solid #3d3733;
+    color: var(--text);
+    padding: 7px 8px;
+    font: 400 12px Manrope, sans-serif;
+    width: 100%;
+}
+
+.etapa-grid-row button {
+    background: none;
+    border: 1px solid #4a423c;
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 0;
+}
+
+/* Historia del producto: estilo editorial/máquina de escribir, para que
+   se note a simple vista que es distinto de la Descripción técnica (que
+   mantiene la tipografía estándar del formulario, ver ".modal textarea"
+   en styles.css). Se muestra así también en la web pública. */
+.modal textarea.historia-input {
+    font: 400 12px 'DM Mono', monospace;
+    line-height: 1.8;
+    letter-spacing: .2px;
+    background: #17140f;
+    border: 1px dashed #6b5747;
+    color: #e8d9c8;
+    min-height: 100px;
+}
+
+/* Botón "Activar" de un producto desactivado: se resalta para que el
+   admin lo note de un vistazo en la tarjeta atenuada (.product-card.inactivo). */
+.activar-resaltado {
+    background: #e5a184 !important;
+    color: #241811 !important;
+    border: 1px solid #e5a184 !important;
+    border-radius: 2px;
+    padding: 4px 7px !important;
+    font-weight: 800 !important;
+}
+
+/* Insignia "Inactivo" junto al nombre del producto desactivado. */
+.badge-inactivo {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 6px;
+    border: 1px solid #e79a8c;
+    color: #e79a8c;
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
 /* Fila de registro diario de producción: producto, objetivo, cantidad
    producida y el botón de guardar (ver panel-produccion.jsx). */
 .registro-grid-head,
@@ -211,7 +307,10 @@
 */
 .pedidos-head,
 .pedidos-row {
-    grid-template-columns: repeat(9, 1fr);
+    /* Producto, Cantidad, Cliente, Etapas, Prioridad, Entrega,
+       Cumplimiento, Total (sin columna de empleado: los pedidos no se
+       asignan a empleados, las etapas se asignan desde Tareas). */
+    grid-template-columns: repeat(8, 1fr);
 }
 
 .pedidos-row {
@@ -453,6 +552,14 @@
     opacity: .45;
 }
 
+/* Responsable de la etapa en el detalle del pedido: solo lectura (la
+   asignación se hace desde la sección Tareas). */
+.etapa-responsable {
+    color: var(--muted);
+    font-size: 11px;
+    text-align: right;
+}
+
 /* Fila de ítem de presupuesto en el detalle: descripción, precio unitario
    y subtotal, sin las columnas de estado/responsable de una etapa. */
 .etapa-fila-presupuesto {
@@ -537,6 +644,25 @@
 
 .config-grid {
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+/* Fila Categoría / Horas-hombre / Medidas del alta de producto: mismo
+   ancho de borde a borde que el resto de ".config-grid", pero con un
+   espacio mínimo (2mm) entre columnas en vez de los 10px por defecto. */
+.datos-fabricacion {
+    column-gap: 2mm;
+    row-gap: 2mm;
+}
+
+/* La regla global "select, textarea" de auth.css le suma margen lateral
+   (10px izq. / 30px der.) al select de Categoría: con width 100% se salía
+   de su columna y quedaba pegado/encimado al campo Horas-hombre. Sin ese
+   margen, entre la Categoría y las Horas-hombre queda exactamente el
+   espacio de 2mm definido arriba. */
+.datos-fabricacion select,
+.datos-fabricacion input {
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .config-card label {
@@ -895,6 +1021,18 @@
 
 .etapa-item-nombre {
     font-size: 11px;
+    flex: 1;
+    text-align: left;
+}
+
+/* Empleado asignado a la etapa (la asignación se hace al abrir la etapa). */
+.etapa-item-responsable {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 45%;
 }
 
 .etapa-item-tiempo {
@@ -946,13 +1084,15 @@
     .detalle-pedido,
     .etapa-fila,
     .item-linea,
-    .stage-grid-row {
+    .stage-grid-row,
+    .etapa-grid-row {
         grid-template-columns: 1fr;
     }
 
     .order-head,
     .ranking-head,
-    .stage-grid-head {
+    .stage-grid-head,
+    .etapa-grid-head {
         display: none;
     }
 

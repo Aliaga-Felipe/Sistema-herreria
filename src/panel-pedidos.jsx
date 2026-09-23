@@ -1,19 +1,54 @@
 import React, { useEffect, useState } from 'react'
-import { api, dinero, duracion, etiquetaPrioridad, fecha, iniciales, porcentaje, useData } from './api.js'
-import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
+import { createPortal } from 'react-dom'
+import { api, dinero, duracion, etiquetaPrioridad, fecha, porcentaje, useData } from './api.js'
+import { Actions, Badge, CampoNumero, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
+import { ProductoModal, construirCuerpoProducto, sugerirIdPieza } from './panel-productos.jsx'
 
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
 const itemVacio = () => ({ producto_id: '', cantidad: 1, precio_unitario: '' })
+
+// Formato de contacto del cliente: mismo criterio que valida el backend
+// (server/comun.js, validarTelefono / validarEmail) para que el error se
+// vea antes de mandar el formulario, no solo después de que lo rechace el
+// servidor. Los dos campos son opcionales: solo se valida si vienen
+// completos.
+const patronTelefono = /^[0-9+()\-\s]{6,20}$/
+const patronEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Orden de la lista de pedidos: por prioridad, % de avance, fecha de
+// entrega o estado, ascendente o descendente. Se ordena por pedido (no por
+// fila de producto) para que los productos de un mismo pedido no se
+// separen entre sí.
+const opcionesOrden = [
+  { valor: 'prioridad', etiqueta: 'Prioridad' },
+  { valor: 'avance', etiqueta: '% completado' },
+  { valor: 'fecha_entrega', etiqueta: 'Fecha de entrega' },
+  { valor: 'estado', etiqueta: 'Estado' }
+]
+
+const comparadoresOrden = {
+  prioridad: (a, b) => (a.prioridad || 0) - (b.prioridad || 0),
+  avance: (a, b) => (a.avance || 0) - (b.avance || 0),
+  fecha_entrega: (a, b) => {
+    const ta = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity
+    const tb = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity
+    return ta - tb
+  },
+  estado: (a, b) => estadosPedido.indexOf(a.estado) - estadosPedido.indexOf(b.estado)
+}
 
 export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const pedidos = useData('/pedidos')
   const productos = useData('/productos')
   const clientes = useData('/clientes')
-  const empleados = useData('/usuarios/empleados')
+  const categorias = useData('/categorias')
+  const configuracion = useData('/configuracion/valores', {})
   const { mostrar, nodo } = useAviso()
   const [creando, setCreando] = useState(false)
   const [detalle, setDetalle] = useState(null)
   const [filtro, setFiltro] = useState('ACTIVOS')
+  const [ordenPor, setOrdenPor] = useState('prioridad')
+  const [ordenDir, setOrdenDir] = useState('desc')
 
   useEffect(() => {
     if (intencion === 'nuevo') { setCreando(true); limpiarIntencion?.() }
@@ -26,22 +61,22 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
     mostrar('Pedido creado y desplegado en etapas de producción.')
   }
 
+  // Crea un producto nuevo sin salir del alta de pedido (ver "+ Crear
+  // producto nuevo" en PedidoModal): misma lógica que PanelProductos.guardar,
+  // reutilizada vía construirCuerpoProducto para no duplicarla.
+  const crearProducto = async producto => {
+    const cuerpo = construirCuerpoProducto(producto)
+    const creado = await api.post('/productos', cuerpo, productos.token)
+    await productos.load()
+    return creado
+  }
+
   const cambiarEstado = async (pedido, estado) => {
     try {
       const actualizado = await api.patch(`/pedidos/${pedido.id}`, { estado }, pedidos.token)
       setDetalle(actualizado)
       await pedidos.load()
       mostrar(`Pedido ${pedido.codigo} marcado como ${estado.toLowerCase().replace('_', ' ')}.`)
-    } catch (error) { mostrar(error.message, 'error') }
-  }
-
-  const asignar = async (pedidoId, etapaId, responsable) => {
-    try {
-      await api.patch(`/pedidos/${pedidoId}/etapas/${etapaId}/asignar`, { responsable_id: responsable || null }, pedidos.token)
-      const actualizado = await api.get(`/pedidos/${pedidoId}`, pedidos.token)
-      setDetalle(actualizado)
-      await pedidos.load()
-      mostrar('Etapa asignada.')
     } catch (error) { mostrar(error.message, 'error') }
   }
 
@@ -58,9 +93,16 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const visibles = pedidos.data.filter(pedido =>
     filtro === 'TODOS' ? true : filtro === 'ACTIVOS' ? ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO'].includes(pedido.estado) : pedido.estado === filtro)
 
-  // Una fila por producto del pedido: cada producto tiene su propia etapa
-  // en curso, su empleado a cargo y su propio subtotal.
-  const filas = visibles.flatMap(pedido => pedido.items.map(item => {
+  const visiblesOrdenados = [...visibles].sort((a, b) => {
+    const resultado = comparadoresOrden[ordenPor](a, b)
+    return ordenDir === 'desc' ? -resultado : resultado
+  })
+
+  // Una fila por producto del pedido: cada producto tiene su propio avance
+  // de etapas y su propio subtotal. La sección es solo informativa: los
+  // pedidos/productos no se asignan a empleados (las etapas se asignan
+  // desde Tareas), por eso no hay columna de empleado.
+  const filas = visiblesOrdenados.flatMap(pedido => pedido.items.map(item => {
     const etapasItem = pedido.etapas
       .filter(etapa => String(etapa.pedido_item_id) === String(item.id))
       .sort((a, b) => a.orden - b.orden)
@@ -78,6 +120,12 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
             <option value="TODOS">Todos</option>
             {estadosPedido.map(estado => <option key={estado} value={estado}>{estado.replace('_', ' ')}</option>)}
           </select>
+          <select className="filter" value={ordenPor} onChange={event => setOrdenPor(event.target.value)} title="Ordenar por">
+            {opcionesOrden.map(opcion => <option key={opcion.valor} value={opcion.valor}>Ordenar: {opcion.etiqueta}</option>)}
+          </select>
+          <button type="button" className="filter" onClick={() => setOrdenDir(ordenDir === 'desc' ? 'asc' : 'desc')} title="Cambiar dirección del orden">
+            {ordenDir === 'desc' ? '↓ Descendente' : '↑ Ascendente'}
+          </button>
           <button className="primary" onClick={() => setCreando(true)}>+ Nuevo pedido</button>
         </div>
       </Heading>
@@ -87,12 +135,11 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       {pedidos.loading ? <p>Cargando pedidos...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : filas.length ? (
         <section className="orders-card">
           <div className="order-head pedidos-head">
-            <span>Producto</span><span>Cantidad</span><span>Cliente</span><span>Etapas</span><span>Empleado</span><span>Prioridad</span><span>Entrega</span><span>Cumplimiento</span><span>Total</span>
+            <span>Producto</span><span>Cantidad</span><span>Cliente</span><span>Etapas</span><span>Prioridad</span><span>Entrega</span><span>Cumplimiento</span><span>Total</span>
           </div>
 
           {filas.map(fila => {
             const avanceItem = porcentaje(fila.completadas, fila.etapasItem.length)
-            const responsable = fila.actual?.responsable || fila.etapasItem[fila.etapasItem.length - 1]?.responsable
             return (
               <div className="order-row pedidos-row" key={fila.clave} onClick={() => setDetalle(fila.pedido)}>
                 <div className="product">
@@ -109,10 +156,6 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 
                 <div className="etapas-cell">
                   <b>{fila.completadas}/{fila.etapasItem.length}</b>
-                </div>
-
-                <div className="worker">
-                  {responsable ? <><span>{iniciales(responsable)}</span>{responsable}</> : <small>Sin asignar</small>}
                 </div>
 
                 <div className="prioridad-cell"><span className={`prioridad ${etiquetaPrioridad(fila.pedido.prioridad).toLowerCase()}`}>{etiquetaPrioridad(fila.pedido.prioridad)}</span></div>
@@ -133,8 +176,12 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       {creando && (
         <PedidoModal
           productos={productos.data.filter(producto => producto.activo)}
+          productosExistentes={productos.data}
+          categorias={categorias.data}
+          costoHora={Number(configuracion.data.costo_hora_mano_obra) || 0}
+          token={productos.token}
+          crearProducto={crearProducto}
           clientes={clientes.data}
-          empleados={empleados.data}
           close={() => setCreando(false)}
           save={crear}
         />
@@ -143,9 +190,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       {detalle && (
         <DetallePedido
           pedido={detalle}
-          empleados={empleados.data}
           close={() => setDetalle(null)}
-          onAsignar={asignar}
           onEstado={cambiarEstado}
           onEliminar={eliminar}
         />
@@ -155,16 +200,71 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 }
 
 // ---------------------------------------------------------------------
-// ALTA DE PEDIDO
+// SELECTOR DE FECHA (Día → Mes → Año)
+// Tres combos en ese orden en vez del selector nativo del navegador, que
+// en la mayoría de los sistemas muestra mes/día/año. El valor que entra y
+// sale sigue siendo un string ISO "AAAA-MM-DD" (lo que ya espera el
+// backend), así que no cambia nada fuera de este componente.
 // ---------------------------------------------------------------------
-function PedidoModal({ productos, clientes, empleados, close, save }) {
+const nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+function SelectorFecha({ value, onChange }) {
+  // Día, mes y año se guardan como estado propio (no derivado del string
+  // ISO compuesto): mientras falta elegir alguno de los tres, la fecha
+  // completa todavía no existe (onChange('') no le llega nada al padre),
+  // pero el combo que sí se eligió tiene que seguir mostrando su valor en
+  // vez de volver a "Día"/"Mes"/"Año" en cada render.
+  const inicial = value ? value.split('-').map(Number) : [null, null, null]
+  const [anio, setAnio] = useState(inicial[0])
+  const [mes, setMes] = useState(inicial[1])
+  const [dia, setDia] = useState(inicial[2])
+  const anioActual = new Date().getFullYear()
+  const anios = Array.from({ length: 8 }, (_, indice) => anioActual - 1 + indice)
+
+  const actualizar = (campo, valor) => {
+    const partes = { anio, mes, dia, [campo]: valor }
+    if (campo === 'anio') setAnio(valor)
+    else if (campo === 'mes') setMes(valor)
+    else setDia(valor)
+    onChange(partes.anio && partes.mes && partes.dia
+      ? `${partes.anio}-${String(partes.mes).padStart(2, '0')}-${String(partes.dia).padStart(2, '0')}`
+      : '')
+  }
+
+  return (
+    <div className="fecha-selector">
+      <select value={dia || ''} onChange={event => actualizar('dia', Number(event.target.value) || null)}>
+        <option value="">Día</option>
+        {Array.from({ length: 31 }, (_, indice) => indice + 1).map(valor => <option key={valor} value={valor}>{valor}</option>)}
+      </select>
+      <select value={mes || ''} onChange={event => actualizar('mes', Number(event.target.value) || null)}>
+        <option value="">Mes</option>
+        {nombresMeses.map((nombre, indice) => <option key={nombre} value={indice + 1}>{nombre}</option>)}
+      </select>
+      <select value={anio || ''} onChange={event => actualizar('anio', Number(event.target.value) || null)}>
+        <option value="">Año</option>
+        {anios.map(valor => <option key={valor} value={valor}>{valor}</option>)}
+      </select>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------
+// ALTA DE PEDIDO
+// El presupuesto ya no es un paso aparte: a medida que se eligen
+// productos, el resumen de mano de obra, costo de producción,
+// precio y ganancia se arma solo, con los mismos valores calculados que
+// devuelve /productos (ver conCostoCalculado en server/rutas/productos.js).
+// ---------------------------------------------------------------------
+function PedidoModal({ productos, productosExistentes, categorias, costoHora, token, crearProducto, clientes, close, save }) {
   const [clienteId, setClienteId] = useState('')
   const [cliente, setCliente] = useState({ nombre: '', telefono: '', email: '', direccion: '', notas: '' })
   const [items, setItems] = useState([itemVacio()])
   const [entrega, setEntrega] = useState('')
   const [prioridad, setPrioridad] = useState(0)
   const [notas, setNotas] = useState('')
-  const [asignaciones, setAsignaciones] = useState({})
+  const [erroresCliente, setErroresCliente] = useState({})
+  const [creandoProductoPara, setCreandoProductoPara] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -179,11 +279,35 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
     return suma + precio * (Number(item.cantidad) || 0)
   }, 0)
 
+  // Presupuesto en vivo: mismo costo de mano de obra que calcula el backend
+  // por producto (costo_mano_obra), multiplicado por la cantidad de cada
+  // ítem del pedido. Es el mismo costo que se copia al crear el pedido
+  // (ver POST /pedidos en server/rutas/pedidos.js).
+  const resumen = items.reduce((acumulado, item) => {
+    const producto = detalleProducto(item.producto_id)
+    if (!producto) return acumulado
+    const cantidad = Number(item.cantidad) || 0
+    return { manoObra: acumulado.manoObra + (Number(producto.costo_mano_obra) || 0) * cantidad }
+  }, { manoObra: 0 })
+  const costoProduccion = resumen.manoObra
+  const ganancia = total - costoProduccion
+
+  const validarCliente = () => {
+    const errores = {}
+    if (cliente.telefono.trim() && !patronTelefono.test(cliente.telefono.trim())) errores.telefono = 'Ingresá un teléfono válido (solo números, espacios, +, - y paréntesis).'
+    if (cliente.email.trim() && !patronEmail.test(cliente.email.trim())) errores.email = 'Ingresá un email válido (ej. nombre@dominio.com).'
+    setErroresCliente(errores)
+    return Object.keys(errores).length === 0
+  }
+
   const enviar = async event => {
     event.preventDefault()
     const validos = items.filter(item => item.producto_id)
     if (!validos.length) return setError('Elegí al menos un producto.')
-    if (!clienteId && !cliente.nombre.trim()) return setError('Cargá los datos del cliente o elegí uno existente.')
+    if (!clienteId) {
+      if (!cliente.nombre.trim()) return setError('Cargá los datos del cliente o elegí uno existente.')
+      if (!validarCliente()) return setError('Revisá los datos del cliente: hay campos con formato inválido.')
+    }
     setBusy(true); setError('')
     try {
       await save({
@@ -192,11 +316,10 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
         fecha_entrega: entrega || null,
         prioridad: Number(prioridad) || 0,
         notas,
-        items: validos.map((item, indice) => ({
+        items: validos.map(item => ({
           producto_id: item.producto_id,
           cantidad: Number(item.cantidad) || 1,
-          precio_unitario: item.precio_unitario === '' ? undefined : Number(item.precio_unitario),
-          asignaciones: asignaciones[indice] || {}
+          precio_unitario: item.precio_unitario === '' ? undefined : Number(item.precio_unitario)
         }))
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -211,7 +334,7 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
   }
 
   return (
-    <Modal title="Nuevo pedido" subtitle="Elegí los productos, cargá al cliente y, si querés, asigná ya cada etapa." close={close} ancho="720px">
+    <Modal title="Nuevo pedido" subtitle="Cliente → productos → presupuesto: todo en un solo paso. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
       <form onSubmit={enviar}>
         <div className="form-grid">
           <label>Cliente existente
@@ -222,7 +345,7 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
           </label>
 
           <label>Fecha de entrega
-            <input type="date" value={entrega} onChange={event => setEntrega(event.target.value)} />
+            <SelectorFecha value={entrega} onChange={setEntrega} />
           </label>
         </div>
 
@@ -231,8 +354,14 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
             <b>Datos del cliente</b>
             <div className="form-grid">
               <label>Nombre<input required value={cliente.nombre} onChange={event => setCliente({ ...cliente, nombre: event.target.value })} /></label>
-              <label>Teléfono / contacto<input value={cliente.telefono} onChange={event => setCliente({ ...cliente, telefono: event.target.value })} placeholder="Ej. 11 5555-5555" /></label>
-              <label>Correo<input type="email" value={cliente.email} onChange={event => setCliente({ ...cliente, email: event.target.value })} /></label>
+              <label>Teléfono / contacto
+                <input value={cliente.telefono} onChange={event => setCliente({ ...cliente, telefono: event.target.value })} placeholder="Ej. 11 5555-5555" />
+                {erroresCliente.telefono && <small className="form-error">{erroresCliente.telefono}</small>}
+              </label>
+              <label>Correo
+                <input type="email" value={cliente.email} onChange={event => setCliente({ ...cliente, email: event.target.value })} />
+                {erroresCliente.email && <small className="form-error">{erroresCliente.email}</small>}
+              </label>
               <label>Dirección<input value={cliente.direccion} onChange={event => setCliente({ ...cliente, direccion: event.target.value })} placeholder="Dirección de entrega o instalación" /></label>
             </div>
             <label>Notas del cliente<textarea value={cliente.notas} onChange={event => setCliente({ ...cliente, notas: event.target.value })} placeholder="Referencias, horarios de contacto, etc." /></label>
@@ -242,7 +371,7 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
         <div className="stage-edit">
           <div>
             <b>Productos del pedido</b>
-            <span>Cada producto despliega sus etapas como tareas de producción.</span>
+            <span>Cada producto despliega sus etapas como tareas de producción. Si el producto todavía no existe, se puede crear sin salir de acá.</span>
           </div>
 
           {items.map((item, indice) => {
@@ -255,23 +384,16 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
                     {productos.map(opcion => <option key={opcion.id} value={opcion.id}>{opcion.nombre} — {dinero(opcion.precio_venta)}</option>)}
                   </select>
                   <input min="1" type="number" value={item.cantidad} onChange={event => cambiarItem(indice, 'cantidad', event.target.value)} title="Cantidad" />
-                  <input min="0" step="0.01" type="number" value={item.precio_unitario} onChange={event => cambiarItem(indice, 'precio_unitario', event.target.value)} placeholder={producto ? String(producto.precio_venta) : 'Precio'} title="Precio unitario" />
+                  <CampoNumero min="0" step="0.01" value={item.precio_unitario} onChange={valor => cambiarItem(indice, 'precio_unitario', valor)} placeholder={producto ? String(producto.precio_venta) : 'Precio'} title="Precio unitario" />
                   <button type="button" onClick={() => setItems(items.filter((_, posicion) => posicion !== indice))}>×</button>
                 </div>
 
+                <button type="button" className="add-stage nuevo-producto-inline" onClick={() => setCreandoProductoPara(indice)}>+ Crear producto nuevo</button>
+
                 {producto && (
-                  <div className="item-etapas">
+                  <div className="tags">
                     {producto.etapas.map(etapa => (
-                      <label key={etapa.id}>
-                        <span>{etapa.orden}. {etapa.nombre} <small>{duracion(etapa.minutos_estimados * (Number(item.cantidad) || 1))}</small></span>
-                        <select
-                          value={asignaciones[indice]?.[etapa.id] || ''}
-                          onChange={event => setAsignaciones({ ...asignaciones, [indice]: { ...asignaciones[indice], [etapa.id]: event.target.value } })}
-                        >
-                          <option value="">Sin asignar</option>
-                          {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
-                        </select>
-                      </label>
+                      <span key={etapa.id}>{etapa.orden}. {etapa.nombre} · {duracion(etapa.minutos_estimados * (Number(item.cantidad) || 1))}</span>
                     ))}
                   </div>
                 )}
@@ -280,7 +402,19 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
           })}
 
           <button type="button" className="add-stage" onClick={() => setItems([...items, itemVacio()])}>+ Agregar producto</button>
-          <p className="stage-total">Total del pedido <b>{dinero(total)}</b></p>
+        </div>
+
+        <div className="stage-edit">
+          <div>
+            <b>Presupuesto</b>
+            <span>Se arma solo con la mano de obra y el precio de los productos elegidos arriba.</span>
+          </div>
+          <p className="stage-total">
+            Mano de obra {dinero(resumen.manoObra)} ·
+            <b> Costo de producción {dinero(costoProduccion)}</b> ·
+            Precio al cliente {dinero(total)} ·
+            <b className={ganancia >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(ganancia)}</b>
+          </p>
         </div>
 
         <div className="form-grid">
@@ -298,14 +432,38 @@ function PedidoModal({ productos, clientes, empleados, close, save }) {
         {error && <p className="form-error">{error}</p>}
         <Actions close={close} label="Crear pedido" busy={busy} />
       </form>
+
+      {/* Portal: ProductoModal trae su propio <form>, y anidarlo dentro del
+          <form> de este modal sería HTML inválido (un <form> no puede
+          contener otro). Se monta aparte, directo en <body>. */}
+      {creandoProductoPara !== null && createPortal(
+        <ProductoModal
+          producto={{ chapita_id: sugerirIdPieza(productosExistentes) }}
+          productosExistentes={productosExistentes}
+          categorias={categorias}
+          costoHora={costoHora}
+          token={token}
+          close={() => setCreandoProductoPara(null)}
+          save={async nuevoProducto => {
+            const creado = await crearProducto(nuevoProducto)
+            cambiarItem(creandoProductoPara, 'producto_id', String(creado.id))
+            setCreandoProductoPara(null)
+          }}
+        />,
+        document.body
+      )}
     </Modal>
   )
 }
 
 // ---------------------------------------------------------------------
-// DETALLE Y ASIGNACIÓN DE ETAPAS
+// DETALLE DEL PEDIDO (solo informativo)
+// Muestra el avance de las etapas de cada producto. Acá no se asignan
+// empleados: eso se hace únicamente desde la sección Tareas.
 // ---------------------------------------------------------------------
-function DetallePedido({ pedido, empleados, close, onAsignar, onEstado, onEliminar }) {
+function DetallePedido({ pedido, close, onEstado, onEliminar }) {
+  const ganancia = pedido.total - pedido.costo_estimado
+
   return (
     <Modal title={`Pedido ${pedido.codigo}`} subtitle={`${pedido.avance}% completado · ${pedido.etapas_completadas} de ${pedido.etapas_totales} etapas`} close={close} ancho="760px">
       <div className="detalle-pedido">
@@ -325,42 +483,49 @@ function DetallePedido({ pedido, empleados, close, onAsignar, onEstado, onElimin
             </select>
           </label>
           <small>Entrega: {fecha(pedido.fecha_entrega)}</small>
-          <small>Total {dinero(pedido.total)} · Costo estimado {dinero(pedido.costo_estimado)} · Margen {dinero(pedido.total - pedido.costo_estimado)}</small>
         </section>
       </div>
 
       <Progress value={pedido.avance} />
 
-      {pedido.items.map(item => (
-        <section className="detalle-item" key={item.id}>
-          <div className="detalle-item-head">
-            <b>{item.cantidad}× {item.producto}</b>
-            <span>{dinero(item.subtotal)}</span>
-          </div>
+      <p className="stage-total">
+        Precio al cliente {dinero(pedido.total)} ·{pedido.costo_materiales_total > 0 ? ` Materiales ${dinero(pedido.costo_materiales_total)} ·` : ''} Mano de obra {dinero(pedido.costo_mano_obra_total)} ·
+        <b> Costo de producción {dinero(pedido.costo_estimado)}</b> ·
+        <b className={ganancia >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(ganancia)}</b>
+      </p>
 
-          <div className="etapas-tabla">
-            {pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).map(etapa => (
-              <div className="etapa-fila" key={etapa.id}>
-                <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
-                <Badge estado={etapa.estado} />
-                <span className="etapa-tiempo">
-                  {duracion(etapa.minutos_estimados)}
-                  {etapa.minutos_reales ? <b> → {duracion(etapa.minutos_reales)}</b> : null}
-                </span>
-                <Semaforo valor={etapa.semaforo} compacto />
-                <select
-                  value={etapa.responsable_id || ''}
-                  disabled={etapa.estado === 'COMPLETADA'}
-                  onChange={event => onAsignar(pedido.id, etapa.id, event.target.value)}
-                >
-                  <option value="">Sin asignar</option>
-                  {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
-                </select>
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+      {pedido.items.map(item => {
+        const gananciaItem = item.subtotal - item.costo_produccion
+        return (
+          <section className="detalle-item" key={item.id}>
+            <div className="detalle-item-head">
+              <b>{item.cantidad}× {item.producto}</b>
+              <span>{dinero(item.subtotal)}</span>
+            </div>
+
+            <p className="stage-total">
+              {item.costo_materiales > 0 ? `Materiales ${dinero(item.costo_materiales)} · ` : ''}Mano de obra {dinero(item.costo_mano_obra)} ·
+              <b> Costo producción {dinero(item.costo_produccion)}</b> ·
+              <b className={gananciaItem >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(gananciaItem)}</b>
+            </p>
+
+            <div className="etapas-tabla">
+              {pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).map(etapa => (
+                <div className="etapa-fila" key={etapa.id}>
+                  <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
+                  <Badge estado={etapa.estado} />
+                  <span className="etapa-tiempo">
+                    {duracion(etapa.minutos_estimados)}
+                    {etapa.minutos_reales ? <b> → {duracion(etapa.minutos_reales)}</b> : null}
+                  </span>
+                  <Semaforo valor={etapa.semaforo} compacto />
+                  <span className="etapa-responsable" title="La asignación se gestiona desde Tareas">{etapa.responsable || 'Sin asignar'}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      })}
 
       {pedido.notas && <p className="form-note">Notas: {pedido.notas}</p>}
 
