@@ -50,6 +50,19 @@ export const construirCuerpoProducto = producto => ({
   etapas: producto.etapas.map(etapa => ({ ...etapa, minutos_estimados: Number(etapa.minutos_estimados) }))
 })
 
+// ---------------------------------------------------------------------
+// ESTADO DE SINCRONIZACIÓN CON WHATSAPP
+// Sólo se muestra en productos publicados (los borradores nunca se
+// sincronizan). Mismo formato visual que .badge-publicado/.badge-inactivo.
+// ---------------------------------------------------------------------
+const BadgeWhatsapp = ({ producto }) => {
+  const estado = producto.whatsapp_sync_estado || 'NO_SINCRONIZADO'
+  if (estado === 'SINCRONIZADO') return <span className="badge-publicado" title={`Sincronizado con WhatsApp${producto.whatsapp_sync_actualizado_en ? ` · ${new Date(producto.whatsapp_sync_actualizado_en).toLocaleString('es-AR')}` : ''}`}>WhatsApp ✓</span>
+  if (estado === 'ERROR') return <span className="badge-inactivo" title={producto.whatsapp_sync_error || 'Error al sincronizar con WhatsApp'}>WhatsApp ✗</span>
+  if (estado === 'PENDIENTE') return <span className="badge-inactivo" title="Sincronizando con WhatsApp...">WhatsApp …</span>
+  return <span className="badge-inactivo" title="Todavía no se sincronizó con WhatsApp">WhatsApp —</span>
+}
+
 export default function PanelProductos({ intencion, limpiarIntencion }) {
   const productos = useData('/productos')
   const categorias = useData('/categorias')
@@ -100,6 +113,19 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
     } catch (error) { mostrar(error.message, 'error') }
   }
 
+  // Reintenta la sincronización con el catálogo de WhatsApp (ver
+  // POST /productos/:id/whatsapp/reintentar en server/rutas/productos.js).
+  // La sincronización automática ya corre sola al guardar el producto o sus
+  // fotos; este botón es sólo para forzarla a mano (por ejemplo tras un
+  // error, o para verla al instante sin esperar el próximo guardado).
+  const reintentarWhatsapp = async producto => {
+    try {
+      const respuesta = await api.post(`/productos/${producto.id}/whatsapp/reintentar`, {}, productos.token)
+      await productos.load()
+      mostrar(respuesta.mensaje)
+    } catch (error) { mostrar(error.message, 'error') }
+  }
+
   return (
     <>
       <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
@@ -123,6 +149,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                   {producto.publicado
                     ? <span className="badge-publicado" title="Visible en la web pública">En la web</span>
                     : <span className="badge-inactivo" title="Oculto en la web pública: sólo se ve en el panel">No publicado</span>}
+                  {producto.publicado && <BadgeWhatsapp producto={producto} />}
                 </h3>
                 <p>
                   {producto.categoria_nombre || 'Sin categoría'}
@@ -130,6 +157,9 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                   {producto.medidas ? ` · ${producto.medidas}` : ''}
                 </p>
                 <p>{producto.descripcion || 'Sin descripción.'}</p>
+                {producto.whatsapp_sync_estado === 'ERROR' && producto.whatsapp_sync_error && (
+                  <p className="form-error" style={{ fontSize: 11, margin: '2px 0' }}>WhatsApp: {producto.whatsapp_sync_error}</p>
+                )}
 
                 <div className="product-numbers">
                   <span><small>Precio</small><b>{dinero(producto.precio_venta)}</b></span>
@@ -154,6 +184,11 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
               <div className="card-buttons">
                 <button onClick={() => editarProducto(producto)}>Editar</button>
                 <button className={producto.activo ? '' : 'activar-resaltado'} onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar' : 'Activar'}</button>
+                {producto.publicado && (
+                  <button onClick={() => reintentarWhatsapp(producto)}>
+                    {producto.whatsapp_sync_estado === 'ERROR' ? 'Reintentar WhatsApp' : 'Sincronizar WhatsApp'}
+                  </button>
+                )}
                 <button className="danger-link" onClick={() => eliminar(producto)}>Eliminar</button>
               </div>
             </article>

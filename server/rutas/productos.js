@@ -6,12 +6,14 @@ import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 import { pool } from '../db.js'
 import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, decimal, entero, fallo, leerConfiguracion, slugify } from '../comun.js'
+import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp.js'
 
 const router = Router()
 
 const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.publicado, p.slug, p.creado_en,
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre, p.chapita_id,
     p.medidas, p.costo_producto::float8 AS costo_producto, p.historia,
+    p.whatsapp_sync_estado, p.whatsapp_sync_error, p.whatsapp_sync_actualizado_en,
     COALESCE(SUM(e.minutos_estimados), 0)::int AS minutos_totales,
     COALESCE(json_agg(json_build_object('id', e.id, 'nombre', e.nombre, 'descripcion', e.descripcion, 'orden', e.orden,
       'minutos_estimados', e.minutos_estimados) ORDER BY e.orden) FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
@@ -193,6 +195,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     )
     await guardarEtapas(cliente, rows[0].id, normalizadas)
     await cliente.query('COMMIT')
+    sincronizarEnSegundoPlano(rows[0].id)
     const creado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.status(201).json((await conCostoCalculado(creado.rows))[0])
   } catch (error) {
@@ -250,6 +253,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
     // en curso.
     await guardarEtapas(cliente, rows[0].id, normalizadas)
     await cliente.query('COMMIT')
+    sincronizarEnSegundoPlano(rows[0].id)
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
     res.json((await conCostoCalculado(actualizado.rows))[0])
   } catch (error) {
@@ -265,6 +269,7 @@ router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
   if (typeof activo !== 'boolean') throw fallo('El campo activo debe ser booleano.')
   const { rows } = await pool.query('UPDATE productos SET activo = $1, actualizado_en = NOW() WHERE id = $2 RETURNING id, nombre, activo', [activo, req.params.id])
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
+  sincronizarEnSegundoPlano(rows[0].id)
   res.json(rows[0])
 }))
 
@@ -275,8 +280,17 @@ router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   if (usos.rows[0]) {
     const { rows } = await pool.query('UPDATE productos SET activo = FALSE, actualizado_en = NOW() WHERE id = $1 RETURNING id', [req.params.id])
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
+    sincronizarEnSegundoPlano(rows[0].id)
     return res.json({ mensaje: 'El producto tiene pedidos asociados: se desactivó en lugar de borrarse.', desactivado: true })
   }
+  // Si ya estaba sincronizado en WhatsApp, primero se marca "discontinued"
+  // en Meta (misma alternativa que usa la desactivación: no hay nada más
+  // que avisarle a Meta una vez borrada la fila) y recién después se borra
+  // de PostgreSQL. Un error de Meta acá no impide borrar el producto local.
+  const previo = await pool.query('SELECT activo FROM productos WHERE id = $1', [req.params.id])
+  if (!previo.rows[0]) throw fallo('Producto no encontrado.', 404)
+  await pool.query('UPDATE productos SET activo = FALSE WHERE id = $1', [req.params.id])
+  await sincronizarProducto(req.params.id)
   const { rows } = await pool.query('DELETE FROM productos WHERE id = $1 RETURNING id', [req.params.id])
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
   res.json({ mensaje: 'Producto eliminado.', desactivado: false })
@@ -326,6 +340,9 @@ router.post('/:id/imagenes', auth(['admin']), (req, res, next) => {
     'INSERT INTO producto_imagenes (producto_id, url, orden, es_principal) VALUES ($1, $2, $3, $4) RETURNING id, url, orden, es_principal',
     [req.params.id, url, existentes.rows[0].max_orden + 1, esPrimera]
   )
+  // La primera foto que se sube después de crear el producto es la que
+  // permite sincronizarlo por primera vez con WhatsApp (Meta exige imagen).
+  if (esPrimera) sincronizarEnSegundoPlano(req.params.id)
   res.status(201).json({ imagen: rows[0], imagenes: await listarImagenes(req.params.id) })
 }))
 
@@ -339,6 +356,8 @@ router.patch('/:id/imagenes/:imagenId/principal', auth(['admin']), asyncRoute(as
     await cliente.query('UPDATE producto_imagenes SET es_principal = TRUE WHERE id = $1', [req.params.imagenId])
     await cliente.query('COMMIT')
   } catch (error) { await cliente.query('ROLLBACK'); throw error } finally { cliente.release() }
+  // Cambió la foto que se muestra en el catálogo (y en WhatsApp).
+  sincronizarEnSegundoPlano(req.params.id)
   res.json({ imagenes: await listarImagenes(req.params.id) })
 }))
 
@@ -354,8 +373,34 @@ router.delete('/:id/imagenes/:imagenId', auth(['admin']), asyncRoute(async (req,
   if (rows[0].es_principal) {
     const restante = await pool.query('SELECT id FROM producto_imagenes WHERE producto_id = $1 ORDER BY orden LIMIT 1', [req.params.id])
     if (restante.rows[0]) await pool.query('UPDATE producto_imagenes SET es_principal = TRUE WHERE id = $1', [restante.rows[0].id])
+    // Cambió (o se quedó sin) la foto principal: puede afectar lo que ya
+    // esté sincronizado en WhatsApp (incluido el caso "ya no queda ninguna
+    // foto", que vuelve a fallar la sincronización con un motivo claro).
+    sincronizarEnSegundoPlano(req.params.id)
   }
   res.json({ imagenes: await listarImagenes(req.params.id) })
+}))
+
+// -----------------------------------------------------------------------
+// SINCRONIZACIÓN CON EL CATÁLOGO DE WHATSAPP
+// La sincronización automática (ver sincronizarEnSegundoPlano más arriba)
+// corre en segundo plano al guardar el producto o sus fotos. Esta ruta es
+// el botón "Reintentar sincronización" del panel: corre la misma lógica
+// pero espera el resultado para poder mostrarlo al instante.
+// -----------------------------------------------------------------------
+router.post('/:id/whatsapp/reintentar', auth(['admin']), asyncRoute(async (req, res) => {
+  const producto = await pool.query('SELECT id FROM productos WHERE id = $1', [req.params.id])
+  if (!producto.rows[0]) throw fallo('Producto no encontrado.', 404)
+
+  const resultado = await sincronizarProducto(req.params.id)
+  if (resultado.estado === 'ERROR') throw fallo(resultado.error || 'No se pudo sincronizar con el catálogo de WhatsApp.', 502)
+  if (resultado.omitido) {
+    const mensaje = resultado.motivo === 'deshabilitada'
+      ? 'La integración con WhatsApp no está habilitada en el servidor. Completá WHATSAPP_SYNC_ENABLED y las variables META_* (ver INTEGRACION_WHATSAPP.md).'
+      : 'El producto tiene que estar activo y marcado como "Publicar en la web" para sincronizarlo con WhatsApp.'
+    throw fallo(mensaje, 400)
+  }
+  res.json({ mensaje: 'Producto sincronizado con el catálogo de WhatsApp.', whatsapp_sync_estado: resultado.estado })
 }))
 
 export default router
