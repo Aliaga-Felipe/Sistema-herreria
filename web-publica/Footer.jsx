@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { usePublicConfig } from './PublicContext.jsx'
+import { MOSTRAR_HORARIO, usePublicConfig } from './PublicContext.jsx'
 
 export default function Footer() {
   const config = usePublicConfig()
@@ -39,10 +39,10 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4>Taller</h4>
+            <h4>Ubicación</h4>
             <ul>
               {config.negocio_direccion && <li>{config.negocio_direccion}</li>}
-              {config.negocio_horario && <li>{config.negocio_horario}</li>}
+              {MOSTRAR_HORARIO && config.negocio_horario && <li>{config.negocio_horario}</li>}
             </ul>
           </div>
         </div>

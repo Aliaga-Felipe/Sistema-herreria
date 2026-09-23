@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { publicApi, useMeta } from './api.js'
-import { usePublicConfig } from './PublicContext.jsx'
+import { MOSTRAR_HORARIO, usePublicConfig } from './PublicContext.jsx'
 import ForgePattern from './components/ForgePattern.jsx'
 import Reveal from './components/Reveal.jsx'
 import ParallaxReveal from './components/ParallaxReveal.jsx'
@@ -79,15 +79,17 @@ export default function Home() {
                 Villa Carlos Paz, Córdoba<br />
                 Argentina
               </address>
-              <div className="contacto-datos ubicacion-horario">
-                <article>
-                  <span className="icono">▷</span>
-                  <div>
-                    <b>Horario</b>
-                    <p>{config.negocio_horario || 'Completá aquí tu horario de atención (ejemplo: Lunes a viernes de 9 a 18 hs).'}</p>
-                  </div>
-                </article>
-              </div>
+              {MOSTRAR_HORARIO && (
+                <div className="contacto-datos ubicacion-horario">
+                  <article>
+                    <span className="icono">▷</span>
+                    <div>
+                      <b>Horario</b>
+                      <p>{config.negocio_horario || 'Completá aquí tu horario de atención (ejemplo: Lunes a viernes de 9 a 18 hs).'}</p>
+                    </div>
+                  </article>
+                </div>
+              )}
             </TextoParallax>
             <ParallaxReveal className="ubicacion-mapa">
               <MapaUbicacion

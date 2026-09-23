@@ -68,6 +68,42 @@ export function Modal({ title, subtitle, close, children, ancho, icono }) {
   )
 }
 
+// Campo numérico con separador de miles (formato es-AR) al perder el foco,
+// sin tocar el valor real que se envía al backend: mientras el campo está
+// enfocado se edita como <input type="number"> puro (para no romper el
+// cursor ni la escritura), y sólo al perder el foco se muestra formateado
+// (ej: 1800000 -> "1.800.000"). Reemplazo directo de
+// <input type="number" value={x} onChange={e => setX(e.target.value)} />.
+export function CampoNumero({ value, onChange, id, name, placeholder, min, max, step, required, disabled, className, ...resto }) {
+  const [enFoco, setEnFoco] = useState(false)
+  const formateado = (() => {
+    if (value === '' || value === null || value === undefined) return ''
+    const numero = Number(value)
+    if (Number.isNaN(numero)) return String(value)
+    return numero.toLocaleString('es-AR', { maximumFractionDigits: 2 })
+  })()
+  return (
+    <input
+      type={enFoco ? 'number' : 'text'}
+      inputMode="decimal"
+      id={id}
+      name={name}
+      placeholder={placeholder}
+      min={min}
+      max={max}
+      step={step}
+      required={required}
+      disabled={disabled}
+      className={className}
+      {...resto}
+      value={enFoco ? (value ?? '') : formateado}
+      onFocus={() => setEnFoco(true)}
+      onBlur={() => setEnFoco(false)}
+      onChange={event => onChange(event.target.value)}
+    />
+  )
+}
+
 export const Actions = ({ close, label, busy }) => (
   <div className="form-actions">
     <button type="button" className="secondary" onClick={close}>Cancelar</button>

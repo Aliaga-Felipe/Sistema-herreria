@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, esAdmin, fallo, sincronizarPedido } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido, validarEmail, validarTelefono } from '../comun.js'
 
 const router = Router()
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
@@ -10,16 +10,27 @@ const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_e
       'email', c.email, 'direccion', c.direccion, 'notas', c.notas) END AS cliente,
     (SELECT COALESCE(json_agg(json_build_object('id', i.id, 'producto_id', i.producto_id, 'producto', pr.nombre,
         'cantidad', i.cantidad, 'precio_unitario', i.precio_unitario::float8,
-        'subtotal', (i.cantidad * i.precio_unitario)::float8) ORDER BY i.id), '[]')
+        'subtotal', (i.cantidad * i.precio_unitario)::float8,
+        'costo_materiales_unitario', i.costo_materiales_unitario::float8,
+        'costo_mano_obra_unitario', i.costo_mano_obra_unitario::float8,
+        'costo_materiales', (i.cantidad * i.costo_materiales_unitario)::float8,
+        'costo_mano_obra', (i.cantidad * i.costo_mano_obra_unitario)::float8,
+        'costo_produccion', (i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario))::float8) ORDER BY i.id), '[]')
       FROM pedido_items i JOIN productos pr ON pr.id = i.producto_id WHERE i.pedido_id = p.id) AS items,
     (SELECT COALESCE(json_agg(json_build_object('id', e.id, 'pedido_item_id', e.pedido_item_id, 'nombre', e.nombre,
-        'orden', e.orden, 'estado', e.estado, 'costo_estimado', e.costo_estimado::float8,
+        'orden', e.orden, 'estado', e.estado,
         'minutos_estimados', e.minutos_estimados, 'minutos_reales', e.minutos_reales, 'semaforo', e.semaforo,
         'responsable_id', e.responsable_id, 'responsable', u.nombre, 'completado_en', e.completado_en,
         'observaciones', e.observaciones) ORDER BY e.pedido_item_id, e.orden), '[]')
       FROM pedido_etapas e LEFT JOIN usuarios u ON u.id = e.responsable_id WHERE e.pedido_id = p.id) AS etapas,
     COALESCE((SELECT SUM(i.cantidad * i.precio_unitario) FROM pedido_items i WHERE i.pedido_id = p.id), 0)::float8 AS total,
-    COALESCE((SELECT SUM(e.costo_estimado) FROM pedido_etapas e WHERE e.pedido_id = p.id), 0)::float8 AS costo_estimado,
+    -- Costo de producción del pedido = materiales + mano de obra, copiados del
+    -- costo calculado del producto al momento de crear el pedido (ver POST /).
+    -- Ya no se suma el costo de las etapas: ese campo quedó solo para
+    -- compatibilidad (ver migracion_009_costo_producto_medidas_historia.sql).
+    COALESCE((SELECT SUM(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario)) FROM pedido_items i WHERE i.pedido_id = p.id), 0)::float8 AS costo_estimado,
+    COALESCE((SELECT SUM(i.cantidad * i.costo_materiales_unitario) FROM pedido_items i WHERE i.pedido_id = p.id), 0)::float8 AS costo_materiales_total,
+    COALESCE((SELECT SUM(i.cantidad * i.costo_mano_obra_unitario) FROM pedido_items i WHERE i.pedido_id = p.id), 0)::float8 AS costo_mano_obra_total,
     (SELECT COUNT(*) FROM pedido_etapas e WHERE e.pedido_id = p.id)::int AS etapas_totales,
     (SELECT COUNT(*) FROM pedido_etapas e WHERE e.pedido_id = p.id AND e.estado = 'COMPLETADA')::int AS etapas_completadas,
     COALESCE((SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE e.estado = 'COMPLETADA') / NULLIF(COUNT(*), 0))
@@ -43,9 +54,17 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 }))
 
 // Crea el pedido, sus items y despliega una etapa de trabajo por cada
-// etapa del producto. El costo y la duración se copian del catálogo y se
-// multiplican por la cantidad pedida, de modo que editar el producto más
-// tarde no altera lo que ya está en producción.
+// etapa del producto. La duración se copia del catálogo y se multiplica
+// por la cantidad pedida, de modo que editar el producto más tarde no
+// altera lo que ya está en producción.
+//
+// El costo de producción de cada item (materiales + mano de obra) se
+// calcula igual que en conCostoCalculado() de server/rutas/productos.js y
+// se copia por unidad a pedido_items.costo_materiales_unitario /
+// costo_mano_obra_unitario: es una FOTO del costo del producto al momento
+// de crear el pedido, para que editar el producto después no altere el
+// costo de pedidos ya creados. El costo por etapa (etapas_producto.costo)
+// ya no se usa para esto: ese campo quedó solo por compatibilidad.
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const { cliente_id = null, cliente = null, items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
   if (!Array.isArray(items) || !items.length) throw fallo('El pedido necesita al menos un producto.')
@@ -55,9 +74,11 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   try {
     await conexion.query('BEGIN')
 
+    const costoHora = Number((await leerConfiguracion(conexion)).costo_hora_mano_obra) || 0
+
     const clienteId = cliente_id || (await conexion.query(
       'INSERT INTO clientes (nombre, telefono, email, direccion, notas) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [cliente.nombre.trim(), cliente.telefono?.trim() || null, cliente.email?.trim()?.toLowerCase() || null, cliente.direccion?.trim() || null, cliente.notas?.trim() || null])).rows[0].id
+      [cliente.nombre.trim(), validarTelefono(cliente.telefono), validarEmail(cliente.email), cliente.direccion?.trim() || null, cliente.notas?.trim() || null])).rows[0].id
 
     const pedido = (await conexion.query(
       'INSERT INTO pedidos (cliente_id, fecha_entrega, prioridad, notas, creado_por) VALUES ($1, $2, $3, $4, $5) RETURNING id, codigo',
@@ -66,24 +87,31 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     for (const item of items) {
       const cantidad = entero(item?.cantidad) || 1
       if (cantidad <= 0) throw fallo('La cantidad de cada producto debe ser mayor a cero.')
-      const producto = (await conexion.query('SELECT id, nombre, precio_venta FROM productos WHERE id = $1', [item?.producto_id])).rows[0]
+      const producto = (await conexion.query('SELECT id, nombre, precio_venta, horas_hombre FROM productos WHERE id = $1', [item?.producto_id])).rows[0]
       if (!producto) throw fallo('Alguno de los productos seleccionados no existe.')
 
-      const precio = item.precio_unitario === undefined || item.precio_unitario === null ? Number(producto.precio_venta) : decimal(item.precio_unitario)
-      const itemId = (await conexion.query('INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario) VALUES ($1, $2, $3, $4) RETURNING id',
-        [pedido.id, producto.id, cantidad, precio])).rows[0].id
+      // La sección Materiales se eliminó: los pedidos nuevos ya no suman
+      // costo de materiales. La columna se mantiene (en 0) para no alterar
+      // el costo guardado de pedidos anteriores.
+      const costoMaterialesUnitario = 0
+      const costoManoObraUnitario = decimal((Number(producto.horas_hombre) || 0) * costoHora)
 
-      const etapas = (await conexion.query('SELECT id, nombre, orden, costo, minutos_estimados FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [producto.id])).rows
+      const precio = item.precio_unitario === undefined || item.precio_unitario === null ? Number(producto.precio_venta) : decimal(item.precio_unitario)
+      const itemId = (await conexion.query(
+        `INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario, costo_materiales_unitario, costo_mano_obra_unitario)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [pedido.id, producto.id, cantidad, precio, costoMaterialesUnitario, costoManoObraUnitario])).rows[0].id
+
+      const etapas = (await conexion.query('SELECT id, nombre, orden, minutos_estimados FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [producto.id])).rows
       if (!etapas.length) throw fallo(`El producto "${producto.nombre}" no tiene etapas de fabricación cargadas.`)
 
-      // asignaciones: { [etapa_producto_id]: usuario_id } definido por el admin al crear el pedido.
-      const asignaciones = item.asignaciones || {}
+      // Las etapas nacen sin responsable: se asignan después, etapa por
+      // etapa, desde la sección Tareas (el pedido no asigna empleados).
       for (const etapa of etapas) {
-        const responsable = asignaciones[etapa.id] || asignaciones[String(etapa.id)] || null
         await conexion.query(
-          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, etapa_producto_id, nombre, orden, costo_estimado, minutos_estimados, responsable_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [pedido.id, itemId, etapa.id, etapa.nombre, etapa.orden, decimal(Number(etapa.costo) * cantidad), etapa.minutos_estimados * cantidad, responsable || null])
+          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, etapa_producto_id, nombre, orden, minutos_estimados, responsable_id)
+           VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
+          [pedido.id, itemId, etapa.id, etapa.nombre, etapa.orden, etapa.minutos_estimados * cantidad])
       }
     }
 
@@ -109,33 +137,9 @@ router.patch('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   res.json(actualizado.rows[0])
 }))
 
-// Asigna (o libera) el empleado responsable de una etapa del pedido.
-router.patch('/:id/etapas/:etapaId/asignar', auth(['admin']), asyncRoute(async (req, res) => {
-  const { responsable_id: responsable = null } = req.body
-  if (responsable) {
-    const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [responsable])
-    if (!empleado.rows[0]) throw fallo('El responsable debe ser un empleado activo.')
-  }
-  const { rows } = await pool.query('UPDATE pedido_etapas SET responsable_id = $1 WHERE id = $2 AND pedido_id = $3 RETURNING id, responsable_id', [responsable, req.params.etapaId, req.params.id])
-  if (!rows[0]) throw fallo('Etapa no encontrada.', 404)
-  res.json(rows[0])
-}))
-
-// Asignación masiva: mismo responsable para varias etapas de un pedido.
-router.patch('/:id/asignaciones', auth(['admin']), asyncRoute(async (req, res) => {
-  const { asignaciones = {} } = req.body
-  const conexion = await pool.connect()
-  try {
-    await conexion.query('BEGIN')
-    for (const [etapaId, responsable] of Object.entries(asignaciones)) {
-      await conexion.query('UPDATE pedido_etapas SET responsable_id = $1 WHERE id = $2 AND pedido_id = $3', [responsable || null, etapaId, req.params.id])
-    }
-    await conexion.query('COMMIT')
-  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
-  const actualizado = await pool.query(`${consultaPedidos} WHERE p.id = $1`, [req.params.id])
-  if (!actualizado.rows[0]) throw fallo('Pedido no encontrado.', 404)
-  res.json(actualizado.rows[0])
-}))
+// La asignación de empleados a etapas ya NO se hace desde Pedidos: la
+// sección Pedidos es solo informativa. Las etapas se asignan desde Tareas
+// (PATCH /api/tareas/asignadas/:origen/:id/asignar, ver rutas/tareas.js).
 
 router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const { rows } = await pool.query('DELETE FROM pedidos WHERE id = $1 RETURNING id', [req.params.id])
