@@ -38,25 +38,17 @@ CREATE TABLE IF NOT EXISTS usuarios (
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(40);
 
-CREATE TABLE IF NOT EXISTS recuperaciones_contrasena (
-  id BIGSERIAL PRIMARY KEY,
-  usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL,
-  usado_en TIMESTAMPTZ,
-  vence_en TIMESTAMPTZ NOT NULL,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- No hay flujo de recuperacion de contrasena implementado (ver
+-- server/rutas/autenticacion.js): esta tabla nunca se llego a usar.
+DROP TABLE IF EXISTS recuperaciones_contrasena;
 
-CREATE TABLE IF NOT EXISTS equipos (
-  id BIGSERIAL PRIMARY KEY,
-  nombre VARCHAR(100) UNIQUE NOT NULL,
-  activo BOOLEAN NOT NULL DEFAULT TRUE
-);
-CREATE TABLE IF NOT EXISTS equipo_integrantes (
-  equipo_id BIGINT REFERENCES equipos(id) ON DELETE CASCADE,
-  usuario_id BIGINT REFERENCES usuarios(id) ON DELETE CASCADE,
-  PRIMARY KEY (equipo_id, usuario_id)
-);
+-- "equipos" y "equipo_integrantes" fueron parte de un prototipo anterior
+-- (asignar trabajo a un equipo, no a una persona). El sistema actual
+-- asigna cada etapa a un usuario individual (responsable_id / asignado_a)
+-- y ningun codigo vivo las usa: se borran, junto con las columnas
+-- equipo_id que las referenciaban en pedidos y recompensas (ver mas abajo).
+DROP TABLE IF EXISTS equipo_integrantes CASCADE;
+DROP TABLE IF EXISTS equipos CASCADE;
 
 -- ---------------------------------------------------------------------
 -- CONFIGURACION DEL SISTEMA
@@ -156,13 +148,6 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAUL
 -- Horas-hombre de fabricación, usadas junto al costo por hora configurable
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
--- Chapita vintage opcional ("PC N° ...") que se muestra junto al nombre del
--- producto en la web pública (ver ProductoDetalle.jsx). Nullable a propósito:
--- si está vacía, la web no muestra ninguna chapita (ver publico.js/
--- panel-productos.jsx). VARCHAR y no numérico para no perder ceros a la
--- izquierda (por ejemplo "014").
-ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
-
 -- Identificador visible de la pieza ("chapita" vintage numerada), único
 -- por producto. Es un campo propio, distinto de la clave primaria interna
 -- (productos.id): el admin lo carga/edita a mano (con sugerencia
@@ -170,6 +155,22 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
 -- Nullable a propósito: los productos existentes sin ID asignado
 -- simplemente no muestran chapita (ver ChapitaProducto.jsx).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS id_pieza VARCHAR(20);
+
+-- "chapita_id" fue una columna anterior para esta misma idea: quedó
+-- cableada en el backend y el panel, pero nunca en la web pública actual
+-- (que ya usa id_pieza). Si existe, se migran sus valores a id_pieza (sin
+-- pisar los que ya estén cargados) y se borra, para dejar una sola fuente
+-- de verdad. Si algún producto tenía los dos campos cargados con valores
+-- distintos, la restricción UNIQUE de abajo puede fallar: revisar ese caso
+-- a mano antes de reintentar.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'productos' AND column_name = 'chapita_id') THEN
+    UPDATE productos SET id_pieza = chapita_id WHERE id_pieza IS NULL AND chapita_id IS NOT NULL;
+    ALTER TABLE productos DROP COLUMN chapita_id;
+  END IF;
+END $$;
+
 ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_id_pieza_key;
 ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
 
@@ -295,8 +296,6 @@ CREATE TABLE IF NOT EXISTS pedidos (
   id BIGSERIAL PRIMARY KEY,
   codigo VARCHAR(30) UNIQUE NOT NULL,
   cliente_id BIGINT REFERENCES clientes(id),
-  producto_id BIGINT REFERENCES productos(id),   -- legado: pedidos de un solo producto
-  equipo_id BIGINT REFERENCES equipos(id),
   cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
   estado estado_pedido NOT NULL DEFAULT 'PENDIENTE',
   prioridad SMALLINT NOT NULL DEFAULT 0,
@@ -305,10 +304,15 @@ CREATE TABLE IF NOT EXISTS pedidos (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   terminado_en TIMESTAMPTZ
 );
-ALTER TABLE pedidos ALTER COLUMN producto_id DROP NOT NULL;
 ALTER TABLE pedidos ALTER COLUMN codigo SET DEFAULT 'PED-' || LPAD(nextval('pedidos_codigo_seq')::text, 5, '0');
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS creado_por BIGINT REFERENCES usuarios(id);
+-- "producto_id" (pedido de un solo producto) y "equipo_id" (asignación a
+-- un equipo) son de un diseño anterior: el INSERT INTO pedidos actual ya
+-- no los completa (ver rutas/pedidos.js: los productos viven en
+-- pedido_items, las etapas se asignan a un responsable individual).
+ALTER TABLE pedidos DROP COLUMN IF EXISTS producto_id;
+ALTER TABLE pedidos DROP COLUMN IF EXISTS equipo_id;
 
 CREATE TABLE IF NOT EXISTS pedido_items (
   id BIGSERIAL PRIMARY KEY,
@@ -377,7 +381,6 @@ CREATE INDEX IF NOT EXISTS idx_presupuesto_items_presupuesto ON presupuesto_item
 CREATE TABLE IF NOT EXISTS recompensas (
   id BIGSERIAL PRIMARY KEY,
   pedido_id BIGINT REFERENCES pedidos(id) ON DELETE CASCADE,
-  equipo_id BIGINT REFERENCES equipos(id),
   puntos INTEGER NOT NULL DEFAULT 0,
   monto NUMERIC(12,2),
   motivo TEXT NOT NULL,
@@ -386,8 +389,8 @@ CREATE TABLE IF NOT EXISTS recompensas (
 );
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_puntos_check;
 ALTER TABLE recompensas ALTER COLUMN pedido_id DROP NOT NULL;
-ALTER TABLE recompensas ALTER COLUMN equipo_id DROP NOT NULL;
 ALTER TABLE recompensas ALTER COLUMN puntos SET DEFAULT 0;
+ALTER TABLE recompensas DROP COLUMN IF EXISTS equipo_id;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS usuario_id BIGINT REFERENCES usuarios(id) ON DELETE CASCADE;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS pedido_etapa_id BIGINT REFERENCES pedido_etapas(id) ON DELETE CASCADE;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS tarea_etapa_id BIGINT REFERENCES tarea_etapas(id) ON DELETE CASCADE;
