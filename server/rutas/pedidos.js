@@ -1,13 +1,13 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido, validarEmail, validarTelefono } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido } from '../comun.js'
 
 const router = Router()
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
 
+// Los pedidos ya no tienen cliente: no se guardan ni se devuelven datos de
+// cliente (la columna pedidos.cliente_id se eliminó, ver schema.sql).
 const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_entrega, p.notas, p.creado_en, p.terminado_en,
-    CASE WHEN c.id IS NULL THEN NULL ELSE json_build_object('id', c.id, 'nombre', c.nombre, 'telefono', c.telefono,
-      'email', c.email, 'direccion', c.direccion, 'notas', c.notas) END AS cliente,
     (SELECT COALESCE(json_agg(json_build_object('id', i.id, 'producto_id', i.producto_id, 'producto', pr.nombre,
         'cantidad', i.cantidad, 'precio_unitario', i.precio_unitario::float8,
         'subtotal', (i.cantidad * i.precio_unitario)::float8,
@@ -35,7 +35,7 @@ const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_e
     (SELECT COUNT(*) FROM pedido_etapas e WHERE e.pedido_id = p.id AND e.estado = 'COMPLETADA')::int AS etapas_completadas,
     COALESCE((SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE e.estado = 'COMPLETADA') / NULLIF(COUNT(*), 0))
       FROM pedido_etapas e WHERE e.pedido_id = p.id), 0)::int AS avance
-  FROM pedidos p LEFT JOIN clientes c ON c.id = p.cliente_id`
+  FROM pedidos p`
 
 // El empleado solo ve los pedidos donde tiene alguna etapa a cargo.
 const filtroEmpleado = ' WHERE EXISTS (SELECT 1 FROM pedido_etapas e WHERE e.pedido_id = p.id AND e.responsable_id = $1)'
@@ -66,9 +66,8 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 // costo de pedidos ya creados. El costo por etapa (etapas_producto.costo)
 // ya no se usa para esto: ese campo quedó solo por compatibilidad.
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { cliente_id = null, cliente = null, items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
+  const { items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
   if (!Array.isArray(items) || !items.length) throw fallo('El pedido necesita al menos un producto.')
-  if (!cliente_id && !cliente?.nombre?.trim()) throw fallo('Indicá el cliente del pedido.')
 
   const conexion = await pool.connect()
   try {
@@ -76,13 +75,9 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
 
     const costoHora = Number((await leerConfiguracion(conexion)).costo_hora_mano_obra) || 0
 
-    const clienteId = cliente_id || (await conexion.query(
-      'INSERT INTO clientes (nombre, telefono, email, direccion, notas) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [cliente.nombre.trim(), validarTelefono(cliente.telefono), validarEmail(cliente.email), cliente.direccion?.trim() || null, cliente.notas?.trim() || null])).rows[0].id
-
     const pedido = (await conexion.query(
-      'INSERT INTO pedidos (cliente_id, fecha_entrega, prioridad, notas, creado_por) VALUES ($1, $2, $3, $4, $5) RETURNING id, codigo',
-      [clienteId, fecha_entrega || null, entero(prioridad) || 0, notas?.trim() || null, req.user.id])).rows[0]
+      'INSERT INTO pedidos (fecha_entrega, prioridad, notas, creado_por) VALUES ($1, $2, $3, $4) RETURNING id, codigo',
+      [fecha_entrega || null, entero(prioridad) || 0, notas?.trim() || null, req.user.id])).rows[0]
 
     for (const item of items) {
       const cantidad = entero(item?.cantidad) || 1

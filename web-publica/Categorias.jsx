@@ -5,7 +5,7 @@ import CategoryCard from './components/CategoryCard.jsx'
 export default function Categorias() {
   const [categorias, setCategorias] = useState(null)
 
-  useMeta('Categorías', 'Explorá el catálogo de la herrería por categoría: mesas, mesas ratonas y fogoneros.')
+  useMeta('Categorías', 'Explorá el catálogo de la herrería por categoría: mesas, mesitas ratoneras y fogoneros.')
 
   useEffect(() => { publicApi.categorias().then(setCategorias).catch(() => setCategorias([])) }, [])
 

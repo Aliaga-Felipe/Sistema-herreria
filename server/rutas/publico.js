@@ -7,7 +7,8 @@ const router = Router()
 // -----------------------------------------------------------------------
 // API PÚBLICA DEL CATÁLOGO
 // Sin autenticación: sólo lee la misma tabla `productos` que administra el
-// sistema interno, filtrando siempre por `activo = true` y sin exponer
+// sistema interno, filtrando siempre por productos VISIBLES (activo y
+// marcados como "Publicar en la web", ver productoVisible) y sin exponer
 // nunca costos ni etapas de fabricación (eso es información interna).
 // -----------------------------------------------------------------------
 
@@ -15,6 +16,11 @@ const columnasPublicas = `p.id, p.nombre, p.descripcion, p.precio_venta::float8 
     p.medidas, p.historia,
     c.id AS categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug,
     (SELECT pi.url FROM producto_imagenes pi WHERE pi.producto_id = p.id ORDER BY pi.es_principal DESC, pi.orden LIMIT 1) AS imagen_principal`
+
+// Un producto se ve en la web pública sólo si está activo Y el admin marcó
+// "Publicar en la web" (productos.publicado). Se usa en todas las consultas
+// públicas: listado, destacados, detalle, relacionados y categorías.
+const productoVisible = alias => `${alias}.activo = TRUE AND ${alias}.publicado = TRUE`
 
 const ordenPermitido = {
   novedades: 'p.creado_en DESC',
@@ -24,7 +30,7 @@ const ordenPermitido = {
 }
 
 router.get('/productos', asyncRoute(async (req, res) => {
-  const condiciones = ['p.activo = TRUE']
+  const condiciones = [productoVisible('p')]
   const valores = []
 
   // Filtro por categoría (opcional). Sin categoría elegida se listan todos
@@ -63,7 +69,7 @@ router.get('/productos', asyncRoute(async (req, res) => {
 router.get('/productos/:slug', asyncRoute(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${columnasPublicas} FROM productos p LEFT JOIN categorias c ON c.id = p.categoria_id
-     WHERE p.slug = $1 AND p.activo = TRUE`,
+     WHERE p.slug = $1 AND ${productoVisible('p')}`,
     [req.params.slug]
   )
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
@@ -76,7 +82,7 @@ router.get('/productos/:slug', asyncRoute(async (req, res) => {
   const relacionados = rows[0].categoria_id
     ? await pool.query(
         `SELECT ${columnasPublicas} FROM productos p LEFT JOIN categorias c ON c.id = p.categoria_id
-         WHERE p.categoria_id = $1 AND p.activo = TRUE AND p.id <> $2 ORDER BY p.creado_en DESC LIMIT 4`,
+         WHERE p.categoria_id = $1 AND ${productoVisible('p')} AND p.id <> $2 ORDER BY p.creado_en DESC LIMIT 4`,
         [rows[0].categoria_id, rows[0].id]
       )
     : { rows: [] }
@@ -89,9 +95,9 @@ router.get('/categorias', asyncRoute(async (req, res) => {
     `SELECT c.id, c.nombre, c.slug, c.descripcion, c.orden,
         COALESCE(c.imagen_url,
           (SELECT pi.url FROM productos p2 JOIN producto_imagenes pi ON pi.producto_id = p2.id
-             WHERE p2.categoria_id = c.id AND p2.activo = TRUE ORDER BY pi.es_principal DESC, pi.orden LIMIT 1)
+             WHERE p2.categoria_id = c.id AND ${productoVisible('p2')} ORDER BY pi.es_principal DESC, pi.orden LIMIT 1)
         ) AS imagen,
-        COUNT(p.id) FILTER (WHERE p.activo)::int AS productos_total
+        COUNT(p.id) FILTER (WHERE ${productoVisible('p')})::int AS productos_total
       FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
       WHERE c.activo = TRUE AND c.slug = ANY($1::text[])
       GROUP BY c.id

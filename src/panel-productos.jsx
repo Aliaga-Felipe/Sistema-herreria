@@ -41,6 +41,7 @@ export const construirCuerpoProducto = producto => ({
   precio_venta: Number(producto.precio_venta),
   categoria_id: producto.categoria_id || null,
   destacado: Boolean(producto.destacado),
+  publicado: Boolean(producto.publicado),
   horas_hombre: Number(producto.horas_hombre) || 0,
   chapita_id: producto.chapita_id?.trim() || null,
   medidas: producto.medidas?.trim() || '',
@@ -101,7 +102,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
   return (
     <>
-      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. Lo que cargues acá es lo que se ve en la web pública.">
+      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
         <button className="primary" onClick={nuevoProducto}>+ Nuevo producto</button>
       </Heading>
 
@@ -119,6 +120,9 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 <h3>
                   {producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}
                   {!producto.activo && <span className="badge-inactivo">Inactivo</span>}
+                  {producto.publicado
+                    ? <span className="badge-publicado" title="Visible en la web pública">En la web</span>
+                    : <span className="badge-inactivo" title="Oculto en la web pública: sólo se ve en el panel">No publicado</span>}
                 </h3>
                 <p>
                   {producto.categoria_nombre || 'Sin categoría'}
@@ -181,6 +185,9 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   const [precio, setPrecio] = useState(producto.precio_venta ?? '')
   const [categoriaId, setCategoriaId] = useState(producto.categoria_id || '')
   const [destacado, setDestacado] = useState(Boolean(producto.destacado))
+  // "Publicar en la web": sin marcar, el producto queda oculto en la web
+  // pública pero sigue disponible en el panel (pedidos, tareas, etc.).
+  const [publicado, setPublicado] = useState(Boolean(producto.publicado))
   // Horas-hombre es opcional: vacío = sin cargar (se guarda en 0).
   const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ? producto.horas_hombre : '')
   const [chapitaId, setChapitaId] = useState(producto.chapita_id || '')
@@ -194,34 +201,53 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   const cambiarEtapa = (indice, campo, valor) =>
     setEtapas(etapas.map((etapa, posicion) => (posicion === indice ? { ...etapa, [campo]: valor } : etapa)))
 
+  // Marca junto a las etiquetas: los campos que pasan a ser obligatorios
+  // al publicar muestran "*"; en un borrador se ven como opcionales.
+  const marca = publicado ? ' *' : ' (opcional)'
+
   const minutosTotal = etapas.reduce((total, etapa) => total + (Number(etapa.minutos_estimados) || 0), 0)
 
-  // Campos obligatorios (no pueden guardarse vacíos): nombre, ID de
-  // producto (se genera solo, pero es editable), precio de venta,
-  // descripción técnica e historia. Categoría, horas-hombre, costo del
-  // producto, medidas y la duración de cada etapa son opcionales (de cada
-  // etapa sólo se exige el nombre). El backend valida los mismos campos
-  // (ver validarCamposObligatorios en server/rutas/productos.js), así que
-  // esto es una segunda capa, no la única.
+  // Borrador vs. publicado:
+  // - Sin "Publicar en la web" el producto es un BORRADOR: sólo se exige el
+  //   nombre. Precio, descripción técnica, historia, categoría e ID pueden
+  //   quedar vacíos (el ID vacío lo genera el servidor).
+  // - Para publicarlo son obligatorios nombre, ID, precio (> 0),
+  //   descripción técnica, historia y categoría; si falta alguno no se
+  //   guarda y se indica exactamente qué falta. El backend y la base de
+  //   datos aplican la misma regla (ver validarPublicacion en
+  //   server/rutas/productos.js y productos_publicado_completo en
+  //   schema.sql), así que esto es una primera capa, no la única.
+  const faltantesParaPublicar = () => {
+    const faltantes = []
+    if (!nombre.trim()) faltantes.push('nombre')
+    if (!chapitaId.trim()) faltantes.push('ID de producto')
+    if (!(Number(precio) > 0)) faltantes.push('precio de venta (mayor a cero)')
+    if (!descripcion.trim()) faltantes.push('descripción técnica')
+    if (!historia.trim()) faltantes.push('historia del producto')
+    if (!categoriaId) faltantes.push('categoría')
+    return faltantes
+  }
+
   const enviar = async event => {
     event.preventDefault()
     if (!nombre.trim()) return setError('Indicá el nombre del producto.')
     const chapitaTrim = chapitaId.trim()
-    if (!chapitaTrim) return setError('Indicá el ID de producto (chapita).')
-    if (productosExistentes.some(existente => String(existente.chapita_id || '').trim() === chapitaTrim && existente.id !== producto.id)) {
+    if (chapitaTrim && productosExistentes.some(existente => String(existente.chapita_id || '').trim() === chapitaTrim && existente.id !== producto.id)) {
       return setError(`El ID de producto "${chapitaTrim}" ya existe. Elegí otro.`)
     }
-    if (!(Number(precio) > 0)) return setError('El precio de venta debe ser mayor a cero.')
+    if (publicado) {
+      const faltantes = faltantesParaPublicar()
+      if (faltantes.length) return setError(`Para publicar el producto en la web falta completar: ${faltantes.join(', ')}. Completalos o desmarcá "Publicar en la web" para guardarlo como borrador.`)
+    }
+    if (precio !== '' && Number(precio) < 0) return setError('El precio de venta no puede ser negativo.')
     if (horasHombre !== '' && !(Number(horasHombre) >= 0)) return setError('Las horas-hombre no pueden ser negativas.')
-    if (!descripcion.trim()) return setError('Completá la descripción técnica del producto.')
-    if (!historia.trim()) return setError('Completá la historia del producto.')
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
     if (etapas.some(etapa => !etapa.nombre.trim())) return setError('Cada etapa necesita un nombre.')
     if (medidas.trim().length > 200) return setError('Las medidas no pueden superar los 200 caracteres.')
     setBusy(true); setError('')
     try {
       await save({
-        id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado,
+        id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, publicado,
         horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, etapas
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -235,13 +261,13 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
             <input required value={nombre} onChange={event => setNombre(event.target.value)} placeholder="Ej. Mesa ratona de hierro forjado" />
           </label>
 
-          <label>ID de producto (chapita)
-            <input required value={chapitaId} onChange={event => setChapitaId(event.target.value)} placeholder="Ej. 014" maxLength={20} title="Se genera automáticamente; podés cambiarlo. Es el número que muestra la chapita en la web pública." />
+          <label>ID de producto (chapita){publicado ? ' *' : ''}
+            <input value={chapitaId} onChange={event => setChapitaId(event.target.value)} placeholder="Ej. 014" maxLength={20} title="Se genera automáticamente; podés cambiarlo. Es el número que muestra la chapita en la web pública." />
           </label>
         </div>
 
         <div className="form-grid config-grid datos-fabricacion">
-          <label>Categoría (opcional)
+          <label>Categoría{marca}
             <select value={categoriaId} onChange={event => setCategoriaId(event.target.value)}>
               <option value="">Sin categoría</option>
               {categorias.map(categoria => <option key={categoria.id} value={categoria.id}>{categoria.nombre}{categoria.activo ? '' : ' (oculta)'}</option>)}
@@ -258,8 +284,8 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
         </div>
 
         <div className="form-grid config-grid">
-          <label>Precio de venta
-            <CampoNumero required min="1" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
+          <label>Precio de venta{marca}
+            <CampoNumero min="0" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
           </label>
 
           <label>Costo del producto (opcional)
@@ -267,19 +293,27 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
           </label>
         </div>
 
-        <label>Descripción técnica
-          <textarea required value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
+        <label>Descripción técnica{marca}
+          <textarea value={descripcion} onChange={event => setDescripcion(event.target.value)} placeholder="Medidas, materiales o notas de fabricación. Esto se muestra tal cual en la web pública." />
         </label>
 
-        <label>Historia del producto
-          <textarea required className="historia-input" value={historia} onChange={event => setHistoria(event.target.value)} placeholder="El relato detrás de esta pieza: de dónde salió la idea, qué la inspiró, qué la hace única. Se muestra en la web pública con un estilo editorial, distinto de la descripción técnica." />
+        <label>Historia del producto{marca}
+          <textarea className="historia-input" value={historia} onChange={event => setHistoria(event.target.value)} placeholder="El relato detrás de esta pieza: de dónde salió la idea, qué la inspiró, qué la hace única. Se muestra en la web pública con un estilo editorial, distinto de la descripción técnica." />
+        </label>
+
+        <label className="config-check destacado-check">
+          <input type="checkbox" checked={publicado} onChange={event => setPublicado(event.target.checked)} />
+          <span className="destacado-check-texto">
+            <b>🌐 Publicar en la web</b>
+            <small>Sólo los productos marcados se muestran en la web pública. Para publicar son obligatorios: nombre, ID, precio, descripción técnica, historia y categoría. Sin marcar, se guarda como borrador (oculto al público, disponible en el panel) y esos datos pueden quedar vacíos.</small>
+          </span>
         </label>
 
         <label className="config-check destacado-check">
           <input type="checkbox" checked={destacado} onChange={event => setDestacado(event.target.checked)} />
           <span className="destacado-check-texto">
             <b>★ Producto destacado</b>
-            <small>Se muestra en la sección "Productos destacados" de la portada de la web</small>
+            <small>Se muestra en la sección "Productos destacados" de la portada de la web (si el producto está publicado)</small>
           </span>
         </label>
 
