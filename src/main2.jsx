@@ -1329,6 +1329,7 @@ function ProductModal({ close, save }) {
                             )
                         }
                         placeholder="Características o notas"
+                        resizable="none"
                     />
                 </label>
 

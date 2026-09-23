@@ -52,17 +52,60 @@ select,
 textarea {
     margin-left: 10px;
     margin-right:30px;
-    background: #35312d;;
+    background: #4d3424;;
     border: none;
     color:white;
     border-radius: 8px;
+    font-size: 12px;
+}
+
+.product-editor>label>input {
+    width: 600px;
+    margin-left: 45px;
+}
+
+.product-editor>label>input::placeholder, 
+.product-editor>label>textarea::placeholder {
+    color: rgba(255, 253, 253, 0.801);
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+
+
+.product-editor>label>textarea {
+    margin-left: 105px;
+    width: 600px;
+    height: 20px;
+    resize: none;
+}
+
+.product-editor>label>textarea:focus {
+    border: none;
+    outline: none;
+}
+.product-editor>label>select {
+    margin-left: 42px;
+    font-family: Arial, Helvetica, sans-serif;
 }
 
 .product-editor label {
     background: #4d3424;
-    margin-left: 10px;
-    margin-right:30px;
+    padding-left: 40px;
+    margin-left: 40px;
     border-radius: 8px;
+    align-items: center;
+    display: flex;
+    margin-top: 10px;
+    width: 900px;
+    height: 30px;
+    font-family: 'Libre Baskerville';
+}
+
+
+.product-editor
+text{
+    display: flex;
+    margin-left: 10px;
 }
 
 
@@ -197,8 +240,10 @@ textarea {
 .auth-content {
     max-width: 1160px;
     background-color:#100d0b;
-    margin-top: 60px;;
+    margin-top: 60px;
+    margin-bottom: 60px;
 }
+
 
 
 /* =========================
@@ -220,12 +265,35 @@ textarea {
    ========================= */
 
 .role-badge {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
     border: 1px solid #8d654e;
+    background: #211f1d;
     color: #f2b292;
-    padding: 4px 8px;
-    text-transform: uppercase;
-    font-size: 8px;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
     font-weight: 800;
+}
+
+.role-badge.admin {
+    border-color: #7d4a3f;
+    background: #3a241c;
+    color: #f4aa8b;
+}
+
+.role-badge.empleado {
+    border-color: #61554c;
+    background: #2b2723;
+    color: #d9c9ba;
+}
+
+.role-badge.super_admin {
+    border-color: #caa15a;
+    background: #4a3a1c;
+    color: #f6cf8e;
 }
 
 
