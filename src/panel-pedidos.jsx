@@ -7,14 +7,6 @@ import { ProductoModal, construirCuerpoProducto, sugerirIdPieza } from './panel-
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
 const itemVacio = () => ({ producto_id: '', cantidad: 1, precio_unitario: '' })
 
-// Formato de contacto del cliente: mismo criterio que valida el backend
-// (server/comun.js, validarTelefono / validarEmail) para que el error se
-// vea antes de mandar el formulario, no solo después de que lo rechace el
-// servidor. Los dos campos son opcionales: solo se valida si vienen
-// completos.
-const patronTelefono = /^[0-9+()\-\s]{6,20}$/
-const patronEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
 // Orden de la lista de pedidos: por prioridad, % de avance, fecha de
 // entrega o estado, ascendente o descendente. Se ordena por pedido (no por
 // fila de producto) para que los productos de un mismo pedido no se
@@ -40,7 +32,6 @@ const comparadoresOrden = {
 export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const pedidos = useData('/pedidos')
   const productos = useData('/productos')
-  const clientes = useData('/clientes')
   const categorias = useData('/categorias')
   const configuracion = useData('/configuracion/valores', {})
   const { mostrar, nodo } = useAviso()
@@ -57,7 +48,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const crear = async pedido => {
     await api.post('/pedidos', pedido, pedidos.token)
     setCreando(false)
-    await Promise.all([pedidos.load(), clientes.load()])
+    await pedidos.load()
     mostrar('Pedido creado y desplegado en etapas de producción.')
   }
 
@@ -135,7 +126,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       {pedidos.loading ? <p>Cargando pedidos...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : filas.length ? (
         <section className="orders-card">
           <div className="order-head pedidos-head">
-            <span>Producto</span><span>Cantidad</span><span>Cliente</span><span>Etapas</span><span>Prioridad</span><span>Entrega</span><span>Cumplimiento</span><span>Total</span>
+            <span>Producto</span><span>Cantidad</span><span>Etapas</span><span>Prioridad</span><span>Entrega</span><span>Cumplimiento</span><span>Total</span>
           </div>
 
           {filas.map(fila => {
@@ -151,8 +142,6 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
                 </div>
 
                 <div className="cantidad-cell"><b>{fila.item.cantidad}</b></div>
-
-                <div className="client"><b>{fila.pedido.cliente?.nombre || 'Sin cliente'}</b></div>
 
                 <div className="etapas-cell">
                   <b>{fila.completadas}/{fila.etapasItem.length}</b>
@@ -170,7 +159,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           })}
         </section>
       ) : (
-        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo y cargando los datos del cliente." action={() => setCreando(true)} label="Crear pedido" />
+        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo." action={() => setCreando(true)} label="Crear pedido" />
       )}
 
       {creando && (
@@ -181,7 +170,6 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           costoHora={Number(configuracion.data.costo_hora_mano_obra) || 0}
           token={productos.token}
           crearProducto={crearProducto}
-          clientes={clientes.data}
           close={() => setCreando(false)}
           save={crear}
         />
@@ -256,14 +244,11 @@ function SelectorFecha({ value, onChange }) {
 // precio y ganancia se arma solo, con los mismos valores calculados que
 // devuelve /productos (ver conCostoCalculado en server/rutas/productos.js).
 // ---------------------------------------------------------------------
-function PedidoModal({ productos, productosExistentes, categorias, costoHora, token, crearProducto, clientes, close, save }) {
-  const [clienteId, setClienteId] = useState('')
-  const [cliente, setCliente] = useState({ nombre: '', telefono: '', email: '', direccion: '', notas: '' })
+function PedidoModal({ productos, productosExistentes, categorias, costoHora, token, crearProducto, close, save }) {
   const [items, setItems] = useState([itemVacio()])
   const [entrega, setEntrega] = useState('')
   const [prioridad, setPrioridad] = useState(0)
   const [notas, setNotas] = useState('')
-  const [erroresCliente, setErroresCliente] = useState({})
   const [creandoProductoPara, setCreandoProductoPara] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -292,27 +277,13 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   const costoProduccion = resumen.manoObra
   const ganancia = total - costoProduccion
 
-  const validarCliente = () => {
-    const errores = {}
-    if (cliente.telefono.trim() && !patronTelefono.test(cliente.telefono.trim())) errores.telefono = 'Ingresá un teléfono válido (solo números, espacios, +, - y paréntesis).'
-    if (cliente.email.trim() && !patronEmail.test(cliente.email.trim())) errores.email = 'Ingresá un email válido (ej. nombre@dominio.com).'
-    setErroresCliente(errores)
-    return Object.keys(errores).length === 0
-  }
-
   const enviar = async event => {
     event.preventDefault()
     const validos = items.filter(item => item.producto_id)
     if (!validos.length) return setError('Elegí al menos un producto.')
-    if (!clienteId) {
-      if (!cliente.nombre.trim()) return setError('Cargá los datos del cliente o elegí uno existente.')
-      if (!validarCliente()) return setError('Revisá los datos del cliente: hay campos con formato inválido.')
-    }
     setBusy(true); setError('')
     try {
       await save({
-        cliente_id: clienteId || null,
-        cliente: clienteId ? null : cliente,
         fecha_entrega: entrega || null,
         prioridad: Number(prioridad) || 0,
         notas,
@@ -334,39 +305,21 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   }
 
   return (
-    <Modal title="Nuevo pedido" subtitle="Cliente → productos → presupuesto: todo en un solo paso. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
+    <Modal title="Nuevo pedido" subtitle="Productos → presupuesto: todo en un solo paso. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
       <form onSubmit={enviar}>
         <div className="form-grid">
-          <label>Cliente existente
-            <select value={clienteId} onChange={event => setClienteId(event.target.value)}>
-              <option value="">— Cargar cliente nuevo —</option>
-              {clientes.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
-            </select>
-          </label>
-
           <label>Fecha de entrega
             <SelectorFecha value={entrega} onChange={setEntrega} />
           </label>
-        </div>
 
-        {!clienteId && (
-          <div className="cliente-nuevo">
-            <b>Datos del cliente</b>
-            <div className="form-grid">
-              <label>Nombre<input required value={cliente.nombre} onChange={event => setCliente({ ...cliente, nombre: event.target.value })} /></label>
-              <label>Teléfono / contacto
-                <input value={cliente.telefono} onChange={event => setCliente({ ...cliente, telefono: event.target.value })} placeholder="Ej. 11 5555-5555" />
-                {erroresCliente.telefono && <small className="form-error">{erroresCliente.telefono}</small>}
-              </label>
-              <label>Correo
-                <input type="email" value={cliente.email} onChange={event => setCliente({ ...cliente, email: event.target.value })} />
-                {erroresCliente.email && <small className="form-error">{erroresCliente.email}</small>}
-              </label>
-              <label>Dirección<input value={cliente.direccion} onChange={event => setCliente({ ...cliente, direccion: event.target.value })} placeholder="Dirección de entrega o instalación" /></label>
-            </div>
-            <label>Notas del cliente<textarea value={cliente.notas} onChange={event => setCliente({ ...cliente, notas: event.target.value })} placeholder="Referencias, horarios de contacto, etc." /></label>
-          </div>
-        )}
+          <label>Prioridad
+            <select value={prioridad} onChange={event => setPrioridad(event.target.value)}>
+              <option value="0">Normal</option>
+              <option value="1">Alta</option>
+              <option value="2">Urgente</option>
+            </select>
+          </label>
+        </div>
 
         <div className="stage-edit">
           <div>
@@ -412,19 +365,9 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
           <p className="stage-total">
             Mano de obra {dinero(resumen.manoObra)} ·
             <b> Costo de producción {dinero(costoProduccion)}</b> ·
-            Precio al cliente {dinero(total)} ·
+            Precio de venta {dinero(total)} ·
             <b className={ganancia >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(ganancia)}</b>
           </p>
-        </div>
-
-        <div className="form-grid">
-          <label>Prioridad
-            <select value={prioridad} onChange={event => setPrioridad(event.target.value)}>
-              <option value="0">Normal</option>
-              <option value="1">Alta</option>
-              <option value="2">Urgente</option>
-            </select>
-          </label>
         </div>
 
         <label>Notas del pedido<textarea value={notas} onChange={event => setNotas(event.target.value)} placeholder="Detalles de fabricación, condiciones de pago, etc." /></label>
@@ -468,13 +411,6 @@ function DetallePedido({ pedido, close, onEstado, onEliminar }) {
     <Modal title={`Pedido ${pedido.codigo}`} subtitle={`${pedido.avance}% completado · ${pedido.etapas_completadas} de ${pedido.etapas_totales} etapas`} close={close} ancho="760px">
       <div className="detalle-pedido">
         <section className="detalle-bloque">
-          <b>Cliente</b>
-          <p>{pedido.cliente?.nombre || 'Sin cliente'}</p>
-          <small>{[pedido.cliente?.telefono, pedido.cliente?.email, pedido.cliente?.direccion].filter(Boolean).join(' · ') || 'Sin datos de contacto'}</small>
-          {pedido.cliente?.notas && <small>Notas: {pedido.cliente.notas}</small>}
-        </section>
-
-        <section className="detalle-bloque">
           <b>Estado y entrega</b>
           <label className="status-control">
             Estado del pedido
@@ -489,7 +425,7 @@ function DetallePedido({ pedido, close, onEstado, onEliminar }) {
       <Progress value={pedido.avance} />
 
       <p className="stage-total">
-        Precio al cliente {dinero(pedido.total)} ·{pedido.costo_materiales_total > 0 ? ` Materiales ${dinero(pedido.costo_materiales_total)} ·` : ''} Mano de obra {dinero(pedido.costo_mano_obra_total)} ·
+        Precio de venta {dinero(pedido.total)} ·{pedido.costo_materiales_total > 0 ? ` Materiales ${dinero(pedido.costo_materiales_total)} ·` : ''} Mano de obra {dinero(pedido.costo_mano_obra_total)} ·
         <b> Costo de producción {dinero(pedido.costo_estimado)}</b> ·
         <b className={ganancia >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(ganancia)}</b>
       </p>

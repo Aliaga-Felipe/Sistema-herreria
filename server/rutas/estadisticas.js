@@ -56,7 +56,7 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
     GROUP BY u.id HAVING COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA') > 0
     ORDER BY pendientes DESC LIMIT 6`)
 
-  const proximosPedidos = await filas(`SELECT id, codigo, estado, cliente, fecha_entrega, avance, etapas_totales, etapas_completadas
+  const proximosPedidos = await filas(`SELECT id, codigo, estado, fecha_entrega, avance, etapas_totales, etapas_completadas
     FROM vista_pedidos_activos WHERE estado IN ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO')
     ORDER BY prioridad DESC, fecha_entrega NULLS LAST, creado_en LIMIT 6`)
 

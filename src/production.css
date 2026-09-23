@@ -295,6 +295,20 @@
     vertical-align: middle;
 }
 
+/* Insignia "En la web": producto marcado como "Publicar en la web". Mismo
+   formato que .badge-inactivo, en verde. */
+.badge-publicado {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 6px;
+    border: 1px solid #8fc9a0;
+    color: #8fc9a0;
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
 /* Fila de registro diario de producción: producto, objetivo, cantidad
    producida y el botón de guardar (ver panel-produccion.jsx). */
 .registro-grid-head,
@@ -307,10 +321,10 @@
 */
 .pedidos-head,
 .pedidos-row {
-    /* Producto, Cantidad, Cliente, Etapas, Prioridad, Entrega,
-       Cumplimiento, Total (sin columna de empleado: los pedidos no se
-       asignan a empleados, las etapas se asignan desde Tareas). */
-    grid-template-columns: repeat(8, 1fr);
+    /* Producto, Cantidad, Etapas, Prioridad, Entrega, Cumplimiento, Total
+       (sin columna de empleado: las etapas se asignan desde Tareas; y sin
+       columna de cliente: los pedidos ya no guardan datos de cliente). */
+    grid-template-columns: repeat(7, 1fr);
 }
 
 .pedidos-row {
@@ -373,7 +387,8 @@
 
 .resumen-head,
 .resumen-row {
-    grid-template-columns: 1.4fr 1.2fr .9fr 1.1fr .8fr;
+    /* Pedido, Estado, Avance, Entrega (los pedidos ya no tienen cliente). */
+    grid-template-columns: 1.4fr .9fr 1.1fr .8fr;
 }
 
 /* =========================
@@ -486,7 +501,8 @@
 */
 .detalle-pedido {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* Un solo bloque (estado y entrega): el pedido ya no tiene cliente. */
+    grid-template-columns: 1fr;
     gap: 12px;
     margin-bottom: 14px;
 }
@@ -831,6 +847,23 @@
     opacity: .72;
 }
 
+/* Estado "Completada" (etapas terminadas): verde, igual que "realizada". */
+.task-status.completada {
+    background: #294235;
+    color: #b5e3bf;
+}
+
+/* Sello visible en la tarjeta de una etapa terminada del empleado. */
+.sello-completada {
+    align-self: flex-start;
+    padding: 4px 8px;
+    border: 1px solid #8fc9a0;
+    color: #8fc9a0;
+    font: 800 9px Manrope;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
 .tarea-tiempos {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1017,6 +1050,21 @@
 .etapa-item:focus-visible {
     color: var(--accent);
     outline: none;
+}
+
+/* Etapa terminada: sigue visible en la tarjeta del producto, marcada como
+   completada (check + insignia verde) en vez de desaparecer. */
+.etapa-item.completada .etapa-item-nombre {
+    color: var(--muted);
+}
+
+.etapa-check {
+    color: #8fc9a0;
+    font-weight: 800;
+}
+
+.etapa-item .task-status {
+    white-space: nowrap;
 }
 
 .etapa-item-nombre {

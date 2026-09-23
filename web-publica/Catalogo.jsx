@@ -22,7 +22,7 @@ export default function Catalogo() {
   const [busquedaLocal, setBusquedaLocal] = useState(params.get('q') || '')
   const [categorias, setCategorias] = useState([])
 
-  // Filtro por categoría (Mesas, Mesas ratonas, Fogoneros): vive en la URL
+  // Filtro por categoría (Mesas, Mesitas ratoneras, Fogoneros): vive en la URL
   // como ?categoria=slug, igual que la búsqueda (?q=) y el orden (?orden=),
   // así que se combina con ellos y con la paginación. Vacío = "Todas las
   // categorías": se listan todos los productos, incluidos los que no
@@ -33,7 +33,7 @@ export default function Catalogo() {
   const q = params.get('q') || ''
   const pagina = Number(params.get('pagina')) || 1
 
-  useMeta('Productos', 'Catálogo completo de muebles y piezas de herrería artesanal: mesas, mesas ratonas y fogoneros.')
+  useMeta('Productos', 'Catálogo completo de muebles y piezas de herrería artesanal: mesas, mesitas ratoneras y fogoneros.')
 
   // Las categorías salen de la API pública (la misma lista fija que usa el
   // panel), para que el filtro sea siempre consistente con el sistema.

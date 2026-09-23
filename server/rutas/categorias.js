@@ -14,11 +14,11 @@ const consultaCategorias = `SELECT c.id, c.nombre, c.slug, c.descripcion, c.orde
   FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
   GROUP BY c.id`
 
-// Las categorías son una lista fija (Mesas, Mesas ratonas, Fogoneros, ver
+// Las categorías son una lista fija (Mesas, Mesitas ratoneras, Fogoneros, ver
 // CATEGORIAS_PRODUCTO en server/comun.js): no se crean, renombran ni
 // borran desde la API. Solo se puede editar su descripción, orden,
 // visibilidad y foto.
-const categoriasFijas = 'Las categorías de producto son fijas (Mesas, Mesas ratonas y Fogoneros): no se pueden crear ni eliminar.'
+const categoriasFijas = 'Las categorías de producto son fijas (Mesas, Mesitas ratoneras y Fogoneros): no se pueden crear ni eliminar.'
 
 // Requiere sesión (cualquier rol) para listar, igual que el resto del panel.
 router.get('/', auth(), asyncRoute(async (req, res) => {
