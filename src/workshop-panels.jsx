@@ -1,26 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
 import { api, dinero, duracion, fecha, iniciales, useData } from './api.js'
-import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat } from './ui.jsx'
+import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
-import PanelMateriales from './panel-materiales.jsx'
 import PanelProduccion from './panel-produccion.jsx'
 import PanelPresupuestos from './panel-presupuestos.jsx'
 
+// "Presupuestos" ya no es un paso aparte del menú: el presupuesto (costo
+// de materiales + mano de obra, precio y ganancia) ahora se arma solo
+// dentro del alta de un pedido nuevo, en "Pedidos" (ver PedidoModal en
+// panel-pedidos.jsx). El panel y su ruta siguen existiendo por si hace
+// falta volver a mostrarlos: alcanza con agregar de nuevo la línea
+// ['Presupuestos', '⎙'] acá abajo.
+//
+// Orden pedido: Panel de control, Productos, Tareas, Pedidos, Producción
+// diaria, Estadísticas, Recompensas, Usuarios y, al final, Configuración.
+// La sección "Materiales" se eliminó de la app por completo.
 export const seccionesAdmin = [
   ['Panel de control', '▦'],
-  ['Pedidos', '⌁'],
-  ['Presupuestos', '⎙'],
   ['Productos', '▱'],
-  ['Materiales', '◆'],
-  ['Producción diaria', '◈'],
   ['Tareas', '✓'],
-  ['Recompensas', '♛'],
+  ['Pedidos', '⌁'],
+  ['Producción diaria', '◈'],
   ['Estadísticas', '◫'],
+  ['Recompensas', '♛'],
   ['Usuarios', '♙'],
   ['Configuración', '⚙']
 ]
@@ -53,7 +60,6 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
     Presupuestos: <PanelPresupuestos />,
     Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
-    Materiales: <PanelMateriales />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
     Recompensas: <PanelRecompensas />,
@@ -463,14 +469,31 @@ function GestorImagenNosotros({ imagenInicial, token, onCambiar }) {
 
 // ---------------------------------------------------------------------
 // TAREAS (vista de producción del administrador)
+// Único lugar de la app donde se asignan empleados: cada etapa de cada
+// producto se asigna por separado. Pedidos es solo informativo.
 // ---------------------------------------------------------------------
 function PanelTareas() {
   const tareas = useData('/tareas/asignadas/mias?todas=true')
+  const empleados = useData('/usuarios/empleados')
+  const { mostrar, nodo } = useAviso()
   const [filtro, setFiltro] = useState('PENDIENTES')
   const [seleccionada, setSeleccionada] = useState(null)
 
   const visibles = tareas.data.filter(tarea =>
-    filtro === 'TODAS' ? true : filtro === 'PENDIENTES' ? tarea.estado !== 'COMPLETADA' : tarea.estado === 'COMPLETADA')
+    filtro === 'TODAS' ? true
+      : filtro === 'PENDIENTES' ? tarea.estado !== 'COMPLETADA'
+      : filtro === 'SIN_ASIGNAR' ? tarea.estado !== 'COMPLETADA' && !tarea.asignado_a
+      : tarea.estado === 'COMPLETADA')
+
+  // Asigna (o libera) el empleado de una etapa puntual del producto.
+  const asignar = async (tarea, responsableId) => {
+    try {
+      const actualizada = await api.patch(`/tareas/asignadas/${tarea.origen}/${tarea.id}/asignar`, { responsable_id: responsableId || null }, tareas.token)
+      await tareas.load()
+      setSeleccionada(actualizada)
+      mostrar(responsableId ? `Etapa "${tarea.etapa}" asignada a ${actualizada.responsable}.` : `Etapa "${tarea.etapa}" sin asignar.`)
+    } catch (error) { mostrar(error.message, 'error') }
+  }
 
   // Cada tarjeta agrupa las etapas de un mismo producto/trabajo (mismo
   // pedido u origen + el nombre del producto), para no repetir el
@@ -479,13 +502,16 @@ function PanelTareas() {
 
   return (
     <>
-      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller, con su responsable, el tiempo estimado y el resultado del semáforo.">
+      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller. Hacé clic en una etapa para asignarle un empleado, ver el tiempo estimado y el resultado del semáforo.">
         <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
           <option value="PENDIENTES">Pendientes</option>
+          <option value="SIN_ASIGNAR">Sin asignar</option>
           <option value="COMPLETADA">Completadas</option>
           <option value="TODAS">Todas</option>
         </select>
       </Heading>
+
+      {nodo}
 
       {tareas.loading ? <p>Cargando tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : grupos.length ? (
         <div className="tareas-grid">
@@ -511,6 +537,7 @@ function PanelTareas() {
                     onClick={() => setSeleccionada(tarea)}
                   >
                     <span className="etapa-item-nombre">{tarea.etapa}</span>
+                    <span className="etapa-item-responsable">{tarea.responsable || 'Sin asignar'}</span>
                     <span className="etapa-item-tiempo">{duracion(tarea.minutos_estimados)}</span>
                   </button>
                 ))}
@@ -522,7 +549,14 @@ function PanelTareas() {
         <Empty title="No hay etapas en esta vista" text="Las etapas se generan al crear un pedido con productos del catálogo." />
       )}
 
-      {seleccionada && <DetalleTarea tarea={seleccionada} close={() => setSeleccionada(null)} />}
+      {seleccionada && (
+        <DetalleTarea
+          tarea={seleccionada}
+          empleados={empleados.data}
+          onAsignar={asignar}
+          close={() => setSeleccionada(null)}
+        />
+      )}
     </>
   )
 }
@@ -544,7 +578,15 @@ function agruparPorProducto(lista) {
 
 // Ventana de detalle: se abre al hacer click en una tarjeta y muestra todos
 // los datos de esa etapa sin abandonar la grilla que queda detrás, oscurecida.
-function DetalleTarea({ tarea, close }) {
+// Desde acá se asigna el empleado de la etapa (única vía de asignación).
+function DetalleTarea({ tarea, empleados, onAsignar, close }) {
+  const [busy, setBusy] = useState(false)
+  const completada = tarea.estado === 'COMPLETADA'
+  const cambiarResponsable = async event => {
+    setBusy(true)
+    try { await onAsignar(tarea, event.target.value) } finally { setBusy(false) }
+  }
+
   return (
     <Modal
       title={tarea.etapa}
@@ -563,6 +605,19 @@ function DetalleTarea({ tarea, close }) {
         {tarea.prioridad > 0 && <span><small>Prioridad</small><b>{tarea.prioridad >= 2 ? 'Urgente' : 'Alta'}</b></span>}
         <span><small>Fecha de inicio</small><b>{tarea.iniciado_en ? fecha(tarea.iniciado_en) : '—'}</b></span>
         <span><small>Fecha de fin</small><b>{tarea.completado_en ? fecha(tarea.completado_en) : '—'}</b></span>
+      </div>
+
+      <div className="detalle-bloque">
+        <b>Empleado asignado</b>
+        <label className="status-control">
+          Responsable de esta etapa
+          <select value={tarea.asignado_a || ''} disabled={completada || busy} onChange={cambiarResponsable}>
+            <option value="">Sin asignar</option>
+            {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
+          </select>
+        </label>
+        {completada && <small className="muted">La etapa ya está completada: no se puede reasignar.</small>}
+        {!completada && tarea.origen === 'TAREA' && <small className="muted">Tarea libre: el responsable se aplica a todas sus etapas.</small>}
       </div>
 
       <div className="detalle-bloque">

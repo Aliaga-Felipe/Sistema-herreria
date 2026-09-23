@@ -70,12 +70,13 @@ try {
   ok('producto creado con precio y etapas', producto.etapas.length === 3 && producto.precio_venta === 400000)
   ok('costo y margen calculados', producto.costo_total === 100000 && producto.margen === 300000, `costo ${producto.costo_total} margen ${producto.margen}`)
 
-  // --- pedido con dos unidades y etapas asignadas ----------------------
-  const asignaciones = Object.fromEntries(producto.etapas.map(etapa => [etapa.id, empleado.id]))
+  // --- pedido con dos unidades ------------------------------------------
+  // El pedido no asigna empleados: las etapas se asignan después, una por
+  // una, desde Tareas (PATCH /tareas/asignadas/:origen/:id/asignar).
   const pedido = await llamar('/pedidos', { method: 'POST', cuerpo: {
     cliente: { nombre: `Cliente ${marca}`, telefono: '11 5555-5555', direccion: 'Av. Siempreviva 742', notas: 'Timbre 3' },
     fecha_entrega: '2026-12-01', prioridad: 1, notas: 'Pedido de prueba',
-    items: [{ producto_id: producto.id, cantidad: 2, asignaciones }]
+    items: [{ producto_id: producto.id, cantidad: 2 }]
   } }, token)
   creados.pedidos.push(pedido.id)
   ok('pedido creado con código automático', /^PED-\d{5}$/.test(pedido.codigo), pedido.codigo)
@@ -83,6 +84,11 @@ try {
   ok('cantidad multiplica costo y tiempo', pedido.etapas[0].minutos_estimados === 240 && pedido.etapas[0].costo_estimado === 60000)
   ok('total del pedido', pedido.total === 800000, String(pedido.total))
   ok('datos del cliente guardados', pedido.cliente.telefono === '11 5555-5555' && pedido.cliente.direccion === 'Av. Siempreviva 742')
+
+  ok('las etapas del pedido nacen sin asignar', pedido.etapas.every(etapa => !etapa.responsable_id))
+  for (const etapa of pedido.etapas) {
+    await llamar(`/tareas/asignadas/PEDIDO/${etapa.id}/asignar`, { method: 'PATCH', cuerpo: { responsable_id: empleado.id } }, token)
+  }
 
   // --- bandeja del empleado -------------------------------------------
   const bandeja = await llamar('/tareas/asignadas/mias', {}, tokenEmpleado)

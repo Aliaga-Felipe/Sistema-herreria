@@ -27,6 +27,7 @@
   --fuente-display: 'Stardos Stencil', 'Georgia', serif;
   --fuente-texto: 'Stardos Stencil', 'Segoe UI', sans-serif;
   --fuente-mono: 'Cutive Mono', 'Courier New', monospace;
+  --fuente-historia: 'Courier Prime', 'Cutive Mono', 'Courier New', monospace;
 
   --radio: 2px;
   --transicion: 420ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -671,9 +672,16 @@
 .detalle-info h1 { font-size: clamp(2rem, 4vw, 2.9rem); margin-bottom: 0; }
 
 /* Fila del título + chapita vintage (ver ChapitaProducto.jsx). En mobile la
-   chapita va debajo del título; desde 640px se acomodan lado a lado. */
-.detalle-titulo-fila { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 14px; }
-@media (min-width: 640px) { .detalle-titulo-fila { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; } }
+   chapita va debajo del título; desde 640px se acomodan lado a lado. Se usa
+   `align-items: flex-start` (en vez de `center`) y se deja de usar
+   `justify-content: space-between` a propósito: con `space-between` la
+   distancia entre nombre y chapita variaba según el ancho del título, y con
+   `center` la chapita se corría verticalmente según cuántas líneas ocupara
+   un nombre largo. Con `flex-start` + un `gap` fijo, la chapita queda
+   siempre a la misma distancia del nombre y alineada arriba, sin importar
+   el largo del nombre del producto. */
+.detalle-titulo-fila { display: flex; flex-direction: column; align-items: flex-start; gap: 15mm; margin-bottom: 14px; }
+@media (min-width: 640px) { .detalle-titulo-fila { flex-direction: row; align-items: flex-start; gap: 15mm; } }
 
 .chapita-producto { position: relative; width: 150px; max-width: 42vw; flex-shrink: 0; container-type: inline-size; }
 .chapita-imagen { display: block; width: 100%; aspect-ratio: 1600 / 666; object-fit: contain; }
@@ -681,7 +689,24 @@
 @media (min-width: 640px) { .chapita-producto { width: 190px; max-width: 220px; } }
 
 .detalle-precio { font-size: 1.5rem; color: var(--arena); font-family: var(--fuente-display); margin-bottom: 26px; }
-.detalle-descripcion { font-family: var(--fuente-mono); color: var(--texto-claro-muted); line-height: 1.75; font-size: 0.9rem; white-space: pre-line; margin-bottom: 30px; }
+
+/* Historia del producto: tipografía "máquina de escribir" (--fuente-historia,
+   Courier Prime), como bloque editorial destacado antes de la ficha técnica.
+   Distinta de --fuente-mono (Cutive Mono), que sigue usándose solo para el
+   número de la chapita. */
+.detalle-historia { font-family: var(--fuente-historia); color: var(--texto-claro-muted); line-height: 1.8; font-size: 0.92rem; white-space: pre-line; margin-bottom: 24px; }
+
+/* Medidas + Material: van juntos, con la otra tipografía (--fuente-texto,
+   distinta de la de Historia). El material nunca desborda ni rompe el
+   layout: envuelve con normalidad a la línea siguiente si es largo. */
+.detalle-especificaciones { display: flex; flex-wrap: wrap; gap: 8px 28px; font-family: var(--fuente-texto); color: var(--texto-claro-muted); font-size: 0.88rem; margin-bottom: 24px; }
+.detalle-medidas { flex: 1 1 200px; min-width: 0; white-space: normal; overflow-wrap: break-word; }
+.detalle-medidas b { display: block; color: var(--texto-claro); font-weight: 500; margin-bottom: 4px; }
+
+/* Descripción técnica: tipografía distinta a la de Historia (--fuente-texto
+   en vez de --fuente-mono), para diferenciar el relato editorial de la
+   ficha técnica. */
+.detalle-descripcion { font-family: var(--fuente-texto); color: var(--texto-claro-muted); line-height: 1.75; font-size: 0.9rem; white-space: pre-line; margin-bottom: 30px; }
 .detalle-acciones { display: flex; flex-direction: column; gap: 12px; margin-bottom: 34px; }
 .detalle-acciones .btn-public { width: 100%; }
 .detalle-meta { border-top: 1px solid var(--borde-claro); padding-top: 22px; display: grid; gap: 10px; font-size: 0.86rem; color: var(--texto-claro-muted); }

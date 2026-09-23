@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { api, dinero, useData } from './api.js'
-import { Actions, Empty, Heading, Modal, useAviso } from './ui.jsx'
+import { Actions, CampoNumero, Empty, Heading, Modal, useAviso } from './ui.jsx'
 
 const unidadesSugeridas = ['unidad', 'metro', 'kilo', 'litro', 'hoja', 'barra']
 
@@ -102,7 +102,7 @@ function MaterialModal({ material, close, save }) {
           </label>
 
           <label>Precio unitario
-            <input required min="0" step="0.01" type="number" value={precio} onChange={event => setPrecio(event.target.value)} placeholder="0" />
+            <CampoNumero required min="0" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
           </label>
         </div>
 

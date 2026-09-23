@@ -86,8 +86,8 @@ Los cuatro parámetros (`recompensa_valor_hora`, `recompensa_factor_ahorro`, `re
 | Usuarios | `GET /api/usuarios`, `GET /api/usuarios/empleados`, `POST /api/usuarios`, `PATCH /api/usuarios/:id`, `/:id/rol`, `/:id/activo`, `/:id/contrasena` |
 | Productos | `GET|POST /api/productos`, `GET|PUT|DELETE /api/productos/:id`, `PATCH /api/productos/:id/activo` |
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
-| Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id`, `PATCH /api/pedidos/:id/etapas/:etapaId/asignar`, `PATCH /api/pedidos/:id/asignaciones` |
-| Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
+| Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id` (solo informativo: no asigna empleados) |
+| Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (única vía para asignar empleados a etapas), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
 | Recompensas | `GET|POST /api/recompensas`, `GET /api/recompensas/ranking`, `DELETE /api/recompensas/:id` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

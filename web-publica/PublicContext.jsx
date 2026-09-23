@@ -4,6 +4,13 @@ import { publicApi } from './api.js'
 const PublicConfigContext = createContext({ nombre: 'El Atelier' })
 export const usePublicConfig = () => useContext(PublicConfigContext)
 
+// Interruptor único para ocultar el horario de atención en todo el sitio
+// público (Contacto, Footer, Home) sin tocar el dato: negocio_horario
+// sigue guardado en Configuración tal cual, solo deja de mostrarse. Para
+// volver a mostrarlo en cualquier momento alcanza con poner esto en true
+// de nuevo; no hace falta editar el backend ni la base de datos.
+export const MOSTRAR_HORARIO = false
+
 const valoresPorDefecto = {
   negocio_nombre: 'El Atelier',
   negocio_rubro: 'Herrería de diseño',
