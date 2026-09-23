@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion } from '../comun.js'
+import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion } from '../comun.js'
 
 const router = Router()
 
@@ -12,6 +12,7 @@ const router = Router()
 // -----------------------------------------------------------------------
 
 const columnasPublicas = `p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.slug, p.destacado, p.creado_en, p.chapita_id,
+    p.medidas, p.historia,
     c.id AS categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug,
     (SELECT pi.url FROM producto_imagenes pi WHERE pi.producto_id = p.id ORDER BY pi.es_principal DESC, pi.orden LIMIT 1) AS imagen_principal`
 
@@ -26,6 +27,9 @@ router.get('/productos', asyncRoute(async (req, res) => {
   const condiciones = ['p.activo = TRUE']
   const valores = []
 
+  // Filtro por categoría (opcional). Sin categoría elegida se listan todos
+  // los productos activos, incluidos los que no tienen categoría. Se
+  // combina con la búsqueda (q), el orden y la paginación.
   if (req.query.categoria) {
     valores.push(req.query.categoria)
     condiciones.push(`c.slug = $${valores.length}`)
@@ -89,9 +93,10 @@ router.get('/categorias', asyncRoute(async (req, res) => {
         ) AS imagen,
         COUNT(p.id) FILTER (WHERE p.activo)::int AS productos_total
       FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
-      WHERE c.activo = TRUE
+      WHERE c.activo = TRUE AND c.slug = ANY($1::text[])
       GROUP BY c.id
-      ORDER BY c.orden, c.nombre`
+      ORDER BY c.orden, c.nombre`,
+    [SLUGS_CATEGORIAS_PRODUCTO]
   )
   res.json(rows)
 }))

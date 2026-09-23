@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, fallo } from '../comun.js'
+import { asyncRoute, auth, fallo, validarEmail, validarTelefono } from '../comun.js'
 
 const router = Router()
 const seleccion = 'id, nombre, telefono, email, direccion, notas, creado_en'
@@ -25,7 +25,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
 
 function datos({ nombre, telefono, email, direccion, notas }) {
   if (!nombre?.trim()) throw fallo('El cliente necesita al menos un nombre.')
-  return [nombre.trim(), telefono?.trim() || null, email?.trim()?.toLowerCase() || null, direccion?.trim() || null, notas?.trim() || null]
+  return [nombre.trim(), validarTelefono(telefono), validarEmail(email), direccion?.trim() || null, notas?.trim() || null]
 }
 
 export default router

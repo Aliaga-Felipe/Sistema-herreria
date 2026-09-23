@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useMeta } from './api.js'
-import { usePublicConfig } from './PublicContext.jsx'
+import { MOSTRAR_HORARIO, usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import Reveal from './components/Reveal.jsx'
 
@@ -45,7 +45,7 @@ export default function Contacto() {
               <div><b>Taller</b><p>{config.negocio_direccion}</p></div>
             </article>
           )}
-          {config.negocio_horario && (
+          {MOSTRAR_HORARIO && config.negocio_horario && (
             <article>
               <span className="icono">◷</span>
               <div><b>Horario</b><p>{config.negocio_horario}</p></div>

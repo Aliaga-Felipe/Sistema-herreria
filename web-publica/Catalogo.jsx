@@ -5,7 +5,7 @@ import { usePublicConfig } from './PublicContext.jsx'
 import ProductCard from './components/ProductCard.jsx'
 
 // Opciones del orden del catálogo. Se definen acá (y no como <option> de
-// un <select> nativo) porque el SelectOrden de más abajo dibuja su propia
+// un <select> nativo) porque el SelectPersonalizado de más abajo dibuja su propia
 // lista desplegada en vez de depender de la del navegador.
 const OPCIONES_ORDEN = [
   { value: 'novedades', label: 'Más recientes' },
@@ -20,17 +20,31 @@ export default function Catalogo() {
   const [resultado, setResultado] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [busquedaLocal, setBusquedaLocal] = useState(params.get('q') || '')
+  const [categorias, setCategorias] = useState([])
 
-  // La categoría ya no tiene un filtro visible en esta página (se quitó
-  // el select), pero el parámetro se sigue leyendo y pasando a la API:
-  // las tarjetas de categoría del Inicio y de /categorias enlazan acá con
-  // ?categoria=slug, y ese enlace tiene que seguir filtrando el catálogo.
+  // Filtro por categoría (Mesas, Mesas ratonas, Fogoneros): vive en la URL
+  // como ?categoria=slug, igual que la búsqueda (?q=) y el orden (?orden=),
+  // así que se combina con ellos y con la paginación. Vacío = "Todas las
+  // categorías": se listan todos los productos, incluidos los que no
+  // tienen categoría. Las tarjetas de categoría del Inicio y de
+  // /categorias también enlazan acá con ?categoria=slug.
   const categoria = params.get('categoria') || ''
   const orden = params.get('orden') || 'novedades'
   const q = params.get('q') || ''
   const pagina = Number(params.get('pagina')) || 1
 
-  useMeta('Productos', 'Catálogo completo de muebles y piezas de herrería artesanal: mesas, sillas, portones, rejas y decoración.')
+  useMeta('Productos', 'Catálogo completo de muebles y piezas de herrería artesanal: mesas, mesas ratonas y fogoneros.')
+
+  // Las categorías salen de la API pública (la misma lista fija que usa el
+  // panel), para que el filtro sea siempre consistente con el sistema.
+  useEffect(() => {
+    publicApi.categorias().then(setCategorias).catch(() => setCategorias([]))
+  }, [])
+
+  const opcionesCategoria = [
+    { value: '', label: 'Todas las categorías' },
+    ...categorias.map(item => ({ value: item.slug, label: item.nombre }))
+  ]
 
   useEffect(() => {
     setCargando(true)
@@ -67,7 +81,20 @@ export default function Catalogo() {
               />
             </div>
             <div className="campo-filtro">
-              <SelectOrden value={orden} onChange={valor => actualizar({ orden: valor })} />
+              <SelectPersonalizado
+                opciones={opcionesCategoria}
+                value={categoria}
+                onChange={valor => actualizar({ categoria: valor })}
+                etiqueta="Filtrar por categoría"
+              />
+            </div>
+            <div className="campo-filtro">
+              <SelectPersonalizado
+                opciones={OPCIONES_ORDEN}
+                value={orden}
+                onChange={valor => actualizar({ orden: valor })}
+                etiqueta="Ordenar productos"
+              />
             </div>
             <button type="submit" className="btn-public btn-madera">Buscar</button>
           </form>
@@ -117,7 +144,8 @@ export default function Catalogo() {
 }
 
 // ---------------------------------------------------------------------
-// SELECT DE ORDEN (reemplaza el <select> nativo del catálogo)
+// SELECT PERSONALIZADO (reemplaza el <select> nativo del catálogo)
+// Lo usan los dos filtros del catálogo: categoría y orden.
 // Un <select> nativo no se puede re-estilar por dentro: la lista
 // desplegada la dibuja el sistema operativo/navegador con sus propios
 // colores (fondo blanco, resaltado azul), sin importar el CSS del sitio.
@@ -125,12 +153,12 @@ export default function Catalogo() {
 // mostrarse con el mismo fondo que el resto de los filtros + un borde
 // negro (igual que el resto de los campos), en vez de blanco.
 // Mismo valor/onChange que un <select> común, así que el filtrado y la
-// URL (?orden=...) funcionan exactamente igual que antes.
+// URL (?orden=..., ?categoria=...) funcionan exactamente igual que antes.
 // ---------------------------------------------------------------------
-function SelectOrden({ value, onChange }) {
+function SelectPersonalizado({ opciones, value, onChange, etiqueta }) {
   const [abierto, setAbierto] = useState(false)
   const raiz = useRef(null)
-  const actual = OPCIONES_ORDEN.find(opcion => opcion.value === value) || OPCIONES_ORDEN[0]
+  const actual = opciones.find(opcion => opcion.value === value) || opciones[0]
 
   useEffect(() => {
     const cerrarSiEsAfuera = event => {
@@ -148,12 +176,13 @@ function SelectOrden({ value, onChange }) {
         onClick={() => setAbierto(previo => !previo)}
         aria-haspopup="listbox"
         aria-expanded={abierto}
+        aria-label={etiqueta}
       >
         {actual.label}
       </button>
       {abierto && (
         <ul className="select-personalizado-lista" role="listbox">
-          {OPCIONES_ORDEN.map(opcion => (
+          {opciones.map(opcion => (
             <li
               key={opcion.value}
               role="option"

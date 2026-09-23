@@ -37,7 +37,8 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
   const dinero = await unaFila(`SELECT
       COALESCE((SELECT SUM(i.cantidad * i.precio_unitario) FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
         WHERE p.estado = 'TERMINADO'), 0)::float8 AS ingresos,
-      COALESCE((SELECT SUM(e.costo_estimado) FROM pedido_etapas e WHERE e.estado = 'COMPLETADA'), 0)::float8 AS costos,
+      COALESCE((SELECT SUM(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario)) FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
+        WHERE p.estado = 'TERMINADO'), 0)::float8 AS costos,
       COALESCE((SELECT SUM(monto) FROM recompensas), 0)::float8 AS recompensas`)
 
   // Los más vendidos se miden por unidades pedidas, no por cantidad de pedidos.
@@ -83,10 +84,10 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
     FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id ${rangoPedidos}`, parametros)
 
   const gastos = await unaFila(`SELECT
-      COALESCE((SELECT SUM(e.costo_estimado) FROM pedido_etapas e JOIN pedidos p ON p.id = e.pedido_id
-        ${rangoPedidos} AND e.estado = 'COMPLETADA'), 0)::float8 AS produccion_ejecutada,
-      COALESCE((SELECT SUM(e.costo_estimado) FROM pedido_etapas e JOIN pedidos p ON p.id = e.pedido_id
-        ${rangoPedidos} AND e.estado <> 'COMPLETADA'), 0)::float8 AS produccion_pendiente,
+      COALESCE((SELECT SUM(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario)) FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
+        ${rangoPedidos} AND p.estado = 'TERMINADO'), 0)::float8 AS produccion_ejecutada,
+      COALESCE((SELECT SUM(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario)) FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
+        ${rangoPedidos} AND p.estado NOT IN ('TERMINADO', 'CANCELADO')), 0)::float8 AS produccion_pendiente,
       COALESCE((SELECT SUM(r.monto) FROM recompensas r
         WHERE ($1::date IS NULL OR r.otorgado_en >= $1) AND ($2::date IS NULL OR r.otorgado_en < ($2::date + 1))), 0)::float8 AS recompensas`, parametros)
 
@@ -107,7 +108,7 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   const porProducto = await filas(`SELECT pr.id, pr.nombre, pr.precio_venta::float8 AS precio_venta,
       SUM(i.cantidad)::int AS unidades,
       SUM(i.cantidad * i.precio_unitario)::float8 AS facturado,
-      COALESCE((SELECT SUM(e.costo) FROM etapas_producto e WHERE e.producto_id = pr.id), 0)::float8 * SUM(i.cantidad) AS costo_estimado
+      SUM(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario))::float8 AS costo_estimado
     FROM pedido_items i JOIN productos pr ON pr.id = i.producto_id JOIN pedidos p ON p.id = i.pedido_id
     ${rangoPedidos} AND p.estado <> 'CANCELADO'
     GROUP BY pr.id ORDER BY facturado DESC`, parametros)

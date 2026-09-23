@@ -5,7 +5,7 @@ import fs from 'fs'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import { pool } from '../db.js'
-import { asyncRoute, auth, fallo, slugify } from '../comun.js'
+import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, fallo } from '../comun.js'
 
 const router = Router()
 
@@ -14,64 +14,33 @@ const consultaCategorias = `SELECT c.id, c.nombre, c.slug, c.descripcion, c.orde
   FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
   GROUP BY c.id`
 
-const generarSlugUnico = async (cliente, nombre, idExcluir = null) => {
-  const base = slugify(nombre) || 'categoria'
-  let slug = base
-  let sufijo = 2
-  while (true) {
-    const { rows } = await cliente.query(
-      idExcluir ? 'SELECT 1 FROM categorias WHERE slug = $1 AND id <> $2' : 'SELECT 1 FROM categorias WHERE slug = $1',
-      idExcluir ? [slug, idExcluir] : [slug]
-    )
-    if (!rows[0]) return slug
-    slug = `${base}-${sufijo}`
-    sufijo += 1
-  }
-}
+// Las categorías son una lista fija (Mesas, Mesas ratonas, Fogoneros, ver
+// CATEGORIAS_PRODUCTO en server/comun.js): no se crean, renombran ni
+// borran desde la API. Solo se puede editar su descripción, orden,
+// visibilidad y foto.
+const categoriasFijas = 'Las categorías de producto son fijas (Mesas, Mesas ratonas y Fogoneros): no se pueden crear ni eliminar.'
 
 // Requiere sesión (cualquier rol) para listar, igual que el resto del panel.
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const soloActivas = req.query.activas === 'true'
   const { rows } = await pool.query(`${consultaCategorias}${soloActivas ? ' HAVING c.activo' : ''} ORDER BY c.orden, c.nombre`)
-  res.json(rows)
+  res.json(rows.filter(categoria => SLUGS_CATEGORIAS_PRODUCTO.includes(categoria.slug)))
 }))
 
-router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', orden = 0 } = req.body
-  if (!nombre?.trim()) throw fallo('Indicá el nombre de la categoría.')
-
-  const cliente = await pool.connect()
-  try {
-    const slug = await generarSlugUnico(cliente, nombre.trim())
-    const { rows } = await cliente.query(
-      'INSERT INTO categorias (nombre, slug, descripcion, orden) VALUES ($1, $2, $3, $4) RETURNING id',
-      [nombre.trim(), slug, descripcion?.trim() || null, Number(orden) || 0]
-    )
-    const creada = await pool.query(`${consultaCategorias} HAVING c.id = $1`, [rows[0].id])
-    res.status(201).json(creada.rows[0])
-  } finally { cliente.release() }
+router.post('/', auth(['admin']), asyncRoute(async () => {
+  throw fallo(categoriasFijas)
 }))
 
+// El nombre y el slug no cambian (lista fija): se ignoran si vienen.
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', orden = 0 } = req.body
-  if (!nombre?.trim()) throw fallo('Indicá el nombre de la categoría.')
-
-  const cliente = await pool.connect()
-  try {
-    const actual = await cliente.query('SELECT nombre, slug FROM categorias WHERE id = $1', [req.params.id])
-    if (!actual.rows[0]) throw fallo('Categoría no encontrada.', 404)
-    const slug = actual.rows[0].nombre === nombre.trim() && actual.rows[0].slug
-      ? actual.rows[0].slug
-      : await generarSlugUnico(cliente, nombre.trim(), req.params.id)
-
-    const { rows } = await cliente.query(
-      'UPDATE categorias SET nombre = $1, slug = $2, descripcion = $3, orden = $4 WHERE id = $5 RETURNING id',
-      [nombre.trim(), slug, descripcion?.trim() || null, Number(orden) || 0, req.params.id]
-    )
-    if (!rows[0]) throw fallo('Categoría no encontrada.', 404)
-    const actualizada = await pool.query(`${consultaCategorias} HAVING c.id = $1`, [rows[0].id])
-    res.json(actualizada.rows[0])
-  } finally { cliente.release() }
+  const { descripcion = '', orden = 0 } = req.body
+  const { rows } = await pool.query(
+    'UPDATE categorias SET descripcion = $1, orden = $2 WHERE id = $3 RETURNING id',
+    [descripcion?.trim() || null, Number(orden) || 0, req.params.id]
+  )
+  if (!rows[0]) throw fallo('Categoría no encontrada.', 404)
+  const actualizada = await pool.query(`${consultaCategorias} HAVING c.id = $1`, [rows[0].id])
+  res.json(actualizada.rows[0])
 }))
 
 router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
@@ -82,18 +51,8 @@ router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
   res.json(rows[0])
 }))
 
-// Si tiene productos asociados se desactiva en lugar de borrarse, para no
-// dejar productos huérfanos ni romper enlaces /productos?categoria=slug.
-router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const usos = await pool.query('SELECT 1 FROM productos WHERE categoria_id = $1 LIMIT 1', [req.params.id])
-  if (usos.rows[0]) {
-    const { rows } = await pool.query('UPDATE categorias SET activo = FALSE WHERE id = $1 RETURNING id', [req.params.id])
-    if (!rows[0]) throw fallo('Categoría no encontrada.', 404)
-    return res.json({ mensaje: 'La categoría tiene productos asociados: se desactivó en lugar de borrarse.', desactivada: true })
-  }
-  const { rows } = await pool.query('DELETE FROM categorias WHERE id = $1 RETURNING id', [req.params.id])
-  if (!rows[0]) throw fallo('Categoría no encontrada.', 404)
-  res.json({ mensaje: 'Categoría eliminada.', desactivada: false })
+router.delete('/:id', auth(['admin']), asyncRoute(async () => {
+  throw fallo(categoriasFijas)
 }))
 
 // -----------------------------------------------------------------------
