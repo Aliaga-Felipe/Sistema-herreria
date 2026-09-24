@@ -14,6 +14,7 @@ DO $$ BEGIN CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'REALI
 DO $$ BEGIN CREATE TYPE estado_pedido AS ENUM ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE estado_etapa AS ENUM ('PENDIENTE', 'EN_PROGRESO', 'COMPLETADA', 'CANCELADA'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE semaforo_rendimiento AS ENUM ('VERDE', 'AMARILLO', 'ROJO'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE whatsapp_sync_estado AS ENUM ('NO_SINCRONIZADO', 'PENDIENTE', 'SINCRONIZADO', 'ERROR'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Algunas bases creadas con versiones anteriores tienen estado_etapa con
 -- las etiquetas EN_PROCESO/BLOQUEADA. Se agregan las que usa la API sin
@@ -38,25 +39,17 @@ CREATE TABLE IF NOT EXISTS usuarios (
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(40);
 
-CREATE TABLE IF NOT EXISTS recuperaciones_contrasena (
-  id BIGSERIAL PRIMARY KEY,
-  usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL,
-  usado_en TIMESTAMPTZ,
-  vence_en TIMESTAMPTZ NOT NULL,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- No hay flujo de recuperacion de contrasena implementado (ver
+-- server/rutas/autenticacion.js): esta tabla nunca se llego a usar.
+DROP TABLE IF EXISTS recuperaciones_contrasena;
 
-CREATE TABLE IF NOT EXISTS equipos (
-  id BIGSERIAL PRIMARY KEY,
-  nombre VARCHAR(100) UNIQUE NOT NULL,
-  activo BOOLEAN NOT NULL DEFAULT TRUE
-);
-CREATE TABLE IF NOT EXISTS equipo_integrantes (
-  equipo_id BIGINT REFERENCES equipos(id) ON DELETE CASCADE,
-  usuario_id BIGINT REFERENCES usuarios(id) ON DELETE CASCADE,
-  PRIMARY KEY (equipo_id, usuario_id)
-);
+-- "equipos" y "equipo_integrantes" fueron parte de un prototipo anterior
+-- (asignar trabajo a un equipo, no a una persona). El sistema actual
+-- asigna cada etapa a un usuario individual (responsable_id / asignado_a)
+-- y ningun codigo vivo las usa: se borran, junto con las columnas
+-- equipo_id que las referenciaban en pedidos y recompensas (ver mas abajo).
+DROP TABLE IF EXISTS equipo_integrantes CASCADE;
+DROP TABLE IF EXISTS equipos CASCADE;
 
 -- ---------------------------------------------------------------------
 -- CONFIGURACION DEL SISTEMA
@@ -88,7 +81,8 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('negocio_facebook', '', 'URL del Facebook (opcional, se oculta si esta vacio).'),
   ('negocio_horario', 'Lunes a viernes de 9 a 18 hs', 'Horario de atencion mostrado en Contacto.'),
   ('negocio_hero_video', '', 'URL del video de fondo del hero de portada (opcional, se sube desde Configuracion).'),
-  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.')
+  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.'),
+  ('mail_receptor_consultas', '', 'Correo que recibe las consultas del formulario de Contacto de la web publica. Exclusivo de super_admin (ver GET/PUT /api/configuracion/mail-receptor). Si queda vacio se usa negocio_email como respaldo.')
 ON CONFLICT (clave) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -153,29 +147,32 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NU
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria_id BIGINT REFERENCES categorias(id) ON DELETE SET NULL;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS slug VARCHAR(200);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE;
+-- "Publicar en la web": un producto sólo aparece en la web pública si el
+-- admin marcó esta opción (y además está activo). Sin marcar, sigue
+-- disponible en el panel pero oculto al público. Al agregar la columna por
+-- primera vez, los productos que ya existían conservan su visibilidad
+-- actual (publicado = activo); los productos nuevos nacen sin publicar.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'productos' AND column_name = 'publicado'
+  ) THEN
+    ALTER TABLE productos ADD COLUMN publicado BOOLEAN NOT NULL DEFAULT FALSE;
+    UPDATE productos SET publicado = activo;
+  END IF;
+END $$;
 -- Horas-hombre de fabricación, usadas junto al costo por hora configurable
 -- para calcular el costo de mano de obra (ver MATERIALES Y COSTEO abajo).
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2) NOT NULL DEFAULT 0;
--- Chapita vintage opcional ("PC N° ...", también llamada acá "ID de
--- producto"): se muestra junto al nombre del producto en la web pública
--- (ver ProductoDetalle.jsx/ChapitaProducto.jsx) y en el panel se carga a
--- mano con sugerencia automática del próximo número libre. Nullable a
--- propósito: si está vacía, la web no muestra ninguna chapita. Única por
--- producto con restricción real en la base (no sólo validación en el
--- frontend), ver migracion_009_costo_producto_medidas_historia.sql.
+-- Chapita vintage opcional ("PC N° ...") que se muestra junto al nombre del
+-- producto en la web pública (ver ProductoDetalle.jsx). Nullable a propósito:
+-- si está vacía, la web no muestra ninguna chapita (ver publico.js/
+-- panel-productos.jsx). VARCHAR y no numérico para no perder ceros a la
+-- izquierda (por ejemplo "014").
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS chapita_id VARCHAR(20);
 ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_chapita_id_key;
 ALTER TABLE productos ADD CONSTRAINT productos_chapita_id_key UNIQUE (chapita_id);
-
--- id_pieza: columna de un intento anterior de renombrar chapita_id que
--- quedó sin conectar a ningún flujo real (nada la lee ni la escribe).
--- Se deja como está a propósito para no perder la restricción existente
--- ni arriesgar una migración de datos innecesaria; chapita_id es el
--- campo vigente.
-ALTER TABLE productos ADD COLUMN IF NOT EXISTS id_pieza VARCHAR(20);
-ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_id_pieza_key;
-ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
-
 -- Medidas (texto libre, ej. "120 x 60 x 75 cm"), costo del producto
 -- (número de referencia cargado a mano por el admin, reemplaza al viejo
 -- costo por etapa) e historia del producto (texto editorial, distinto de
@@ -183,6 +180,19 @@ ALTER TABLE productos ADD CONSTRAINT productos_id_pieza_key UNIQUE (id_pieza);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS medidas VARCHAR(200);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_producto NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS historia TEXT;
+
+-- Integracion con el catalogo de WhatsApp Business (ver server/meta-whatsapp.js
+-- e INTEGRACION_WHATSAPP.md). whatsapp_retailer_id es un identificador propio
+-- y estable derivado del id interno -NO reutiliza chapita_id (la chapita
+-- vintage que ve el publico) ni id_pieza (columna sin uso)-. whatsapp_product_id
+-- es el id que devuelve Meta, solo informativo/diagnostico.
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_retailer_id VARCHAR(80);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_whatsapp_retailer_id_key;
+ALTER TABLE productos ADD CONSTRAINT productos_whatsapp_retailer_id_key UNIQUE (whatsapp_retailer_id);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_product_id VARCHAR(80);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_estado whatsapp_sync_estado NOT NULL DEFAULT 'NO_SINCRONIZADO';
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_error TEXT;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS whatsapp_sync_actualizado_en TIMESTAMPTZ;
 
 -- Genera un slug para productos que todavia no lo tienen (instalaciones
 -- existentes). Los productos nuevos reciben su slug desde la API.
@@ -226,16 +236,30 @@ ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NUL
 ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT NULL DEFAULT 60;
 
 -- ---------------------------------------------------------------------
--- MATERIALES (ELIMINADO)
--- La sección Materiales se quitó de la aplicación por completo: ningún
--- endpoint ni pantalla la usa. Se borran sus tablas si todavía existen.
--- El costo de un producto queda en mano de obra (horas_hombre × costo de
--- la hora configurado abajo) + costo del producto cargado a mano.
--- pedido_items.costo_materiales_unitario se conserva solo para no alterar
--- el costo guardado de pedidos viejos (los nuevos lo guardan en 0).
+-- MATERIALES UTILIZADOS POR PRODUCTO
+-- La sección Materiales se había quitado por completo (ver
+-- migracion_010) y se reintroduce acá con un diseño más simple que el
+-- original: cada fila es un material cargado a mano para ESE producto
+-- (nombre libre, sin un catálogo compartido entre productos como tenía
+-- la vieja tabla "materiales"), con su precio unitario y la cantidad que
+-- usa una unidad del producto. El costo de materiales de un producto es
+-- la suma de precio_unitario × cantidad de sus filas; se calcula al leer
+-- el producto (ver conCostoCalculado en server/rutas/productos.js) y es
+-- un concepto aparte tanto del precio de venta como del costo_producto
+-- manual de arriba. La vieja tabla "materiales" (catálogo compartido) no
+-- se recrea: este formato de carga no la necesita.
 -- ---------------------------------------------------------------------
-DROP TABLE IF EXISTS producto_materiales;
 DROP TABLE IF EXISTS materiales;
+CREATE TABLE IF NOT EXISTS producto_materiales (
+  id BIGSERIAL PRIMARY KEY,
+  producto_id BIGINT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+  nombre VARCHAR(150) NOT NULL,
+  precio_unitario NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (precio_unitario >= 0),
+  cantidad NUMERIC(12,2) NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+  orden SMALLINT NOT NULL DEFAULT 1,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_producto_materiales_producto ON producto_materiales(producto_id, orden);
 
 -- ---------------------------------------------------------------------
 -- PRODUCCIÓN DIARIA Y RECOMPENSAS POR OBJETIVO
@@ -272,6 +296,8 @@ CREATE INDEX IF NOT EXISTS idx_registros_produccion_producto ON registros_produc
 
 -- ---------------------------------------------------------------------
 -- CLIENTES
+-- Los usan sólo los presupuestos. Los pedidos ya NO tienen cliente (ver
+-- "PEDIDOS SIN CLIENTE" más abajo).
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS clientes (
   id BIGSERIAL PRIMARY KEY,
@@ -291,7 +317,6 @@ CREATE SEQUENCE IF NOT EXISTS pedidos_codigo_seq START 1;
 CREATE TABLE IF NOT EXISTS pedidos (
   id BIGSERIAL PRIMARY KEY,
   codigo VARCHAR(30) UNIQUE NOT NULL,
-  cliente_id BIGINT REFERENCES clientes(id),
   producto_id BIGINT REFERENCES productos(id),   -- legado: pedidos de un solo producto
   equipo_id BIGINT REFERENCES equipos(id),
   cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
@@ -302,10 +327,15 @@ CREATE TABLE IF NOT EXISTS pedidos (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   terminado_en TIMESTAMPTZ
 );
-ALTER TABLE pedidos ALTER COLUMN producto_id DROP NOT NULL;
 ALTER TABLE pedidos ALTER COLUMN codigo SET DEFAULT 'PED-' || LPAD(nextval('pedidos_codigo_seq')::text, 5, '0');
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS creado_por BIGINT REFERENCES usuarios(id);
+-- "producto_id" (pedido de un solo producto) y "equipo_id" (asignación a
+-- un equipo) son de un diseño anterior: el INSERT INTO pedidos actual ya
+-- no los completa (ver rutas/pedidos.js: los productos viven en
+-- pedido_items, las etapas se asignan a un responsable individual).
+ALTER TABLE pedidos DROP COLUMN IF EXISTS producto_id;
+ALTER TABLE pedidos DROP COLUMN IF EXISTS equipo_id;
 
 CREATE TABLE IF NOT EXISTS pedido_items (
   id BIGSERIAL PRIMARY KEY,
@@ -382,7 +412,6 @@ CREATE INDEX IF NOT EXISTS idx_presupuesto_items_presupuesto ON presupuesto_item
 CREATE TABLE IF NOT EXISTS recompensas (
   id BIGSERIAL PRIMARY KEY,
   pedido_id BIGINT REFERENCES pedidos(id) ON DELETE CASCADE,
-  equipo_id BIGINT REFERENCES equipos(id),
   puntos INTEGER NOT NULL DEFAULT 0,
   monto NUMERIC(12,2),
   motivo TEXT NOT NULL,
@@ -391,8 +420,8 @@ CREATE TABLE IF NOT EXISTS recompensas (
 );
 ALTER TABLE recompensas DROP CONSTRAINT IF EXISTS recompensas_puntos_check;
 ALTER TABLE recompensas ALTER COLUMN pedido_id DROP NOT NULL;
-ALTER TABLE recompensas ALTER COLUMN equipo_id DROP NOT NULL;
 ALTER TABLE recompensas ALTER COLUMN puntos SET DEFAULT 0;
+ALTER TABLE recompensas DROP COLUMN IF EXISTS equipo_id;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS usuario_id BIGINT REFERENCES usuarios(id) ON DELETE CASCADE;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS pedido_etapa_id BIGINT REFERENCES pedido_etapas(id) ON DELETE CASCADE;
 ALTER TABLE recompensas ADD COLUMN IF NOT EXISTS tarea_etapa_id BIGINT REFERENCES tarea_etapas(id) ON DELETE CASCADE;
@@ -459,22 +488,41 @@ DROP VIEW IF EXISTS vista_rendimiento_empleados;
 DROP VIEW IF EXISTS vista_tareas_empleado;
 DROP VIEW IF EXISTS vista_pedidos_activos;
 
+-- PEDIDOS SIN CLIENTE
+-- Los pedidos ya no guardan ni muestran datos de cliente. En bases que
+-- todavía tienen pedidos.cliente_id se borran los clientes que sólo
+-- estaban asociados a pedidos (los usados por algún presupuesto se
+-- conservan) y se elimina la columna. Va después de borrar las vistas
+-- porque éstas dependían de la columna.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'pedidos' AND column_name = 'cliente_id'
+  ) THEN
+    CREATE TEMP TABLE clientes_de_pedidos ON COMMIT DROP AS
+      SELECT DISTINCT cliente_id AS id FROM pedidos WHERE cliente_id IS NOT NULL;
+    ALTER TABLE pedidos DROP COLUMN cliente_id;
+    DELETE FROM clientes
+    WHERE id IN (SELECT id FROM clientes_de_pedidos)
+      AND id NOT IN (SELECT cliente_id FROM presupuestos WHERE cliente_id IS NOT NULL);
+  END IF;
+END $$;
+
 -- Avance de cada pedido segun las etapas de sus productos.
 CREATE VIEW vista_pedidos_activos AS
 SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_entrega, p.creado_en,
-       c.nombre AS cliente, c.telefono AS cliente_telefono,
        COUNT(pe.id)::int AS etapas_totales,
        COUNT(pe.id) FILTER (WHERE pe.estado = 'COMPLETADA')::int AS etapas_completadas,
        COALESCE(ROUND(100.0 * COUNT(pe.id) FILTER (WHERE pe.estado = 'COMPLETADA') / NULLIF(COUNT(pe.id), 0)), 0)::int AS avance
 FROM pedidos p
-LEFT JOIN clientes c ON c.id = p.cliente_id
 LEFT JOIN pedido_etapas pe ON pe.pedido_id = p.id
-GROUP BY p.id, c.nombre, c.telefono;
+GROUP BY p.id;
 
 -- Bandeja unica de trabajo del empleado: etapas de pedido + etapas de tareas libres.
 -- iniciado_en, fecha_entrega y prioridad viajan solo para etapas de pedido (las
--- tareas libres no tienen cliente ni fecha de entrega); se agregan al final para
--- no romper a nadie que dependa del orden de columnas previo.
+-- tareas libres no tienen fecha de entrega). Ya no hay columna de cliente:
+-- los pedidos no tienen cliente.
 CREATE VIEW vista_tareas_empleado AS
 SELECT 'PEDIDO'::text AS origen,
        pe.id::bigint AS id,
@@ -490,7 +538,6 @@ SELECT 'PEDIDO'::text AS origen,
        pe.costo_estimado::numeric(12,2) AS costo,
        pe.semaforo AS semaforo,
        pe.completado_en AS completado_en,
-       COALESCE(c.nombre, 'Sin cliente')::text AS cliente,
        pe.observaciones::text AS observaciones,
        pe.iniciado_en AS iniciado_en,
        p.fecha_entrega AS fecha_entrega,
@@ -499,7 +546,6 @@ FROM pedido_etapas pe
 JOIN pedidos p ON p.id = pe.pedido_id
 LEFT JOIN pedido_items pi ON pi.id = pe.pedido_item_id
 LEFT JOIN productos pr ON pr.id = pi.producto_id
-LEFT JOIN clientes c ON c.id = p.cliente_id
 UNION ALL
 SELECT 'TAREA'::text,
        te.id::bigint,
@@ -515,7 +561,6 @@ SELECT 'TAREA'::text,
        te.costo::numeric(12,2),
        te.semaforo,
        te.completada_en,
-       'Trabajo interno'::text,
        t.descripcion::text,
        NULL::timestamptz,
        NULL::date,
@@ -542,21 +587,77 @@ GROUP BY u.id;
 
 -- ---------------------------------------------------------------------
 -- CATEGORIAS DE PRODUCTO (lista fija)
--- Las categorías disponibles son exactamente tres: Mesas, Mesas ratonas y
--- Fogoneros (mismos slugs que usa CATEGORIAS_PRODUCTO en server/comun.js).
--- La categoría de un producto es opcional. Cualquier otra categoría se
--- elimina y sus productos quedan "sin categoría" (siguen visibles en la
--- web pública cuando no se filtra por categoría).
+-- Las categorías disponibles son exactamente tres, en español: Mesas,
+-- Mesitas ratoneras y Fogoneros (mismos slugs que usa CATEGORIAS_PRODUCTO
+-- en server/comun.js). La categoría es opcional en un borrador y
+-- obligatoria para publicar en la web. Las variantes anteriores (Tables /
+-- Coffee Tables / Fire Pits, Mesas ratonas) se renombran para conservar los
+-- productos que ya tenían asignados. Cualquier otra categoría se elimina y
+-- sus productos quedan "sin categoría" (y, por lo tanto, sin publicar).
 -- ---------------------------------------------------------------------
+UPDATE categorias SET slug = 'mesas'
+WHERE id = (SELECT id FROM categorias WHERE slug IN ('tables') ORDER BY id LIMIT 1)
+  AND NOT EXISTS (SELECT 1 FROM categorias WHERE slug = 'mesas');
+UPDATE categorias SET slug = 'mesitas-ratoneras'
+WHERE id = (SELECT id FROM categorias WHERE slug IN ('coffee-tables', 'mesas-ratonas') ORDER BY id LIMIT 1)
+  AND NOT EXISTS (SELECT 1 FROM categorias WHERE slug = 'mesitas-ratoneras');
+UPDATE categorias SET slug = 'fogoneros'
+WHERE id = (SELECT id FROM categorias WHERE slug IN ('fire-pits') ORDER BY id LIMIT 1)
+  AND NOT EXISTS (SELECT 1 FROM categorias WHERE slug = 'fogoneros');
+
 INSERT INTO categorias (nombre, slug, descripcion, orden, activo) VALUES
   ('Mesas', 'mesas', 'Mesas de hierro y madera para comedor y exterior.', 1, TRUE),
-  ('Mesas ratonas', 'mesas-ratonas', 'Mesas ratonas y de centro en hierro y madera.', 2, TRUE),
+  ('Mesitas ratoneras', 'mesitas-ratoneras', 'Mesitas ratoneras y de centro en hierro y madera.', 2, TRUE),
   ('Fogoneros', 'fogoneros', 'Fogoneros de hierro para exterior.', 3, TRUE)
 ON CONFLICT (slug) DO UPDATE SET nombre = EXCLUDED.nombre, orden = EXCLUDED.orden, activo = TRUE;
 
-UPDATE productos SET categoria_id = NULL
-WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesas-ratonas', 'fogoneros'));
-DELETE FROM categorias WHERE slug NOT IN ('mesas', 'mesas-ratonas', 'fogoneros');
+-- Un producto sin categoría no puede estar publicado: si todavía existe la
+-- columna "publicado", los que pierden la categoría pasan a borrador.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'productos' AND column_name = 'publicado'
+  ) THEN
+    UPDATE productos SET categoria_id = NULL, publicado = FALSE
+    WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros'));
+  ELSE
+    UPDATE productos SET categoria_id = NULL
+    WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros'));
+  END IF;
+END $$;
+DELETE FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros');
+
+-- ---------------------------------------------------------------------
+-- BORRADOR vs. PUBLICADO (validación en la base de datos)
+-- Un producto sin publicar es un borrador y puede tener datos incompletos
+-- (precio, descripción técnica, historia, categoría). Para estar publicado
+-- en la web necesita nombre, ID (chapita), precio > 0, descripción
+-- técnica, historia y categoría: la misma regla que valida la API (ver
+-- validarPublicacion en server/rutas/productos.js). Los productos que hoy
+-- están publicados sin esos datos pasan a borrador antes de aplicar la
+-- restricción.
+-- ---------------------------------------------------------------------
+UPDATE productos SET publicado = FALSE
+WHERE publicado AND NOT (
+    precio_venta > 0
+    AND btrim(nombre) <> ''
+    AND btrim(COALESCE(chapita_id, '')) <> ''
+    AND btrim(COALESCE(descripcion, '')) <> ''
+    AND btrim(COALESCE(historia, '')) <> ''
+    AND categoria_id IS NOT NULL
+);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_publicado_completo;
+ALTER TABLE productos ADD CONSTRAINT productos_publicado_completo CHECK (
+  NOT publicado OR (
+    precio_venta > 0
+    AND btrim(nombre) <> ''
+    AND btrim(COALESCE(chapita_id, '')) <> ''
+    AND btrim(COALESCE(descripcion, '')) <> ''
+    AND btrim(COALESCE(historia, '')) <> ''
+    AND categoria_id IS NOT NULL
+  )
+);
 
 -- ---------------------------------------------------------------------
 -- PRIMER ADMINISTRADOR

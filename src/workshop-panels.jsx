@@ -65,7 +65,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
     Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
-    Configuración: <PanelConfiguracion />
+    Configuración: <PanelConfiguracion rol={rol} />
   }
 
   // Defensa extra: aunque el menú ya oculta estos botones para un "admin"
@@ -101,7 +101,7 @@ function Dashboard({ ir }) {
 
       <QuickActions
         acciones={[
-          { icono: '⌁', label: 'Nuevo pedido', texto: 'Cliente y productos', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
+          { icono: '⌁', label: 'Nuevo pedido', texto: 'Productos y entrega', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
           { icono: '▱', label: 'Nuevo producto', texto: 'Precio y etapas', onClick: () => ir('Productos', 'nuevo') },
           // "admin" y "super_admin" pueden crear cuentas (ver PanelUsuarios).
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
@@ -166,7 +166,7 @@ function Dashboard({ ir }) {
       {proximos.length ? (
         <section className="orders-card">
           <div className="order-head resumen-head">
-            <span>Pedido</span><span>Cliente</span><span>Estado</span><span>Avance</span><span>Entrega</span>
+            <span>Pedido</span><span>Estado</span><span>Avance</span><span>Entrega</span>
           </div>
           {proximos.map(pedido => (
             <div className="order-row resumen-row" key={pedido.id}>
@@ -174,7 +174,6 @@ function Dashboard({ ir }) {
                 <div className="product-thumb">▦</div>
                 <div><b>{pedido.codigo}</b><small>{pedido.etapas_completadas}/{pedido.etapas_totales} etapas</small></div>
               </div>
-              <div className="client"><b>{pedido.cliente || 'Sin cliente'}</b></div>
               <div><Badge estado={pedido.estado} /></div>
               <div className="progress-cell"><b>{pedido.avance}%</b><Progress value={pedido.avance} /></div>
               <div><em className="stage">{fecha(pedido.fecha_entrega)}</em></div>
@@ -476,7 +475,9 @@ function PanelTareas() {
   const tareas = useData('/tareas/asignadas/mias?todas=true')
   const empleados = useData('/usuarios/empleados')
   const { mostrar, nodo } = useAviso()
-  const [filtro, setFiltro] = useState('PENDIENTES')
+  // Por defecto se ven TODAS las etapas: cuando un empleado termina una,
+  // no desaparece de la tarjeta del producto, queda marcada "Completada".
+  const [filtro, setFiltro] = useState('TODAS')
   const [seleccionada, setSeleccionada] = useState(null)
 
   const visibles = tareas.data.filter(tarea =>
@@ -504,10 +505,10 @@ function PanelTareas() {
     <>
       <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller. Hacé clic en una etapa para asignarle un empleado, ver el tiempo estimado y el resultado del semáforo.">
         <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
+          <option value="TODAS">Todas</option>
           <option value="PENDIENTES">Pendientes</option>
           <option value="SIN_ASIGNAR">Sin asignar</option>
           <option value="COMPLETADA">Completadas</option>
-          <option value="TODAS">Todas</option>
         </select>
       </Heading>
 
@@ -523,7 +524,7 @@ function PanelTareas() {
                   <h3>{grupo.titulo}</h3>
                   <div className="tarea-tile-tags">
                     <span>{grupo.referencia}</span>
-                    <span>{grupo.cliente}</span>
+                    <span>{grupo.etapas.filter(tarea => tarea.estado === 'COMPLETADA').length}/{grupo.etapas.length} completadas</span>
                   </div>
                 </div>
               </div>
@@ -532,11 +533,12 @@ function PanelTareas() {
                 {grupo.etapas.map(tarea => (
                   <button
                     type="button"
-                    className="etapa-item"
+                    className={`etapa-item${tarea.estado === 'COMPLETADA' ? ' completada' : ''}`}
                     key={`${tarea.origen}-${tarea.id}`}
                     onClick={() => setSeleccionada(tarea)}
                   >
-                    <span className="etapa-item-nombre">{tarea.etapa}</span>
+                    <span className="etapa-item-nombre">{tarea.estado === 'COMPLETADA' && <span className="etapa-check" aria-hidden="true">✓ </span>}{tarea.etapa}</span>
+                    {tarea.estado === 'COMPLETADA' && <span className="task-status completada">Completada</span>}
                     <span className="etapa-item-responsable">{tarea.responsable || 'Sin asignar'}</span>
                     <span className="etapa-item-tiempo">{duracion(tarea.minutos_estimados)}</span>
                   </button>
@@ -569,7 +571,7 @@ function agruparPorProducto(lista) {
   for (const tarea of lista) {
     const clave = `${tarea.origen}-${tarea.contenedor_id}-${tarea.titulo}`
     if (!mapa.has(clave)) {
-      mapa.set(clave, { clave, origen: tarea.origen, titulo: tarea.titulo, referencia: tarea.referencia, cliente: tarea.cliente, etapas: [] })
+      mapa.set(clave, { clave, origen: tarea.origen, titulo: tarea.titulo, referencia: tarea.referencia, etapas: [] })
     }
     mapa.get(clave).etapas.push(tarea)
   }
@@ -590,7 +592,7 @@ function DetalleTarea({ tarea, empleados, onAsignar, close }) {
   return (
     <Modal
       title={tarea.etapa}
-      subtitle={`${tarea.referencia} · ${tarea.cliente}`}
+      subtitle={`${tarea.referencia} · ${tarea.titulo}`}
       icono={tarea.origen === 'PEDIDO' ? '▦' : '✎'}
       close={close}
     >
@@ -634,10 +636,64 @@ function DetalleTarea({ tarea, empleados, onAsignar, close }) {
 }
 
 // ---------------------------------------------------------------------
+// MAIL RECEPTOR DE CONSULTAS (formulario de Contacto de la web pública)
+// Exclusivo de "super_admin": tanto verlo como editarlo. No usa la ruta
+// general GET/PUT /configuracion (esa la puede leer cualquier rol
+// autenticado, ver ConfiguracionSitioPublico/ConfiguracionCosteo), sino
+// los endpoints dedicados GET/PUT /configuracion/mail-receptor, que el
+// backend restringe con auth(['super_admin']) — ver
+// server/rutas/configuracion.js. Este componente en sí sólo se renderiza
+// si el rol es super_admin (ver PanelConfiguracion más abajo), pero eso
+// es una comodidad de UI: la restricción real está en el backend.
+// ---------------------------------------------------------------------
+function ConfiguracionMailReceptor({ onGuardar }) {
+  const datos = useData('/configuracion/mail-receptor', null)
+  const [valor, setValor] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { if (datos.data && 'mail_receptor_consultas' in datos.data) setValor(datos.data.mail_receptor_consultas) }, [datos.data])
+  if (valor === null) return null
+
+  const guardar = async event => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      const guardado = await api.put('/configuracion/mail-receptor', { mail_receptor_consultas: valor }, datos.token)
+      setValor(guardado.mail_receptor_consultas)
+      onGuardar?.()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <form className="config-card" onSubmit={guardar}>
+      <div className="card-title">Mail receptor de consultas</div>
+      <p className="muted">Correo al que llegan los mensajes del formulario de Contacto de la web pública. Exclusivo de Super Admin. Si queda vacío, se usa el correo de contacto general (arriba) como respaldo.</p>
+
+      <div className="form-grid config-grid">
+        <label>Correo receptor
+          <input required type="email" value={valor} onChange={event => setValor(event.target.value)} placeholder="consultas@tuherreria.com" />
+        </label>
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+      <div className="form-actions">
+        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar correo receptor'}</button>
+      </div>
+    </form>
+  )
+}
+
+// ---------------------------------------------------------------------
 // CONFIGURACIÓN
 // ---------------------------------------------------------------------
-function PanelConfiguracion() {
+function PanelConfiguracion({ rol }) {
   const [aviso, setAviso] = useState('')
+  // Defensa extra además del backend (auth(['super_admin']) en
+  // /configuracion/mail-receptor): aunque toda esta sección ya está oculta
+  // para un "admin" común (ver SECCIONES_SUPER_ADMIN arriba), acá se vuelve
+  // a chequear el rol antes de mostrar el campo del correo receptor.
+  const esSuperAdmin = rol === 'super_admin'
 
   return (
     <>
@@ -646,6 +702,8 @@ function PanelConfiguracion() {
       {aviso && <p className="notice">{aviso}</p>}
 
       <ConfiguracionSitioPublico onGuardar={() => setAviso('Datos de la web pública actualizados.')} />
+
+      {esSuperAdmin && <ConfiguracionMailReceptor onGuardar={() => setAviso('Correo receptor de consultas actualizado.')} />}
 
       <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
 

@@ -1,30 +1,15 @@
 -- =====================================================================
--- El Atelier - Migración 010
--- 1) Se elimina la sección Materiales (tablas materiales y
---    producto_materiales). Ninguna pantalla ni endpoint las usa ya.
---    ATENCIÓN: borra los materiales cargados y su vínculo con productos.
--- 2) Categorías de producto fijas (actualizado en la migración 011:
---    ver la migración 012: Mesas, Mesitas ratoneras y Fogoneros).
---    Cualquier otra categoría se elimina y sus productos quedan "sin
---    categoría" (la categoría ahora es opcional).
--- La asignación de empleados a etapas pasa a hacerse solo desde Tareas:
--- no requiere cambios de esquema (sigue usando pedido_etapas.responsable_id
--- y tareas.asignado_a).
--- Idempotente: puede correrse más de una vez. schema.sql ya incluye estos
--- mismos cambios (alcanza con `node server/scripts/aplicar-schema.js`).
+-- El Atelier - Migración 012
+-- 1) Borradores: un producto sin "Publicar en la web" puede guardarse sin
+--    precio, descripción técnica, historia ni categoría.
+-- 2) Publicar exige nombre, ID, precio > 0, descripción técnica, historia
+--    y categoría (restricción productos_publicado_completo). Los productos
+--    publicados que no cumplen pasan a borrador (dejan de verse en la web
+--    hasta que se completen y se vuelvan a publicar).
+-- 3) Categorías en español: Mesas, Mesitas ratoneras y Fogoneros.
+-- Idempotente. schema.sql ya incluye estos mismos cambios (alcanza con
+-- `node server/scripts/aplicar-schema.js`).
 -- =====================================================================
-
--- ---------------------------------------------------------------------
--- MATERIALES (ELIMINADO)
--- La sección Materiales se quitó de la aplicación por completo: ningún
--- endpoint ni pantalla la usa. Se borran sus tablas si todavía existen.
--- El costo de un producto queda en mano de obra (horas_hombre × costo de
--- la hora configurado abajo) + costo del producto cargado a mano.
--- pedido_items.costo_materiales_unitario se conserva solo para no alterar
--- el costo guardado de pedidos viejos (los nuevos lo guardan en 0).
--- ---------------------------------------------------------------------
-DROP TABLE IF EXISTS producto_materiales;
-DROP TABLE IF EXISTS materiales;
 
 -- ---------------------------------------------------------------------
 -- CATEGORIAS DE PRODUCTO (lista fija)
@@ -68,4 +53,35 @@ BEGIN
   END IF;
 END $$;
 DELETE FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros');
+
+-- ---------------------------------------------------------------------
+-- BORRADOR vs. PUBLICADO (validación en la base de datos)
+-- Un producto sin publicar es un borrador y puede tener datos incompletos
+-- (precio, descripción técnica, historia, categoría). Para estar publicado
+-- en la web necesita nombre, ID (chapita), precio > 0, descripción
+-- técnica, historia y categoría: la misma regla que valida la API (ver
+-- validarPublicacion en server/rutas/productos.js). Los productos que hoy
+-- están publicados sin esos datos pasan a borrador antes de aplicar la
+-- restricción.
+-- ---------------------------------------------------------------------
+UPDATE productos SET publicado = FALSE
+WHERE publicado AND NOT (
+    precio_venta > 0
+    AND btrim(nombre) <> ''
+    AND btrim(COALESCE(chapita_id, '')) <> ''
+    AND btrim(COALESCE(descripcion, '')) <> ''
+    AND btrim(COALESCE(historia, '')) <> ''
+    AND categoria_id IS NOT NULL
+);
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_publicado_completo;
+ALTER TABLE productos ADD CONSTRAINT productos_publicado_completo CHECK (
+  NOT publicado OR (
+    precio_venta > 0
+    AND btrim(nombre) <> ''
+    AND btrim(COALESCE(chapita_id, '')) <> ''
+    AND btrim(COALESCE(descripcion, '')) <> ''
+    AND btrim(COALESCE(historia, '')) <> ''
+    AND categoria_id IS NOT NULL
+  )
+);
 

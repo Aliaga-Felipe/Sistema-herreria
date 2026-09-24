@@ -14,6 +14,7 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 - `database/schema.sql` es el esquema completo y **es idempotente**: puede ejecutarse sobre una base vacía o sobre una ya en uso sin perder datos. Cada vez que este archivo cambia (por ejemplo, al actualizar el sistema) hay que volver a ejecutarlo contra la base real para que el cambio tenga efecto; si no tenés `psql` a mano, `node server/scripts/aplicar-schema.js` hace lo mismo usando la conexión de `.env`.
 - `database/migracion_002_produccion.sql` es el delta para bases que venían del esquema anterior (agrega productos con precio, pedidos multiproducto, semáforo, recompensas y configuración).
 - `database/migracion_003_detalle_tareas.sql` es el delta que agrega fecha de inicio, fecha de entrega y prioridad a la bandeja de tareas (`vista_tareas_empleado`), usados por el modal de detalle del panel **Tareas**. Si ya ejecutaste `schema.sql` con esta versión no hace falta correrla aparte.
+- `database/migracion_013_integracion_whatsapp_catalogo.sql` agrega las columnas de sincronización con el catálogo de WhatsApp Business (ver [`INTEGRACION_WHATSAPP.md`](INTEGRACION_WHATSAPP.md)). Como siempre, `schema.sql` ya incluye este mismo cambio.
 - `database/prueba-humo.mjs` recorre el flujo completo contra la API y borra al final todo lo que creó:
 
   ```bash
@@ -44,6 +45,8 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 ### Productos
 
 El admin define nombre, precio de venta y las **etapas de fabricación** propias del producto. Cada etapa lleva nombre, costo y duración estimada. El sistema muestra el costo total y el margen calculados a partir de esas etapas.
+
+Al marcar un producto como **"Publicar en la web"** además se sincroniza solo con el catálogo de WhatsApp Business del cliente (una sola carga, dos catálogos). Ver [`INTEGRACION_WHATSAPP.md`](INTEGRACION_WHATSAPP.md) para la configuración completa.
 
 ### Pedidos
 
@@ -84,7 +87,7 @@ Los cuatro parámetros (`recompensa_valor_hora`, `recompensa_factor_ahorro`, `re
 | --- | --- |
 | Autenticación | `POST /api/auth/iniciar-sesion`, `GET /api/auth/sesion`, `PATCH /api/auth/contrasena` |
 | Usuarios | `GET /api/usuarios`, `GET /api/usuarios/empleados`, `POST /api/usuarios`, `PATCH /api/usuarios/:id`, `/:id/rol`, `/:id/activo`, `/:id/contrasena` |
-| Productos | `GET|POST /api/productos`, `GET|PUT|DELETE /api/productos/:id`, `PATCH /api/productos/:id/activo` |
+| Productos | `GET|POST /api/productos`, `GET|PUT|DELETE /api/productos/:id`, `PATCH /api/productos/:id/activo`, `POST /api/productos/:id/whatsapp/reintentar` |
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
 | Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id` (solo informativo: no asigna empleados) |
 | Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (única vía para asignar empleados a etapas), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
