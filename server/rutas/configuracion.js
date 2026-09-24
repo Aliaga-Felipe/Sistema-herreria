@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { pool } from '../db.js'
-import { asyncRoute, auth, configuracionPorDefecto, fallo, leerConfiguracion } from '../comun.js'
+import { asyncRoute, auth, configuracionPorDefecto, fallo, leerConfiguracion, validarEmail } from '../comun.js'
 
 const router = Router()
 
@@ -47,6 +47,29 @@ router.put('/', auth(['super_admin']), asyncRoute(async (req, res) => {
     await conexion.query('COMMIT')
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
   res.json(await leerConfiguracion())
+}))
+
+// -----------------------------------------------------------------------
+// MAIL RECEPTOR DE CONSULTAS (formulario de Contacto de la web pública)
+// A diferencia del resto de "configuracion" (GET/PUT '/' de arriba, que
+// cualquier rol autenticado puede leer aunque la sección esté oculta en
+// el menú para "admin"), este dato es exclusivo de "super_admin" tanto
+// para verlo como para editarlo: no está en configuracionPorDefecto ni
+// sale por leerConfiguracion()/GET '/valores', así que ni un llamado
+// directo a la API con un token de "admin" o "empleado" puede leerlo.
+// Se guarda en la misma tabla `configuracion` (clave "mail_receptor_consultas"),
+// reutilizando guardarValor() de arriba.
+// -----------------------------------------------------------------------
+router.get('/mail-receptor', auth(['super_admin']), asyncRoute(async (_, res) => {
+  const { rows } = await pool.query("SELECT valor FROM configuracion WHERE clave = 'mail_receptor_consultas'")
+  res.json({ mail_receptor_consultas: rows[0]?.valor || '' })
+}))
+
+router.put('/mail-receptor', auth(['super_admin']), asyncRoute(async (req, res) => {
+  const valor = validarEmail(req.body?.mail_receptor_consultas)
+  if (!valor) throw fallo('Indicá un correo válido para recibir las consultas.')
+  await guardarValor('mail_receptor_consultas', valor)
+  res.json({ mail_receptor_consultas: valor })
 }))
 
 // -----------------------------------------------------------------------

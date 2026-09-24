@@ -9,6 +9,20 @@ async function get(path) {
   return data
 }
 
+// Único POST del cliente público (el formulario de Contacto): sin token,
+// igual que get(). El backend valida de nuevo todo lo que ya valida el
+// formulario, así que un mensaje de error acá siempre viene del servidor.
+async function post(path, body) {
+  const response = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.error || 'No se pudo enviar la consulta.')
+  return data
+}
+
 export const publicApi = {
   productos: (params = {}) => {
     const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''))
@@ -17,7 +31,8 @@ export const publicApi = {
   },
   producto: slug => get(`/productos/${encodeURIComponent(slug)}`),
   categorias: () => get('/categorias'),
-  configuracion: () => get('/configuracion')
+  configuracion: () => get('/configuracion'),
+  contacto: datos => post('/contacto', datos)
 }
 
 // ---------------------------------------------------------------------

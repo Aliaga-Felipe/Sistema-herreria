@@ -65,7 +65,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
     Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
-    Configuración: <PanelConfiguracion />
+    Configuración: <PanelConfiguracion rol={rol} />
   }
 
   // Defensa extra: aunque el menú ya oculta estos botones para un "admin"
@@ -636,10 +636,64 @@ function DetalleTarea({ tarea, empleados, onAsignar, close }) {
 }
 
 // ---------------------------------------------------------------------
+// MAIL RECEPTOR DE CONSULTAS (formulario de Contacto de la web pública)
+// Exclusivo de "super_admin": tanto verlo como editarlo. No usa la ruta
+// general GET/PUT /configuracion (esa la puede leer cualquier rol
+// autenticado, ver ConfiguracionSitioPublico/ConfiguracionCosteo), sino
+// los endpoints dedicados GET/PUT /configuracion/mail-receptor, que el
+// backend restringe con auth(['super_admin']) — ver
+// server/rutas/configuracion.js. Este componente en sí sólo se renderiza
+// si el rol es super_admin (ver PanelConfiguracion más abajo), pero eso
+// es una comodidad de UI: la restricción real está en el backend.
+// ---------------------------------------------------------------------
+function ConfiguracionMailReceptor({ onGuardar }) {
+  const datos = useData('/configuracion/mail-receptor', null)
+  const [valor, setValor] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { if (datos.data && 'mail_receptor_consultas' in datos.data) setValor(datos.data.mail_receptor_consultas) }, [datos.data])
+  if (valor === null) return null
+
+  const guardar = async event => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      const guardado = await api.put('/configuracion/mail-receptor', { mail_receptor_consultas: valor }, datos.token)
+      setValor(guardado.mail_receptor_consultas)
+      onGuardar?.()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <form className="config-card" onSubmit={guardar}>
+      <div className="card-title">Mail receptor de consultas</div>
+      <p className="muted">Correo al que llegan los mensajes del formulario de Contacto de la web pública. Exclusivo de Super Admin. Si queda vacío, se usa el correo de contacto general (arriba) como respaldo.</p>
+
+      <div className="form-grid config-grid">
+        <label>Correo receptor
+          <input required type="email" value={valor} onChange={event => setValor(event.target.value)} placeholder="consultas@tuherreria.com" />
+        </label>
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+      <div className="form-actions">
+        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar correo receptor'}</button>
+      </div>
+    </form>
+  )
+}
+
+// ---------------------------------------------------------------------
 // CONFIGURACIÓN
 // ---------------------------------------------------------------------
-function PanelConfiguracion() {
+function PanelConfiguracion({ rol }) {
   const [aviso, setAviso] = useState('')
+  // Defensa extra además del backend (auth(['super_admin']) en
+  // /configuracion/mail-receptor): aunque toda esta sección ya está oculta
+  // para un "admin" común (ver SECCIONES_SUPER_ADMIN arriba), acá se vuelve
+  // a chequear el rol antes de mostrar el campo del correo receptor.
+  const esSuperAdmin = rol === 'super_admin'
 
   return (
     <>
@@ -648,6 +702,8 @@ function PanelConfiguracion() {
       {aviso && <p className="notice">{aviso}</p>}
 
       <ConfiguracionSitioPublico onGuardar={() => setAviso('Datos de la web pública actualizados.')} />
+
+      {esSuperAdmin && <ConfiguracionMailReceptor onGuardar={() => setAviso('Correo receptor de consultas actualizado.')} />}
 
       <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
 

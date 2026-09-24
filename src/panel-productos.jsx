@@ -10,6 +10,10 @@ const etapasSugeridas = [
   { nombre: 'Pintura y terminación', minutos_estimados: 45 }
 ]
 
+// Fila vacía de la sección "Materiales utilizados" (ver ProductoModal):
+// nombre libre, sin catálogo compartido entre productos.
+const materialVacio = () => ({ nombre: '', precio_unitario: '', cantidad: '' })
+
 // Genera automáticamente el próximo ID de producto (chapita) libre para
 // prellenar el campo al crear un producto nuevo: completa huecos en vez de
 // ir siempre al final, con formato de ceros a la izquierda (001, 002...
@@ -47,7 +51,12 @@ export const construirCuerpoProducto = producto => ({
   medidas: producto.medidas?.trim() || '',
   costo_producto: Number(producto.costo_producto) || 0,
   historia: producto.historia?.trim() || '',
-  etapas: producto.etapas.map(etapa => ({ ...etapa, minutos_estimados: Number(etapa.minutos_estimados) }))
+  etapas: producto.etapas.map(etapa => ({ ...etapa, minutos_estimados: Number(etapa.minutos_estimados) })),
+  materiales: (producto.materiales || []).map(material => ({
+    nombre: material.nombre?.trim() || '',
+    precio_unitario: Number(material.precio_unitario) || 0,
+    cantidad: Number(material.cantidad) || 0
+  }))
 })
 
 // ---------------------------------------------------------------------
@@ -171,6 +180,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 <div className="product-numbers">
                   <span><small>Mano de obra</small><b>{dinero(producto.costo_mano_obra)}</b></span>
                   <span><small>Costo producto</small><b>{dinero(producto.costo_producto)}</b></span>
+                  <span><small>Costo materiales</small><b>{dinero(producto.costo_materiales)}</b></span>
                   <span><small>Costo total</small><b>{dinero(producto.costo_calculado_total)}</b></span>
                 </div>
 
@@ -227,14 +237,30 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ? producto.horas_hombre : '')
   const [chapitaId, setChapitaId] = useState(producto.chapita_id || '')
   const [medidas, setMedidas] = useState(producto.medidas || '')
-  const [costoProducto, setCostoProducto] = useState(producto.costo_producto ?? 0)
+  // El campo "Costo del producto" se sacó del formulario a pedido: se sigue
+  // guardando el valor que ya tenía el producto (0 en uno nuevo), sólo que
+  // ya no se puede editar desde acá. El costo total del producto se sigue
+  // armando con mano de obra + este valor + costo de materiales.
+  const [costoProducto] = useState(producto.costo_producto ?? 0)
   const [historia, setHistoria] = useState(producto.historia || '')
   const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, minutos_estimados }) => ({ nombre, minutos_estimados })) : etapasSugeridas)
+  const [materiales, setMateriales] = useState(
+    producto.materiales?.length ? producto.materiales.map(({ nombre, precio_unitario, cantidad }) => ({ nombre, precio_unitario, cantidad })) : []
+  )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const cambiarEtapa = (indice, campo, valor) =>
     setEtapas(etapas.map((etapa, posicion) => (posicion === indice ? { ...etapa, [campo]: valor } : etapa)))
+
+  const cambiarMaterial = (indice, campo, valor) =>
+    setMateriales(materiales.map((material, posicion) => (posicion === indice ? { ...material, [campo]: valor } : material)))
+
+  // Costo total de materiales en vivo: suma de precio unitario × cantidad
+  // de cada fila cargada. Es un dato interno (nunca se muestra en la web
+  // pública) y un concepto aparte del precio de venta y del costo del
+  // producto de arriba.
+  const costoMaterialesTotal = materiales.reduce((total, material) => total + (Number(material.precio_unitario) || 0) * (Number(material.cantidad) || 0), 0)
 
   // Marca junto a las etiquetas: los campos que pasan a ser obligatorios
   // al publicar muestran "*"; en un borrador se ven como opcionales.
@@ -279,11 +305,14 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
     if (!etapas.length) return setError('El producto necesita al menos una etapa.')
     if (etapas.some(etapa => !etapa.nombre.trim())) return setError('Cada etapa necesita un nombre.')
     if (medidas.trim().length > 200) return setError('Las medidas no pueden superar los 200 caracteres.')
+    if (materiales.some(material => !material.nombre.trim())) return setError('Cada material necesita un nombre.')
+    if (materiales.some(material => !(Number(material.precio_unitario) >= 0))) return setError('El precio unitario de cada material no puede ser negativo.')
+    if (materiales.some(material => !(Number(material.cantidad) > 0))) return setError('La cantidad de cada material debe ser mayor a cero.')
     setBusy(true); setError('')
     try {
       await save({
         id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, publicado,
-        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, etapas
+        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, etapas, materiales
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -321,10 +350,6 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
         <div className="form-grid config-grid">
           <label>Precio de venta{marca}
             <CampoNumero min="0" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
-          </label>
-
-          <label>Costo del producto (opcional)
-            <CampoNumero min="0" step="0.01" value={costoProducto} onChange={setCostoProducto} placeholder="0" />
           </label>
         </div>
 
@@ -378,6 +403,36 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
           <button type="button" className="add-stage" onClick={() => setEtapas([...etapas, etapaVacia()])}>+ Agregar etapa</button>
 
           <p className="stage-total">Duración total {duracion(minutosTotal)}</p>
+        </div>
+
+        <div className="stage-edit">
+          <div>
+            <b>Materiales utilizados</b>
+            <span>Materiales cargados para este producto, con su precio unitario y la cantidad que usa una unidad. El costo se calcula solo (precio × cantidad); es información interna, aparte del precio de venta, y nunca se muestra en la web pública.</span>
+          </div>
+
+          {materiales.length > 0 && (
+            <div className="producto-material-grid-head">
+              <small>Material</small><small>Precio unitario</small><small>Cantidad</small><small>Costo</small><small />
+            </div>
+          )}
+
+          {materiales.map((material, indice) => {
+            const costo = (Number(material.precio_unitario) || 0) * (Number(material.cantidad) || 0)
+            return (
+              <div className="producto-material-grid-row" key={indice}>
+                <input required value={material.nombre} onChange={event => cambiarMaterial(indice, 'nombre', event.target.value)} placeholder="Ej. Caño estructural 20x20" />
+                <CampoNumero min="0" step="0.01" value={material.precio_unitario} onChange={valor => cambiarMaterial(indice, 'precio_unitario', valor)} placeholder="0" />
+                <CampoNumero min="0" step="0.01" value={material.cantidad} onChange={valor => cambiarMaterial(indice, 'cantidad', valor)} placeholder="0" />
+                <span className="producto-material-costo">{dinero(costo)}</span>
+                <button type="button" onClick={() => setMateriales(materiales.filter((_, posicion) => posicion !== indice))}>×</button>
+              </div>
+            )
+          })}
+
+          <button type="button" className="add-stage" onClick={() => setMateriales([...materiales, materialVacio()])}>+ Agregar material</button>
+
+          <p className="stage-total">Costo total de materiales: {dinero(costoMaterialesTotal)}</p>
         </div>
 
         {error && <p className="form-error">{error}</p>}
