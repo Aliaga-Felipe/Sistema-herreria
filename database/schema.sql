@@ -81,7 +81,8 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('negocio_facebook', '', 'URL del Facebook (opcional, se oculta si esta vacio).'),
   ('negocio_horario', 'Lunes a viernes de 9 a 18 hs', 'Horario de atencion mostrado en Contacto.'),
   ('negocio_hero_video', '', 'URL del video de fondo del hero de portada (opcional, se sube desde Configuracion).'),
-  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.')
+  ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.'),
+  ('mail_receptor_consultas', '', 'Correo que recibe las consultas del formulario de Contacto de la web publica. Exclusivo de super_admin (ver GET/PUT /api/configuracion/mail-receptor). Si queda vacio se usa negocio_email como respaldo.')
 ON CONFLICT (clave) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -235,16 +236,30 @@ ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS costo NUMERIC(12,2) NOT NUL
 ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT NULL DEFAULT 60;
 
 -- ---------------------------------------------------------------------
--- MATERIALES (ELIMINADO)
--- La sección Materiales se quitó de la aplicación por completo: ningún
--- endpoint ni pantalla la usa. Se borran sus tablas si todavía existen.
--- El costo de un producto queda en mano de obra (horas_hombre × costo de
--- la hora configurado abajo) + costo del producto cargado a mano.
--- pedido_items.costo_materiales_unitario se conserva solo para no alterar
--- el costo guardado de pedidos viejos (los nuevos lo guardan en 0).
+-- MATERIALES UTILIZADOS POR PRODUCTO
+-- La sección Materiales se había quitado por completo (ver
+-- migracion_010) y se reintroduce acá con un diseño más simple que el
+-- original: cada fila es un material cargado a mano para ESE producto
+-- (nombre libre, sin un catálogo compartido entre productos como tenía
+-- la vieja tabla "materiales"), con su precio unitario y la cantidad que
+-- usa una unidad del producto. El costo de materiales de un producto es
+-- la suma de precio_unitario × cantidad de sus filas; se calcula al leer
+-- el producto (ver conCostoCalculado en server/rutas/productos.js) y es
+-- un concepto aparte tanto del precio de venta como del costo_producto
+-- manual de arriba. La vieja tabla "materiales" (catálogo compartido) no
+-- se recrea: este formato de carga no la necesita.
 -- ---------------------------------------------------------------------
-DROP TABLE IF EXISTS producto_materiales;
 DROP TABLE IF EXISTS materiales;
+CREATE TABLE IF NOT EXISTS producto_materiales (
+  id BIGSERIAL PRIMARY KEY,
+  producto_id BIGINT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+  nombre VARCHAR(150) NOT NULL,
+  precio_unitario NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (precio_unitario >= 0),
+  cantidad NUMERIC(12,2) NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+  orden SMALLINT NOT NULL DEFAULT 1,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_producto_materiales_producto ON producto_materiales(producto_id, orden);
 
 -- ---------------------------------------------------------------------
 -- PRODUCCIÓN DIARIA Y RECOMPENSAS POR OBJETIVO

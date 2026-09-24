@@ -257,6 +257,50 @@
     padding: 5px 0;
 }
 
+/* Grilla de "Materiales utilizados" del formulario de producto (ver
+   ProductoModal en panel-productos.jsx): mismo look de fila que
+   ".etapa-grid-row" de arriba, pero con sus propias columnas (nombre,
+   precio unitario, cantidad, costo calculado y el botón de borrar son 5,
+   no 4). No se tocan las reglas ".etapa-grid-*", esto es una grilla aparte. */
+.producto-material-grid-head,
+.producto-material-grid-row {
+    display: grid;
+    grid-template-columns: 1fr 110px 90px 90px 26px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.producto-material-grid-head small {
+    font-size: 8px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.producto-material-grid-row input {
+    background: #12100f;
+    border: 1px solid #3d3733;
+    color: var(--text);
+    padding: 7px 8px;
+    font: 400 12px Manrope, sans-serif;
+    width: 100%;
+}
+
+.producto-material-costo {
+    font: 500 12px 'DM Mono', monospace;
+    color: var(--text);
+    text-align: right;
+}
+
+.producto-material-grid-row button {
+    background: none;
+    border: 1px solid #4a423c;
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 0;
+}
+
 /* Historia del producto: estilo editorial/máquina de escribir, para que
    se note a simple vista que es distinto de la Descripción técnica (que
    mantiene la tipografía estándar del formulario, ver ".modal textarea"
@@ -1133,14 +1177,16 @@
     .etapa-fila,
     .item-linea,
     .stage-grid-row,
-    .etapa-grid-row {
+    .etapa-grid-row,
+    .producto-material-grid-row {
         grid-template-columns: 1fr;
     }
 
     .order-head,
     .ranking-head,
     .stage-grid-head,
-    .etapa-grid-head {
+    .etapa-grid-head,
+    .producto-material-grid-head {
         display: none;
     }
 

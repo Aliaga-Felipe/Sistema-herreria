@@ -834,6 +834,33 @@
 }
 .form-publico textarea { min-height: 130px; resize: vertical; }
 .form-publico .nota-form { font-size: 0.8rem; color: var(--texto-claro-muted); text-transform: none; letter-spacing: normal; }
+.form-publico input:disabled, .form-publico textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+.form-publico .btn-public:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Estados del formulario de Contacto: error (mensaje faltante/inválido o
+   falla del envío) y éxito (consulta enviada), ver Contacto.jsx. */
+.form-publico .form-error {
+  font-size: 0.82rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #e6a08a;
+  background: rgba(230,160,138,0.12);
+  border: 1px solid rgba(230,160,138,0.35);
+  border-radius: var(--radio);
+  padding: 10px 14px;
+  margin: 0;
+}
+.form-publico .notice {
+  font-size: 0.82rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--texto-claro);
+  background: rgba(63,68,54,0.35);
+  border: 1px solid var(--verde-oliva);
+  border-radius: var(--radio);
+  padding: 10px 14px;
+  margin: 0;
+}
 
 /* ---------------------------------------------------------------------
    FOOTER

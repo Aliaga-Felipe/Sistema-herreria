@@ -62,9 +62,10 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 // calcula igual que en conCostoCalculado() de server/rutas/productos.js y
 // se copia por unidad a pedido_items.costo_materiales_unitario /
 // costo_mano_obra_unitario: es una FOTO del costo del producto al momento
-// de crear el pedido, para que editar el producto después no altere el
-// costo de pedidos ya creados. El costo por etapa (etapas_producto.costo)
-// ya no se usa para esto: ese campo quedó solo por compatibilidad.
+// de crear el pedido, para que editar el producto (o sus materiales)
+// después no altere el costo de pedidos ya creados. El costo por etapa
+// (etapas_producto.costo) ya no se usa para esto: ese campo quedó solo
+// por compatibilidad.
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const { items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
   if (!Array.isArray(items) || !items.length) throw fallo('El pedido necesita al menos un producto.')
@@ -82,13 +83,18 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     for (const item of items) {
       const cantidad = entero(item?.cantidad) || 1
       if (cantidad <= 0) throw fallo('La cantidad de cada producto debe ser mayor a cero.')
-      const producto = (await conexion.query('SELECT id, nombre, precio_venta, horas_hombre FROM productos WHERE id = $1', [item?.producto_id])).rows[0]
+      const producto = (await conexion.query(
+        `SELECT p.id, p.nombre, p.precio_venta, p.horas_hombre,
+            COALESCE((SELECT SUM(pm.precio_unitario * pm.cantidad) FROM producto_materiales pm WHERE pm.producto_id = p.id), 0) AS costo_materiales
+         FROM productos p WHERE p.id = $1`, [item?.producto_id])).rows[0]
       if (!producto) throw fallo('Alguno de los productos seleccionados no existe.')
 
-      // La sección Materiales se eliminó: los pedidos nuevos ya no suman
-      // costo de materiales. La columna se mantiene (en 0) para no alterar
-      // el costo guardado de pedidos anteriores.
-      const costoMaterialesUnitario = 0
+      // Costo de materiales por unidad del producto (suma de precio_unitario
+      // × cantidad de sus filas de producto_materiales, ver
+      // server/rutas/productos.js). En pedidos creados mientras la sección
+      // Materiales estuvo eliminada, esta columna quedó en 0: no se toca
+      // retroactivamente, sólo los pedidos nuevos usan el costo real.
+      const costoMaterialesUnitario = decimal(producto.costo_materiales)
       const costoManoObraUnitario = decimal((Number(producto.horas_hombre) || 0) * costoHora)
 
       const precio = item.precio_unitario === undefined || item.precio_unitario === null ? Number(producto.precio_venta) : decimal(item.precio_unitario)

@@ -1,24 +1,54 @@
 import React, { useState } from 'react'
-import { useMeta } from './api.js'
+import { publicApi, useMeta } from './api.js'
 import { MOSTRAR_HORARIO, usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import Reveal from './components/Reveal.jsx'
 
+const patronEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const formVacio = { nombre: '', email: '', telefono: '', asunto: '', mensaje: '' }
+
 export default function Contacto() {
   const config = usePublicConfig()
-  const [form, setForm] = useState({ nombre: '', email: '', mensaje: '' })
+  const [form, setForm] = useState(formVacio)
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+  const [error, setError] = useState('')
   useMeta('Contacto', `Contactá a ${config.negocio_nombre}: consultas, presupuestos y pedidos a medida.`)
 
   const cambiar = campo => event => setForm({ ...form, [campo]: event.target.value })
 
-  // No hay un backend de mensajería propio en el sistema, así que el
-  // formulario abre el cliente de correo del visitante con todo prellenado
-  // en vez de simular un envío que en realidad no se guarda en ningún lado.
-  const enviar = event => {
+  // El formulario manda la consulta al backend (POST /api/publico/contacto,
+  // ver server/rutas/publico.js), que arma y envía el mail al correo que
+  // configuró el taller. `enviando` evita un doble envío mientras la
+  // consulta está en curso (se ignora un segundo submit y el botón queda
+  // deshabilitado), y separa con claridad el estado de éxito del de error.
+  const enviar = async event => {
     event.preventDefault()
-    const asunto = encodeURIComponent(`Consulta desde la web — ${form.nombre || 'Sin nombre'}`)
-    const cuerpo = encodeURIComponent(`${form.mensaje}\n\n— ${form.nombre}\n${form.email}`)
-    window.location.href = `mailto:${config.negocio_email || ''}?subject=${asunto}&body=${cuerpo}`
+    if (enviando) return
+    if (!form.nombre.trim() || !form.email.trim() || !form.asunto.trim() || !form.mensaje.trim()) {
+      setError('Completá nombre, correo, asunto y mensaje.')
+      return
+    }
+    if (!patronEmail.test(form.email.trim())) {
+      setError('Ingresá un correo electrónico válido.')
+      return
+    }
+    setEnviando(true); setError(''); setEnviado(false)
+    try {
+      await publicApi.contacto({
+        nombre: form.nombre.trim(),
+        email: form.email.trim(),
+        telefono: form.telefono.trim(),
+        asunto: form.asunto.trim(),
+        mensaje: form.mensaje.trim()
+      })
+      setEnviado(true)
+      setForm(formVacio)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnviando(false)
+    }
   }
 
   return (
@@ -71,17 +101,29 @@ export default function Contacto() {
 
       <Reveal>
         <form className="form-publico" onSubmit={enviar}>
-          <p className="nota-form">Completá el formulario y se va a abrir tu programa de correo con el mensaje listo para enviar.</p>
+          <p className="nota-form">Completá el formulario y te respondemos por correo a la brevedad.</p>
           <label>Nombre
-            <input required value={form.nombre} onChange={cambiar('nombre')} placeholder="Tu nombre" />
+            <input required value={form.nombre} onChange={cambiar('nombre')} placeholder="Tu nombre" disabled={enviando} />
           </label>
           <label>Correo electrónico
-            <input required type="email" value={form.email} onChange={cambiar('email')} placeholder="tu@correo.com" />
+            <input required type="email" value={form.email} onChange={cambiar('email')} placeholder="tu@correo.com" disabled={enviando} />
+          </label>
+          <label>Teléfono (opcional)
+            <input value={form.telefono} onChange={cambiar('telefono')} placeholder="Tu teléfono" disabled={enviando} />
+          </label>
+          <label>Asunto
+            <input required value={form.asunto} onChange={cambiar('asunto')} placeholder="¿Sobre qué querés consultarnos?" disabled={enviando} />
           </label>
           <label>Mensaje
-            <textarea required value={form.mensaje} onChange={cambiar('mensaje')} placeholder="Contanos qué estás buscando…" />
+            <textarea required value={form.mensaje} onChange={cambiar('mensaje')} placeholder="Contanos qué estás buscando…" disabled={enviando} />
           </label>
-          <button className="btn-public btn-madera btn-block" type="submit">Enviar consulta</button>
+
+          {error && <p className="form-error">{error}</p>}
+          {enviado && <p className="notice">¡Gracias! Tu consulta fue enviada, te vamos a responder a la brevedad.</p>}
+
+          <button className="btn-public btn-madera btn-block" type="submit" disabled={enviando}>
+            {enviando ? 'Enviando…' : 'Enviar consulta'}
+          </button>
         </form>
       </Reveal>
     </div>

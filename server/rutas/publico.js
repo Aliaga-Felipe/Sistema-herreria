@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion } from '../comun.js'
+import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion, validarEmail, validarTelefono } from '../comun.js'
+import { enviarConsulta } from '../correo.js'
 
 const router = Router()
 
@@ -112,6 +113,36 @@ router.get('/categorias', asyncRoute(async (req, res) => {
 router.get('/configuracion', asyncRoute(async (_, res) => {
   const completa = await leerConfiguracion()
   res.json(Object.fromEntries(clavesConfiguracionPublica.map(clave => [clave, completa[clave] || ''])))
+}))
+
+// -----------------------------------------------------------------------
+// FORMULARIO DE CONTACTO
+// Sin autenticación (cualquier visitante de la web puede escribir), pero
+// SIN exponer nunca el correo receptor al frontend: se resuelve acá,
+// server-side, contra la tabla `configuracion` (clave
+// "mail_receptor_consultas", exclusiva de super_admin para
+// ver/editar — ver GET/PUT /api/configuracion/mail-receptor). Si todavía
+// no se configuró un receptor dedicado, se usa negocio_email como
+// respaldo para que el formulario funcione desde el primer momento.
+// -----------------------------------------------------------------------
+router.post('/contacto', asyncRoute(async (req, res) => {
+  const { nombre, email, telefono = '', asunto, mensaje } = req.body || {}
+  if (!nombre?.trim()) throw fallo('Indicá tu nombre.')
+  if (!asunto?.trim()) throw fallo('Indicá el asunto de tu consulta.')
+  if (!mensaje?.trim()) throw fallo('Escribí tu mensaje.')
+  const emailValidado = validarEmail(email)
+  if (!emailValidado) throw fallo('Indicá un correo electrónico válido.')
+  const telefonoValidado = validarTelefono(telefono)
+
+  const [receptor, completa] = await Promise.all([
+    pool.query("SELECT valor FROM configuracion WHERE clave = 'mail_receptor_consultas'"),
+    leerConfiguracion()
+  ])
+  const destino = receptor.rows[0]?.valor?.trim() || completa.negocio_email?.trim() || null
+  if (!destino) throw fallo('El taller todavía no configuró un correo para recibir consultas. Probá escribir por WhatsApp mientras tanto.', 503)
+
+  await enviarConsulta({ nombre: nombre.trim(), email: emailValidado, telefono: telefonoValidado, asunto: asunto.trim(), mensaje: mensaje.trim() }, destino)
+  res.json({ mensaje: 'Consulta enviada correctamente.' })
 }))
 
 export default router
