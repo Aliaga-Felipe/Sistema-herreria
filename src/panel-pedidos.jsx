@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, dinero, duracion, etiquetaPrioridad, fecha, porcentaje, useData } from './api.js'
+import { api, dinero, duracion, etiquetaPrioridad, fecha, porcentaje, precioVenta, useData } from './api.js'
 import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
 import { ProductoModal, construirCuerpoProducto, sugerirIdPieza } from './panel-productos.jsx'
 
@@ -366,7 +366,7 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
                 <div className="item-linea">
                   <select required value={item.producto_id} onChange={event => elegirProducto(indice, event.target.value)}>
                     <option value="">Seleccionar producto</option>
-                    {productos.map(opcion => <option key={opcion.id} value={opcion.id}>{opcion.nombre} — {dinero(opcion.precio_venta)}</option>)}
+                    {productos.map(opcion => <option key={opcion.id} value={opcion.id}>{opcion.nombre} — {precioVenta(opcion.precio_venta)}</option>)}
                   </select>
                   <input min="1" type="number" value={item.cantidad} onChange={event => cambiarItem(indice, { cantidad: event.target.value })} title="Cantidad" />
                   <button type="button" onClick={() => setItems(items.filter((_, posicion) => posicion !== indice))}>×</button>

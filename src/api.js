@@ -61,6 +61,12 @@ export const iniciales = nombre =>
 export const dinero = (valor, moneda = 'ARS') =>
   `${moneda === 'ARS' ? '$' : `${moneda} `}${Number(valor || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 
+// Precio de venta opcional (panel interno): sin precio se muestra
+// "Sin precio" en vez de "$0". En la web pública se muestra "Consultar
+// precio" (ver precioPublico en web-publica/api.js).
+export const tienePrecio = valor => valor !== null && valor !== undefined && valor !== '' && Number(valor) > 0
+export const precioVenta = (valor, moneda = 'ARS') => (tienePrecio(valor) ? dinero(valor, moneda) : 'Sin precio')
+
 export const duracion = minutos => {
   const total = Math.round(Number(minutos) || 0)
   if (!total) return '—'

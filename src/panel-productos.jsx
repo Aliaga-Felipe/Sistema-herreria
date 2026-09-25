@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { api, dinero, fecha, useData } from './api.js'
+import { api, dinero, fecha, precioVenta, useData } from './api.js'
 import { Actions, CampoNumero, Empty, Heading, Modal, useAviso } from './ui.jsx'
 
 // Fila vacía de la sección "Materiales utilizados" (ver ProductoModal):
@@ -34,7 +34,8 @@ export const sugerirIdPieza = productos => {
 export const construirCuerpoProducto = producto => ({
   nombre: producto.nombre,
   descripcion: producto.descripcion,
-  precio_venta: Number(producto.precio_venta),
+  // Precio opcional: vacío viaja como null ("sin precio"), nunca como 0.
+  precio_venta: producto.precio_venta === '' || producto.precio_venta === null || producto.precio_venta === undefined ? null : Number(producto.precio_venta),
   categoria_id: producto.categoria_id || null,
   destacado: Boolean(producto.destacado),
   publicado: Boolean(producto.publicado),
@@ -146,7 +147,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 <h3>
                   {producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}
                   {/* Desactivado = vendido (mismo criterio que Panel de control y Estadísticas). */}
-                  {!producto.activo && <span className="badge-inactivo" title={`Vendido a ${dinero(producto.precio_vendido)}`}>Vendido {fecha(producto.vendido_en)}</span>}
+                  {!producto.activo && <span className="badge-inactivo" title={`Vendido a ${precioVenta(producto.precio_vendido)}`}>Vendido {fecha(producto.vendido_en)}</span>}
                   {producto.publicado
                     ? <span className="badge-publicado" title="Visible en la web pública">En la web</span>
                     : <span className="badge-inactivo" title="Oculto en la web pública: sólo se ve en el panel">No publicado</span>}
@@ -163,8 +164,10 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 )}
 
                 <div className="product-numbers">
-                  <span><small>Precio</small><b>{dinero(producto.precio_venta)}</b></span>
-                  <span className={producto.margen >= 0 ? 'positivo' : 'negativo'}><small>Margen</small><b>{dinero(producto.margen)}</b></span>
+                  <span><small>Precio</small><b>{precioVenta(producto.precio_venta)}</b></span>
+                  {producto.margen === null || producto.margen === undefined
+                    ? <span><small>Margen</small><b>—</b></span>
+                    : <span className={producto.margen >= 0 ? 'positivo' : 'negativo'}><small>Margen</small><b>{dinero(producto.margen)}</b></span>}
                   <span><small>Horas-hombre</small><b>{producto.horas_hombre || '—'}</b></span>
                 </div>
 
@@ -252,17 +255,18 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   // - Sin "Publicar en la web" el producto es un BORRADOR: sólo se exige el
   //   nombre. Precio, descripción técnica, historia, categoría e ID pueden
   //   quedar vacíos (el ID vacío lo genera el servidor).
-  // - Para publicarlo son obligatorios nombre, ID, precio (> 0),
-  //   descripción técnica, historia y categoría; si falta alguno no se
+  // - Para publicarlo son obligatorios nombre, ID, descripción técnica,
+  //   historia y categoría; si falta alguno no se
   //   guarda y se indica exactamente qué falta. El backend y la base de
   //   datos aplican la misma regla (ver validarPublicacion en
   //   server/rutas/productos.js y productos_publicado_completo en
   //   schema.sql), así que esto es una primera capa, no la única.
+  // - El precio de venta es SIEMPRE opcional (también para publicar): sin
+  //   precio, la web pública muestra "Consultar precio".
   const faltantesParaPublicar = () => {
     const faltantes = []
     if (!nombre.trim()) faltantes.push('nombre')
     if (!chapitaId.trim()) faltantes.push('ID de producto')
-    if (!(Number(precio) > 0)) faltantes.push('precio de venta (mayor a cero)')
     if (!descripcion.trim()) faltantes.push('descripción técnica')
     if (!historia.trim()) faltantes.push('historia del producto')
     if (!categoriaId) faltantes.push('categoría')
@@ -326,8 +330,8 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
         </div>
 
         <div className="form-grid config-grid">
-          <label>Precio de venta{marca}
-            <CampoNumero min="0" step="0.01" value={precio} onChange={setPrecio} placeholder="0" />
+          <label>Precio de venta (opcional)
+            <CampoNumero min="0" step="0.01" value={precio} onChange={setPrecio} placeholder='Vacío = "Consultar precio"' />
           </label>
         </div>
 
@@ -343,7 +347,7 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
           <input type="checkbox" checked={publicado} onChange={event => setPublicado(event.target.checked)} />
           <span className="destacado-check-texto">
             <b>🌐 Publicar en la web</b>
-            <small>Sólo los productos marcados se muestran en la web pública. Para publicar son obligatorios: nombre, ID, precio, descripción técnica, historia y categoría. Sin marcar, se guarda como borrador (oculto al público, disponible en el panel) y esos datos pueden quedar vacíos.</small>
+            <small>Sólo los productos marcados se muestran en la web pública. Para publicar son obligatorios: nombre, ID, descripción técnica, historia y categoría (el precio es opcional: sin precio, la web muestra “Consultar precio”). Sin marcar, se guarda como borrador (oculto al público, disponible en el panel) y esos datos pueden quedar vacíos.</small>
           </span>
         </label>
 

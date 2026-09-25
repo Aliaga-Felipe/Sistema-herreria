@@ -5,7 +5,7 @@ import fs from 'fs'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import { pool } from '../db.js'
-import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, fallo } from '../comun.js'
+import { asyncRoute, auth, fallo, slugify } from '../comun.js'
 
 const router = Router()
 
@@ -14,21 +14,42 @@ const consultaCategorias = `SELECT c.id, c.nombre, c.slug, c.descripcion, c.orde
   FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id AND NOT p.eliminado
   GROUP BY c.id`
 
-// Las categorías son una lista fija (Mesas, Mesitas ratoneras, Fogoneros, ver
-// CATEGORIAS_PRODUCTO en server/comun.js): no se crean, renombran ni
-// borran desde la API. Solo se puede editar su descripción, orden,
-// visibilidad y foto.
-const categoriasFijas = 'Las categorías de producto son fijas (Mesas, Mesitas ratoneras y Fogoneros): no se pueden crear ni eliminar.'
+// Categorías: además de las tres base (Mesas, Mesitas ratoneras,
+// Fogoneros, ver CATEGORIAS_PRODUCTO en server/comun.js), el administrador
+// puede CREAR categorías nuevas desde el panel. Por ahora no se renombran
+// ni se borran desde la API (solo se puede editar su descripción, orden,
+// visibilidad y foto).
+const categoriasSinBorrado = 'Las categorías no se pueden eliminar.'
 
 // Requiere sesión (cualquier rol) para listar, igual que el resto del panel.
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const soloActivas = req.query.activas === 'true'
   const { rows } = await pool.query(`${consultaCategorias}${soloActivas ? ' HAVING c.activo' : ''} ORDER BY c.orden, c.nombre`)
-  res.json(rows.filter(categoria => SLUGS_CATEGORIAS_PRODUCTO.includes(categoria.slug)))
+  res.json(rows)
 }))
 
-router.post('/', auth(['admin']), asyncRoute(async () => {
-  throw fallo(categoriasFijas)
+// Alta de categoría: solo el nombre. No se permiten nombres vacíos ni
+// repetidos (sin distinguir mayúsculas, minúsculas ni acentos: "Sillas" y
+// "sillás" son la misma categoría, porque generarían la misma URL). Se
+// agrega al final del orden y visible en la web.
+router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
+  const nombre = String(req.body?.nombre ?? '').trim().replace(/\s+/g, ' ')
+  if (!nombre) throw fallo('Escribí el nombre de la categoría.')
+  if (nombre.length > 120) throw fallo('El nombre de la categoría puede tener hasta 120 caracteres.')
+  const slug = slugify(nombre).slice(0, 140)
+  if (!slug) throw fallo('El nombre de la categoría tiene que incluir al menos una letra o un número.')
+
+  const repetida = await pool.query('SELECT nombre FROM categorias WHERE slug = $1 OR LOWER(nombre) = LOWER($2) LIMIT 1', [slug, nombre])
+  if (repetida.rows[0]) throw fallo(`Ya existe la categoría "${repetida.rows[0].nombre}".`, 409)
+
+  const { rows } = await pool.query(
+    `INSERT INTO categorias (nombre, slug, orden, activo)
+     VALUES ($1, $2, COALESCE((SELECT MAX(orden) FROM categorias), 0) + 1, TRUE)
+     RETURNING id`,
+    [nombre, slug]
+  )
+  const creada = await pool.query(`${consultaCategorias} HAVING c.id = $1`, [rows[0].id])
+  res.status(201).json(creada.rows[0])
 }))
 
 // El nombre y el slug no cambian (lista fija): se ignoran si vienen.
@@ -52,7 +73,7 @@ router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
 }))
 
 router.delete('/:id', auth(['admin']), asyncRoute(async () => {
-  throw fallo(categoriasFijas)
+  throw fallo(categoriasSinBorrado)
 }))
 
 // -----------------------------------------------------------------------

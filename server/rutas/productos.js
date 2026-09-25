@@ -5,7 +5,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 import { pool } from '../db.js'
-import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, decimal, fallo, leerConfiguracion, slugify } from '../comun.js'
+import { asyncRoute, auth, decimal, fallo, leerConfiguracion, slugify } from '../comun.js'
 import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp.js'
 
 const router = Router()
@@ -51,7 +51,9 @@ const conCostoCalculado = async filas => {
       costo_mano_obra: costoManoObra,
       costo_materiales: costoMateriales,
       costo_calculado_total: costoCalculadoTotal,
-      margen: decimal(fila.precio_venta - costoCalculadoTotal)
+      // Sin precio de venta (NULL) no hay margen que calcular: se devuelve
+      // null en vez de un margen negativo engañoso.
+      margen: fila.precio_venta === null || fila.precio_venta === undefined ? null : decimal(fila.precio_venta - costoCalculadoTotal)
     }
   })
 }
@@ -121,7 +123,8 @@ const generarSlugUnico = async (cliente, nombre, idExcluir = null) => {
 // validarPublicacion).
 const validarCategoria = async categoriaId => {
   if (categoriaId === null || categoriaId === undefined || categoriaId === '') return null
-  const { rows } = await pool.query('SELECT id FROM categorias WHERE id = $1 AND slug = ANY($2::text[])', [categoriaId, SLUGS_CATEGORIAS_PRODUCTO])
+  // Cualquier categoría existente: las tres base y las creadas desde el panel.
+  const { rows } = await pool.query('SELECT id FROM categorias WHERE id = $1', [categoriaId])
   if (!rows[0]) throw fallo('La categoría seleccionada no existe. Elegí Mesas, Mesitas ratoneras o Fogoneros.')
   return categoriaId
 }
@@ -145,10 +148,11 @@ const normalizarChapita = valor => {
   return chapita
 }
 
-// Precio de venta: opcional en un borrador (vacío se guarda en 0), pero
-// nunca negativo.
+// Precio de venta: OPCIONAL (en borradores y en productos publicados). Si
+// viene vacío se guarda NULL ("sin precio": la web pública muestra
+// "Consultar precio"); si viene, nunca puede ser negativo.
 const normalizarPrecio = valor => {
-  if (valor === undefined || valor === null || valor === '') return 0
+  if (valor === undefined || valor === null || String(valor).trim() === '') return null
   const precio = decimal(valor)
   if (precio < 0) throw fallo('El precio de venta no puede ser negativo.')
   return precio
@@ -158,16 +162,16 @@ const normalizarPrecio = valor => {
 // - BORRADOR (sin "Publicar en la web"): sólo el nombre es obligatorio. El
 //   precio, la descripción técnica, la historia, la categoría y el ID
 //   pueden quedar vacíos (el ID se genera solo, ver generarChapitaId).
-// - PUBLICADO: nombre, ID, precio (> 0), descripción técnica, historia y
-//   categoría son obligatorios. Si falta alguno, no se guarda y el mensaje
+// - PUBLICADO: nombre, ID, descripción técnica, historia y categoría son
+//   obligatorios. El precio sigue siendo opcional: sin precio, la web
+//   pública muestra "Consultar precio". Si falta alguno, no se guarda y el mensaje
 //   dice exactamente qué falta. La base de datos aplica la misma regla
 //   (restricción productos_publicado_completo, ver schema.sql), así que un
 //   producto incompleto nunca puede quedar visible en la web pública.
-const validarPublicacion = ({ nombre, chapitaId, precio, descripcion, historia, categoriaId }) => {
+const validarPublicacion = ({ nombre, chapitaId, descripcion, historia, categoriaId }) => {
   const faltantes = []
   if (!nombre) faltantes.push('nombre')
   if (!chapitaId) faltantes.push('ID de producto')
-  if (!(precio > 0)) faltantes.push('precio de venta (mayor a cero)')
   if (!descripcion) faltantes.push('descripción técnica')
   if (!historia) faltantes.push('historia del producto')
   if (!categoriaId) faltantes.push('categoría')
