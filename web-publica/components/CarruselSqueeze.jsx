@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useMotionValue, useTransform } from 'framer-motion'
-import { dinero } from '../api.js'
+import { precioPublico } from '../api.js'
 
 // ---------------------------------------------------------------------
 // CARRUSEL "SQUEEZE" DE PRODUCTOS DESTACADOS
@@ -317,7 +317,7 @@ export default function CarruselSqueeze({
             >
               <p className="csq-info-texto">
                 <span className="csq-info-nombre">{producto.nombre}</span>{' '}
-                <span className="csq-info-precio">{dinero(producto.precio_venta, moneda)}</span>
+                <span className="csq-info-precio">{precioPublico(producto.precio_venta, moneda)}</span>
               </p>
               <Link to={`/productos/${producto.slug}`} tabIndex={mostrado ? 0 : -1} className="csq-accion btn-public btn-madera">
                 Ver producto

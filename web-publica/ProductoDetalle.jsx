@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { dinero, publicApi, useMeta } from './api.js'
+import { precioPublico, publicApi, useMeta } from './api.js'
 import { usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import ProductCard from './components/ProductCard.jsx'
@@ -199,7 +199,7 @@ export default function ProductoDetalle() {
               <h1>{producto.nombre}</h1>
               <ChapitaProducto idPieza={producto.chapita_id} />
             </div>
-            <p className="detalle-precio">{dinero(producto.precio_venta, config.moneda)}</p>
+            <p className="detalle-precio">{precioPublico(producto.precio_venta, config.moneda)}</p>
 
             {producto.historia && <p className="detalle-historia">{producto.historia}</p>}
 

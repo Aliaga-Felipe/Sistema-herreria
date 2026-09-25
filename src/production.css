@@ -1220,3 +1220,51 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* =========================
+   CATEGORÍAS (panel-categorias.jsx): alta en una sola fila (nombre +
+   botón) con el mismo look de campo que el resto de los formularios, y
+   listado reutilizando ".simple-list".
+*/
+.categoria-alta .card-title {
+    margin-bottom: 10px;
+}
+
+.categoria-alta-fila {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.categoria-alta-fila input {
+    flex: 1;
+    min-width: 0;
+    background: #121110;
+    border: 1px solid #46403a;
+    color: var(--text);
+    padding: 10px;
+    margin: 0;
+    font: 11px Manrope;
+    outline-color: #e8a383;
+}
+
+.categoria-alta .form-error {
+    margin-top: 8px;
+}
+
+.categorias-lista .product-symbol {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+}
+
+.categorias-lista b {
+    font-size: 13px;
+}
+
+@media (max-width: 480px) {
+    .categoria-alta-fila {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

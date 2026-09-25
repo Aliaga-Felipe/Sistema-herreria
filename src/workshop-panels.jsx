@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
-import { api, dinero, duracion, fecha, iniciales, useAutoRefresco, useData } from './api.js'
+import { api, dinero, duracion, fecha, iniciales, precioVenta, useAutoRefresco, useData } from './api.js'
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
@@ -9,6 +9,7 @@ import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
 import PanelProduccion from './panel-produccion.jsx'
 import PanelPresupuestos from './panel-presupuestos.jsx'
+import PanelCategorias from './panel-categorias.jsx'
 
 // "Presupuestos" ya no es un paso aparte del menú: el presupuesto (costo
 // de materiales + mano de obra, precio y ganancia) ahora se arma solo
@@ -17,12 +18,13 @@ import PanelPresupuestos from './panel-presupuestos.jsx'
 // falta volver a mostrarlos: alcanza con agregar de nuevo la línea
 // ['Presupuestos', '⎙'] acá abajo.
 //
-// Orden pedido: Panel de control, Productos, Tareas, Pedidos, Producción
-// diaria, Estadísticas, Recompensas, Usuarios y, al final, Configuración.
+// Orden pedido: Panel de control, Productos, Categorías, Tareas, Pedidos,
+// Producción diaria, Estadísticas, Recompensas, Usuarios y, al final, Configuración.
 // La sección "Materiales" se eliminó de la app por completo.
 export const seccionesAdmin = [
   ['Panel de control', '▦'],
   ['Productos', '▱'],
+  ['Categorías', '▤'],
   ['Tareas', '✓'],
   ['Pedidos', '⌁'],
   ['Producción diaria', '◈'],
@@ -60,6 +62,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
     Presupuestos: <PanelPresupuestos />,
     Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
+    Categorías: <PanelCategorias />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
     Recompensas: <PanelRecompensas />,
@@ -145,7 +148,7 @@ function Dashboard({ ir }) {
                 <div key={producto.id}>
                   <b>{producto.nombre}{producto.eliminado ? ' (eliminado)' : ''}</b>
                   <Progress value={((producto.precio || 0) / maxPrecio) * 100} />
-                  <span>{fecha(producto.vendido_en)} · {dinero(producto.precio, moneda)}</span>
+                  <span>{fecha(producto.vendido_en)} · {precioVenta(producto.precio, moneda)}</span>
                 </div>
               ))}
             </div>

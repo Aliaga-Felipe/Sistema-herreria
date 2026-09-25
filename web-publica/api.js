@@ -41,6 +41,12 @@ export const publicApi = {
 export const dinero = (valor, moneda = 'ARS') =>
   `${moneda === 'ARS' ? '$' : `${moneda} `}${Number(valor || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 
+// Precio de venta OPCIONAL: un producto sin precio (vacío/null, o 0 en
+// productos viejos) nunca se muestra como "$0": se muestra "Consultar
+// precio" en el mismo lugar y con el mismo estilo que el precio.
+export const tienePrecio = valor => valor !== null && valor !== undefined && valor !== '' && Number(valor) > 0
+export const precioPublico = (valor, moneda = 'ARS') => (tienePrecio(valor) ? dinero(valor, moneda) : 'Consultar precio')
+
 export const urlWhatsapp = (numero, mensaje) =>
   `https://wa.me/${String(numero || '').replace(/[^0-9]/g, '')}${mensaje ? `?text=${encodeURIComponent(mensaje)}` : ''}`
 

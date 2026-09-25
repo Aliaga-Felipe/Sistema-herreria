@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion, validarEmail, validarTelefono } from '../comun.js'
+import { asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion, validarEmail, validarTelefono } from '../comun.js'
 import { enviarConsulta } from '../correo.js'
 
 const router = Router()
@@ -25,8 +25,9 @@ const productoVisible = alias => `${alias}.activo = TRUE AND ${alias}.publicado 
 
 const ordenPermitido = {
   novedades: 'p.creado_en DESC',
-  precio_asc: 'p.precio_venta ASC',
-  precio_desc: 'p.precio_venta DESC',
+  // Los productos sin precio ("Consultar precio") van siempre al final.
+  precio_asc: 'p.precio_venta ASC NULLS LAST',
+  precio_desc: 'p.precio_venta DESC NULLS LAST',
   nombre: 'p.nombre ASC'
 }
 
@@ -100,10 +101,9 @@ router.get('/categorias', asyncRoute(async (req, res) => {
         ) AS imagen,
         COUNT(p.id) FILTER (WHERE ${productoVisible('p')})::int AS productos_total
       FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
-      WHERE c.activo = TRUE AND c.slug = ANY($1::text[])
+      WHERE c.activo = TRUE
       GROUP BY c.id
-      ORDER BY c.orden, c.nombre`,
-    [SLUGS_CATEGORIAS_PRODUCTO]
+      ORDER BY c.orden, c.nombre`
   )
   res.json(rows)
 }))

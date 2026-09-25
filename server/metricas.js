@@ -64,7 +64,7 @@ export async function calcularMetricas({ desde = null, hasta = null } = {}, db =
       COALESCE(SUM(costo_vendido) FILTER (WHERE NOT activo AND ${enRango('vendido_en')}), 0)::float8 AS costo_vendidos,
       COALESCE(SUM(precio_venta) FILTER (WHERE activo), 0)::float8 AS ingresos_stock,
       COALESCE(SUM(costo_unitario_producto(id, horas_hombre, costo_producto)) FILTER (WHERE activo), 0)::float8 AS costo_stock,
-      COUNT(*) FILTER (WHERE activo AND precio_venta <= 0)::int AS activos_sin_precio
+      COUNT(*) FILTER (WHERE activo AND COALESCE(precio_venta, 0) <= 0)::int AS activos_sin_precio
     FROM productos`)
 
   // --- Pedidos ----------------------------------------------------------

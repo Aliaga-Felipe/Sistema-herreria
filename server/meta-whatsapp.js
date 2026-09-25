@@ -74,11 +74,19 @@ async function guardarEstado(productoId, { estado, error = null, retailerId = nu
 }
 
 // Payload del ítem de catálogo. Tira un error legible (sin datos sensibles)
-// si falta algo imprescindible para Meta: por ahora, la foto principal (la
-// descripción, el precio, el nombre y la categoría ya son obligatorios para
-// publicar en la web, ver validarPublicacion en rutas/productos.js).
+// si falta algo imprescindible para Meta: la foto principal y el precio (la
+// descripción, el nombre y la categoría ya son obligatorios para publicar
+// en la web, ver validarPublicacion en rutas/productos.js). El precio de
+// venta es opcional en el sistema, pero el catálogo de Meta exige un precio
+// numérico: a un producto sin precio NUNCA se le envía $0 (quedaría
+// publicado gratis en WhatsApp); simplemente no se sincroniza y el panel
+// muestra el motivo. En la web pública ese producto figura con
+// "Consultar precio".
+export const tienePrecio = valor => valor !== null && valor !== undefined && valor !== '' && Number(valor) > 0
+
 function construirPayload(producto, retailerId, config, configuracionNegocio) {
   if (!producto.imagen_principal) throw new Error('El producto no tiene ninguna foto cargada: el catálogo de WhatsApp exige al menos una imagen.')
+  if (!tienePrecio(producto.precio_venta)) throw new Error('El producto no tiene precio de venta ("Consultar precio"): el catálogo de WhatsApp exige un precio, así que no se envía. Cargale un precio para sincronizarlo.')
   const disponible = producto.activo && producto.publicado
   return {
     retailer_id: retailerId,

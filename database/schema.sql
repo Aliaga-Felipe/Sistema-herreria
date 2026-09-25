@@ -142,6 +142,11 @@ CREATE TABLE IF NOT EXISTS productos (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_venta NUMERIC(12,2) NOT NULL DEFAULT 0;
+-- Precio de venta OPCIONAL: NULL = "sin precio" (la web pública y el
+-- catálogo muestran "Consultar precio"). Los productos que ya tienen
+-- precio no cambian; los que tenían 0 se conservan tal cual (0 también se
+-- trata como "sin precio" al mostrarlo).
+ALTER TABLE productos ALTER COLUMN precio_venta DROP NOT NULL;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 -- Catalogo publico: categoria, URL amigable y bandera de destacado.
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria_id BIGINT REFERENCES categorias(id) ON DELETE SET NULL;
@@ -586,14 +591,15 @@ WHERE LOWER(u.rol::text) = 'empleado'
 GROUP BY u.id;
 
 -- ---------------------------------------------------------------------
--- CATEGORIAS DE PRODUCTO (lista fija)
--- Las categorías disponibles son exactamente tres, en español: Mesas,
--- Mesitas ratoneras y Fogoneros (mismos slugs que usa CATEGORIAS_PRODUCTO
--- en server/comun.js). La categoría es opcional en un borrador y
--- obligatoria para publicar en la web. Las variantes anteriores (Tables /
--- Coffee Tables / Fire Pits, Mesas ratonas) se renombran para conservar los
--- productos que ya tenían asignados. Cualquier otra categoría se elimina y
--- sus productos quedan "sin categoría" (y, por lo tanto, sin publicar).
+-- CATEGORIAS DE PRODUCTO
+-- Mesas, Mesitas ratoneras y Fogoneros son las categorías base (mismos
+-- slugs que CATEGORIAS_PRODUCTO en server/comun.js) y siempre existen. Además,
+-- el administrador puede crear categorías nuevas desde el panel
+-- (Categorías), que se conservan: este script ya NO borra ninguna otra
+-- categoría ni les quita la categoría a sus productos. La categoría es
+-- opcional en un borrador y obligatoria para publicar en la web. Las
+-- variantes anteriores (Tables / Coffee Tables / Fire Pits, Mesas ratonas)
+-- se renombran para conservar los productos que ya tenían asignados.
 -- ---------------------------------------------------------------------
 UPDATE categorias SET slug = 'mesas'
 WHERE id = (SELECT id FROM categorias WHERE slug IN ('tables') ORDER BY id LIMIT 1)
@@ -611,37 +617,21 @@ INSERT INTO categorias (nombre, slug, descripcion, orden, activo) VALUES
   ('Fogoneros', 'fogoneros', 'Fogoneros de hierro para exterior.', 3, TRUE)
 ON CONFLICT (slug) DO UPDATE SET nombre = EXCLUDED.nombre, orden = EXCLUDED.orden, activo = TRUE;
 
--- Un producto sin categoría no puede estar publicado: si todavía existe la
--- columna "publicado", los que pierden la categoría pasan a borrador.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'productos' AND column_name = 'publicado'
-  ) THEN
-    UPDATE productos SET categoria_id = NULL, publicado = FALSE
-    WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros'));
-  ELSE
-    UPDATE productos SET categoria_id = NULL
-    WHERE categoria_id IN (SELECT id FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros'));
-  END IF;
-END $$;
-DELETE FROM categorias WHERE slug NOT IN ('mesas', 'mesitas-ratoneras', 'fogoneros');
 
 -- ---------------------------------------------------------------------
 -- BORRADOR vs. PUBLICADO (validación en la base de datos)
 -- Un producto sin publicar es un borrador y puede tener datos incompletos
--- (precio, descripción técnica, historia, categoría). Para estar publicado
--- en la web necesita nombre, ID (chapita), precio > 0, descripción
--- técnica, historia y categoría: la misma regla que valida la API (ver
--- validarPublicacion en server/rutas/productos.js). Los productos que hoy
--- están publicados sin esos datos pasan a borrador antes de aplicar la
--- restricción.
+-- (descripción técnica, historia, categoría). Para estar publicado en la
+-- web necesita nombre, ID (chapita), descripción técnica, historia y
+-- categoría: la misma regla que valida la API (ver validarPublicacion en
+-- server/rutas/productos.js). El precio de venta es opcional también para
+-- publicar: sin precio, la web muestra "Consultar precio". Los productos
+-- que hoy están publicados sin esos datos pasan a borrador antes de
+-- aplicar la restricción.
 -- ---------------------------------------------------------------------
 UPDATE productos SET publicado = FALSE
 WHERE publicado AND NOT (
-    precio_venta > 0
-    AND btrim(nombre) <> ''
+    btrim(nombre) <> ''
     AND btrim(COALESCE(chapita_id, '')) <> ''
     AND btrim(COALESCE(descripcion, '')) <> ''
     AND btrim(COALESCE(historia, '')) <> ''
@@ -650,8 +640,7 @@ WHERE publicado AND NOT (
 ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_publicado_completo;
 ALTER TABLE productos ADD CONSTRAINT productos_publicado_completo CHECK (
   NOT publicado OR (
-    precio_venta > 0
-    AND btrim(nombre) <> ''
+    btrim(nombre) <> ''
     AND btrim(COALESCE(chapita_id, '')) <> ''
     AND btrim(COALESCE(descripcion, '')) <> ''
     AND btrim(COALESCE(historia, '')) <> ''
