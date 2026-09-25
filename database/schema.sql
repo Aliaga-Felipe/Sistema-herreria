@@ -769,3 +769,7 @@ UPDATE pedido_items i SET precio_unitario = pr.precio_venta
 -- O bien promover una cuenta existente:
 --   UPDATE usuarios SET rol = 'admin' WHERE email = 'tu-correo@ejemplo.com';
 -- ---------------------------------------------------------------------
+
+
+
+  DELETE FROM tareas WHERE titulo IN ('dsa', 'werwfds');
