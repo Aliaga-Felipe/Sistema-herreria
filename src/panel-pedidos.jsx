@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, dinero, duracion, etiquetaPrioridad, fecha, porcentaje, useData } from './api.js'
-import { Actions, Badge, CampoNumero, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
+import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
 import { ProductoModal, construirCuerpoProducto, sugerirIdPieza } from './panel-productos.jsx'
 
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
-const itemVacio = () => ({ producto_id: '', cantidad: 1, precio_unitario: '' })
+// Cada producto del pedido lleva su propia lista de tareas (ver
+// "TAREAS DEL PEDIDO" en server/rutas/pedidos.js). El precio no se pide:
+// el backend toma el precio de venta del producto.
+const tareaVacia = () => ({ nombre: '', minutos_estimados: '' })
+const itemVacio = () => ({ producto_id: '', cantidad: 1, tareas: [tareaVacia()] })
 
 // Orden de la lista de pedidos: por prioridad, % de avance, fecha de
 // entrega o estado, ascendente o descendente. Se ordena por pedido (no por
@@ -49,7 +53,21 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
     await api.post('/pedidos', pedido, pedidos.token)
     setCreando(false)
     await pedidos.load()
-    mostrar('Pedido creado y desplegado en etapas de producción.')
+    mostrar('Pedido creado con sus tareas de producción.')
+  }
+
+  // Edición de las tareas de un pedido ya creado (desde el detalle).
+  const editarTareas = async (accion, pedido, datos) => {
+    try {
+      const ruta = accion === 'agregar'
+        ? api.post(`/pedidos/${pedido.id}/items/${datos.itemId}/tareas`, datos.tarea, pedidos.token)
+        : api.del(`/pedidos/${pedido.id}/tareas/${datos.tareaId}`, pedidos.token)
+      const actualizado = await ruta
+      setDetalle(actualizado)
+      await pedidos.load()
+      mostrar(accion === 'agregar' ? 'Tarea agregada al pedido.' : 'Tarea quitada del pedido.')
+      return true
+    } catch (error) { mostrar(error.message, 'error'); return false }
   }
 
   // Crea un producto nuevo sin salir del alta de pedido (ver "+ Crear
@@ -104,7 +122,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 
   return (
     <>
-      <Heading kicker="Trabajo comprometido" title="Pedidos" text="Cada pedido agrupa uno o más productos y refleja su avance según las etapas de fabricación.">
+      <Heading kicker="Trabajo comprometido" title="Pedidos" text="Cada pedido agrupa uno o más productos, cada uno con sus propias tareas de producción, y refleja su avance según esas tareas.">
         <div className="actions">
           <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
             <option value="ACTIVOS">Activos</option>
@@ -159,7 +177,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           })}
         </section>
       ) : (
-        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo." action={() => setCreando(true)} label="Crear pedido" />
+        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo y definiendo sus tareas." action={() => setCreando(true)} label="Crear pedido" />
       )}
 
       {creando && (
@@ -181,6 +199,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           close={() => setDetalle(null)}
           onEstado={cambiarEstado}
           onEliminar={eliminar}
+          onTareas={editarTareas}
         />
       )}
     </>
@@ -239,10 +258,9 @@ function SelectorFecha({ value, onChange }) {
 
 // ---------------------------------------------------------------------
 // ALTA DE PEDIDO
-// El presupuesto ya no es un paso aparte: a medida que se eligen
-// productos, el resumen de mano de obra, costo de producción,
-// precio y ganancia se arma solo, con los mismos valores calculados que
-// devuelve /productos (ver conCostoCalculado en server/rutas/productos.js).
+// Por cada producto: cantidad y sus TAREAS de producción para este pedido.
+// Ni precio ni presupuesto: el precio sale del producto (lo copia el
+// backend) y el costo/ganancia se ven después en el detalle del pedido.
 // ---------------------------------------------------------------------
 function PedidoModal({ productos, productosExistentes, categorias, costoHora, token, crearProducto, close, save }) {
   const [items, setItems] = useState([itemVacio()])
@@ -253,34 +271,44 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const cambiarItem = (indice, campo, valor) =>
-    setItems(items.map((item, posicion) => (posicion === indice ? { ...item, [campo]: valor } : item)))
+  const cambiarItem = (indice, cambios) =>
+    setItems(actuales => actuales.map((item, posicion) => (posicion === indice ? { ...item, ...cambios } : item)))
+
+  const cambiarTarea = (indice, posicionTarea, campo, valor) =>
+    setItems(actuales => actuales.map((item, posicion) => (posicion === indice
+      ? { ...item, tareas: item.tareas.map((tarea, cual) => (cual === posicionTarea ? { ...tarea, [campo]: valor } : tarea)) }
+      : item)))
 
   const detalleProducto = id => productos.find(producto => String(producto.id) === String(id))
 
-  const total = items.reduce((suma, item) => {
-    const producto = detalleProducto(item.producto_id)
-    const precio = item.precio_unitario === '' ? producto?.precio_venta || 0 : Number(item.precio_unitario)
-    return suma + precio * (Number(item.cantidad) || 0)
-  }, 0)
-
-  // Presupuesto en vivo: mismo costo de mano de obra que calcula el backend
-  // por producto (costo_mano_obra), multiplicado por la cantidad de cada
-  // ítem del pedido. Es el mismo costo que se copia al crear el pedido
-  // (ver POST /pedidos en server/rutas/pedidos.js).
-  const resumen = items.reduce((acumulado, item) => {
-    const producto = detalleProducto(item.producto_id)
-    if (!producto) return acumulado
-    const cantidad = Number(item.cantidad) || 0
-    return { manoObra: acumulado.manoObra + (Number(producto.costo_mano_obra) || 0) * cantidad }
-  }, { manoObra: 0 })
-  const costoProduccion = resumen.manoObra
-  const ganancia = total - costoProduccion
+  // Al elegir un producto se proponen tareas (las del último pedido de ese
+  // producto, si hay). Sólo si todavía no se escribió ninguna tarea: nunca
+  // pisa lo que el usuario ya cargó. Son editables y propias de este pedido.
+  const elegirProducto = async (indice, productoId) => {
+    cambiarItem(indice, { producto_id: productoId })
+    if (!productoId) return
+    const vacias = items[indice]?.tareas.every(tarea => !tarea.nombre.trim())
+    if (!vacias) return
+    try {
+      const sugeridas = await api.get(`/pedidos/tareas-sugeridas?producto_id=${productoId}`, token)
+      if (sugeridas.tareas.length) {
+        setItems(actuales => actuales.map((item, posicion) => (posicion === indice && item.tareas.every(tarea => !tarea.nombre.trim())
+          ? { ...item, tareas: sugeridas.tareas.map(tarea => ({ nombre: tarea.nombre, minutos_estimados: tarea.minutos_estimados || '' })) }
+          : item)))
+      }
+    } catch { /* sin sugerencias: se cargan a mano */ }
+  }
 
   const enviar = async event => {
     event.preventDefault()
     const validos = items.filter(item => item.producto_id)
     if (!validos.length) return setError('Elegí al menos un producto.')
+    for (const item of validos) {
+      const nombre = detalleProducto(item.producto_id)?.nombre || 'el producto'
+      const tareas = item.tareas.filter(tarea => tarea.nombre.trim() || tarea.minutos_estimados !== '')
+      if (!tareas.length) return setError(`Agregá al menos una tarea para "${nombre}".`)
+      if (tareas.some(tarea => !tarea.nombre.trim())) return setError(`Cada tarea de "${nombre}" necesita un nombre.`)
+    }
     setBusy(true); setError('')
     try {
       await save({
@@ -290,7 +318,9 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
         items: validos.map(item => ({
           producto_id: item.producto_id,
           cantidad: Number(item.cantidad) || 1,
-          precio_unitario: item.precio_unitario === '' ? undefined : Number(item.precio_unitario)
+          tareas: item.tareas
+            .filter(tarea => tarea.nombre.trim())
+            .map(tarea => ({ nombre: tarea.nombre.trim(), minutos_estimados: Number(tarea.minutos_estimados) || 0 }))
         }))
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -299,13 +329,13 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   if (!productos.length) {
     return (
       <Modal title="Nuevo pedido" close={close}>
-        <Empty title="Primero creá un producto" text="Los pedidos se arman con productos del catálogo y sus etapas." action={close} label="Entendido" />
+        <Empty title="Primero creá un producto" text="Los pedidos se arman con productos del catálogo; las tareas se definen en cada pedido." action={close} label="Entendido" />
       </Modal>
     )
   }
 
   return (
-    <Modal title="Nuevo pedido" subtitle="Productos → presupuesto: todo en un solo paso. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
+    <Modal title="Nuevo pedido" subtitle="Elegí los productos y definí las tareas de este pedido. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
       <form onSubmit={enviar}>
         <div className="form-grid">
           <label>Fecha de entrega
@@ -324,30 +354,48 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
         <div className="stage-edit">
           <div>
             <b>Productos del pedido</b>
-            <span>Cada producto despliega sus etapas como tareas de producción. Si el producto todavía no existe, se puede crear sin salir de acá.</span>
+            <span>Elegí el producto y la cantidad; el precio se toma del producto. Si el producto todavía no existe, se puede crear sin salir de acá.</span>
           </div>
 
           {items.map((item, indice) => {
             const producto = detalleProducto(item.producto_id)
+            const cantidad = Number(item.cantidad) || 1
+            const minutosTotal = item.tareas.reduce((total, tarea) => total + (Number(tarea.minutos_estimados) || 0), 0) * cantidad
             return (
               <div className="item-bloque" key={indice}>
                 <div className="item-linea">
-                  <select required value={item.producto_id} onChange={event => cambiarItem(indice, 'producto_id', event.target.value)}>
+                  <select required value={item.producto_id} onChange={event => elegirProducto(indice, event.target.value)}>
                     <option value="">Seleccionar producto</option>
                     {productos.map(opcion => <option key={opcion.id} value={opcion.id}>{opcion.nombre} — {dinero(opcion.precio_venta)}</option>)}
                   </select>
-                  <input min="1" type="number" value={item.cantidad} onChange={event => cambiarItem(indice, 'cantidad', event.target.value)} title="Cantidad" />
-                  <CampoNumero min="0" step="0.01" value={item.precio_unitario} onChange={valor => cambiarItem(indice, 'precio_unitario', valor)} placeholder={producto ? String(producto.precio_venta) : 'Precio'} title="Precio unitario" />
+                  <input min="1" type="number" value={item.cantidad} onChange={event => cambiarItem(indice, { cantidad: event.target.value })} title="Cantidad" />
                   <button type="button" onClick={() => setItems(items.filter((_, posicion) => posicion !== indice))}>×</button>
                 </div>
 
                 <button type="button" className="add-stage nuevo-producto-inline" onClick={() => setCreandoProductoPara(indice)}>+ Crear producto nuevo</button>
 
                 {producto && (
-                  <div className="tags">
-                    {producto.etapas.map(etapa => (
-                      <span key={etapa.id}>{etapa.orden}. {etapa.nombre} · {duracion(etapa.minutos_estimados * (Number(item.cantidad) || 1))}</span>
+                  <div className="item-tareas">
+                    <div>
+                      <b>Tareas</b>
+                      <span className="muted"> · propias de este pedido: se asignan en Tareas y miden el semáforo.</span>
+                    </div>
+
+                    <div className="etapa-grid-head">
+                      <small>#</small><small>Tarea</small><small>Min. por unidad</small><small />
+                    </div>
+
+                    {item.tareas.map((tarea, posicionTarea) => (
+                      <div className="etapa-grid-row" key={posicionTarea}>
+                        <small>{posicionTarea + 1}</small>
+                        <input value={tarea.nombre} onChange={event => cambiarTarea(indice, posicionTarea, 'nombre', event.target.value)} placeholder="Ej. Corte, Soldadura, Pintura" maxLength={120} />
+                        <input min="0" type="number" value={tarea.minutos_estimados} onChange={event => cambiarTarea(indice, posicionTarea, 'minutos_estimados', event.target.value)} placeholder="0" />
+                        <button type="button" onClick={() => cambiarItem(indice, { tareas: item.tareas.filter((_, cual) => cual !== posicionTarea) })}>×</button>
+                      </div>
                     ))}
+
+                    <button type="button" className="add-stage" onClick={() => cambiarItem(indice, { tareas: [...item.tareas, tareaVacia()] })}>+ Agregar tarea</button>
+                    <p className="stage-total">{item.tareas.length} tareas · Tiempo estimado {duracion(minutosTotal)}{cantidad > 1 ? ` (${cantidad} unidades)` : ''}</p>
                   </div>
                 )}
               </div>
@@ -355,19 +403,6 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
           })}
 
           <button type="button" className="add-stage" onClick={() => setItems([...items, itemVacio()])}>+ Agregar producto</button>
-        </div>
-
-        <div className="stage-edit">
-          <div>
-            <b>Presupuesto</b>
-            <span>Se arma solo con la mano de obra y el precio de los productos elegidos arriba.</span>
-          </div>
-          <p className="stage-total">
-            Mano de obra {dinero(resumen.manoObra)} ·
-            <b> Costo de producción {dinero(costoProduccion)}</b> ·
-            Precio de venta {dinero(total)} ·
-            <b className={ganancia >= 0 ? ' positivo' : ' negativo'}> Ganancia {dinero(ganancia)}</b>
-          </p>
         </div>
 
         <label>Notas del pedido<textarea value={notas} onChange={event => setNotas(event.target.value)} placeholder="Detalles de fabricación, condiciones de pago, etc." /></label>
@@ -389,7 +424,7 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
           close={() => setCreandoProductoPara(null)}
           save={async nuevoProducto => {
             const creado = await crearProducto(nuevoProducto)
-            cambiarItem(creandoProductoPara, 'producto_id', String(creado.id))
+            elegirProducto(creandoProductoPara, String(creado.id))
             setCreandoProductoPara(null)
           }}
         />,
@@ -400,12 +435,27 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
 }
 
 // ---------------------------------------------------------------------
-// DETALLE DEL PEDIDO (solo informativo)
-// Muestra el avance de las etapas de cada producto. Acá no se asignan
-// empleados: eso se hace únicamente desde la sección Tareas.
+// DETALLE DEL PEDIDO
+// Muestra el avance de las tareas de cada producto y permite agregar o
+// quitar tareas pendientes de ESTE pedido. Acá no se asignan empleados:
+// eso se hace únicamente desde la sección Tareas.
 // ---------------------------------------------------------------------
-function DetallePedido({ pedido, close, onEstado, onEliminar }) {
+function DetallePedido({ pedido, close, onEstado, onEliminar, onTareas }) {
   const ganancia = pedido.total - pedido.costo_estimado
+  const [nuevas, setNuevas] = useState({})
+  const nuevaDe = itemId => nuevas[itemId] || tareaVacia()
+  const cambiarNueva = (itemId, campo, valor) => setNuevas({ ...nuevas, [itemId]: { ...nuevaDe(itemId), [campo]: valor } })
+
+  const agregar = async item => {
+    const tarea = nuevaDe(item.id)
+    if (!tarea.nombre.trim()) return
+    // El tiempo se carga por unidad, igual que al crear el pedido.
+    const ok = await onTareas('agregar', pedido, {
+      itemId: item.id,
+      tarea: { nombre: tarea.nombre.trim(), minutos_estimados: (Number(tarea.minutos_estimados) || 0) * (Number(item.cantidad) || 1) }
+    })
+    if (ok) setNuevas({ ...nuevas, [item.id]: tareaVacia() })
+  }
 
   return (
     <Modal title={`Pedido ${pedido.codigo}`} subtitle={`${pedido.avance}% completado · ${pedido.etapas_completadas} de ${pedido.etapas_totales} etapas`} close={close} ancho="760px">
@@ -446,8 +496,8 @@ function DetallePedido({ pedido, close, onEstado, onEliminar }) {
             </p>
 
             <div className="etapas-tabla">
-              {pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).map(etapa => (
-                <div className="etapa-fila" key={etapa.id}>
+              {pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).map((etapa, _, delItem) => (
+                <div className="etapa-fila etapa-fila-editable" key={etapa.id}>
                   <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
                   <Badge estado={etapa.estado} />
                   <span className="etapa-tiempo">
@@ -456,8 +506,18 @@ function DetallePedido({ pedido, close, onEstado, onEliminar }) {
                   </span>
                   <Semaforo valor={etapa.semaforo} compacto />
                   <span className="etapa-responsable" title="La asignación se gestiona desde Tareas">{etapa.responsable || 'Sin asignar'}</span>
+                  {etapa.estado !== 'COMPLETADA' && delItem.length > 1
+                    ? <button type="button" title="Quitar esta tarea del pedido" onClick={() => window.confirm(`¿Quitar la tarea "${etapa.nombre}" de este pedido?`) && onTareas('quitar', pedido, { tareaId: etapa.id })}>×</button>
+                    : <span />}
                 </div>
               ))}
+            </div>
+
+            <div className="etapa-grid-row">
+              <small>+</small>
+              <input value={nuevaDe(item.id).nombre} onChange={event => cambiarNueva(item.id, 'nombre', event.target.value)} placeholder="Nueva tarea para este producto" maxLength={120} />
+              <input min="0" type="number" value={nuevaDe(item.id).minutos_estimados} onChange={event => cambiarNueva(item.id, 'minutos_estimados', event.target.value)} placeholder="Min/u" title="Minutos por unidad" />
+              <button type="button" title="Agregar tarea" onClick={() => agregar(item)}>✓</button>
             </div>
           </section>
         )

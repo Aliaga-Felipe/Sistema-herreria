@@ -33,9 +33,25 @@ function usePrefiereMenosMovimiento() {
   return prefiere
 }
 
-function LetraTitulo({ char, indice, centro, progreso, reducido }) {
+// Distancia (px por letra) desde la que cada letra entra al título. En
+// escritorio es la original (26px); en pantallas angostas se achica en
+// proporción al ancho, para que las letras de los extremos no arranquen
+// cientos de píxeles fuera de la pantalla (eso ensanchaba la página en el
+// celular mientras corría la animación).
+function usePasoLetras() {
+  const calcular = () => (typeof window === 'undefined' ? 26 : Math.min(26, Math.max(8, window.innerWidth / 40)))
+  const [paso, setPaso] = useState(calcular)
+  useEffect(() => {
+    const alCambiar = () => setPaso(calcular())
+    window.addEventListener('resize', alCambiar)
+    return () => window.removeEventListener('resize', alCambiar)
+  }, [])
+  return paso
+}
+
+function LetraTitulo({ char, indice, centro, progreso, reducido, paso }) {
   const distancia = indice - centro
-  const xInicial = distancia * 26
+  const xInicial = distancia * paso
   const x = useTransform(progreso, [0, 1], [reducido ? 0 : xInicial, 0])
   const opacidad = useTransform(progreso, [0, 0.85, 1], [reducido ? 1 : 0, reducido ? 1 : 0.4, 1])
   const esEspacio = char === ' '
@@ -52,6 +68,7 @@ function LetraTitulo({ char, indice, centro, progreso, reducido }) {
 export default function DestacadosAnimados({ productos, moneda }) {
   const ref = useRef(null)
   const reducido = usePrefiereMenosMovimiento()
+  const paso = usePasoLetras()
 
   // El progreso 0→1 corre mientras la sección entra desde abajo hasta que
   // queda arriba del todo: no fija/"engancha" el scroll, solo escalona la
@@ -71,14 +88,30 @@ export default function DestacadosAnimados({ productos, moneda }) {
 
   const letras = TITULO.split('')
   const centroLetras = Math.floor(letras.length / 2)
+  // Las letras se agrupan por palabra (cada palabra no se parte, pero entre
+  // palabras sí puede haber salto de línea): antes eran 20 bloques pegados
+  // sin ningún punto de corte, y en el celular el título quedaba más ancho
+  // que la pantalla. El índice de cada letra sigue siendo el global, así
+  // que la animación es la misma.
+  const palabras = TITULO.split(' ').reduce((grupos, palabra) => {
+    const inicio = grupos.length ? grupos[grupos.length - 1].inicio + grupos[grupos.length - 1].palabra.length + 1 : 0
+    return [...grupos, { palabra, inicio }]
+  }, [])
   const cargando = productos === null
   const vacio = !cargando && productos.length === 0
 
   return (
     <div className="destacados-animados" ref={ref}>
       <h2 className="destacados-titulo" aria-hidden="true">
-        {letras.map((char, indice) => (
-          <LetraTitulo key={indice} char={char} indice={indice} centro={centroLetras} progreso={progresoTitulo} reducido={reducido} />
+        {palabras.map(({ palabra, inicio }, numero) => (
+          <React.Fragment key={inicio}>
+            {numero > 0 && ' '}
+            <span className="destacados-palabra">
+              {palabra.split('').map((char, posicion) => (
+                <LetraTitulo key={inicio + posicion} char={char} indice={inicio + posicion} centro={centroLetras} progreso={progresoTitulo} reducido={reducido} paso={paso} />
+              ))}
+            </span>
+          </React.Fragment>
         ))}
       </h2>
       <span className="sr-only">Productos destacados</span>
