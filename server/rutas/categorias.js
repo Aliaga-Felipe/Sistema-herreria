@@ -11,7 +11,7 @@ const router = Router()
 
 const consultaCategorias = `SELECT c.id, c.nombre, c.slug, c.descripcion, c.orden, c.activo, c.imagen_url, c.creado_en,
     COUNT(p.id)::int AS productos_total
-  FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id
+  FROM categorias c LEFT JOIN productos p ON p.categoria_id = c.id AND NOT p.eliminado
   GROUP BY c.id`
 
 // Las categorías son una lista fija (Mesas, Mesitas ratoneras, Fogoneros, ver

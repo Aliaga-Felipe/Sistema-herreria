@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { api, dinero, duracion, useData } from './api.js'
+import { api, dinero, fecha, useData } from './api.js'
 import { Actions, CampoNumero, Empty, Heading, Modal, useAviso } from './ui.jsx'
-
-const etapaVacia = () => ({ nombre: '', minutos_estimados: 60 })
-const etapasSugeridas = [
-  { nombre: 'Diseño y medidas', minutos_estimados: 30 },
-  { nombre: 'Corte de material', minutos_estimados: 60 },
-  { nombre: 'Soldadura', minutos_estimados: 120 },
-  { nombre: 'Pintura y terminación', minutos_estimados: 45 }
-]
 
 // Fila vacía de la sección "Materiales utilizados" (ver ProductoModal):
 // nombre libre, sin catálogo compartido entre productos.
@@ -51,7 +43,6 @@ export const construirCuerpoProducto = producto => ({
   medidas: producto.medidas?.trim() || '',
   costo_producto: Number(producto.costo_producto) || 0,
   historia: producto.historia?.trim() || '',
-  etapas: producto.etapas.map(etapa => ({ ...etapa, minutos_estimados: Number(etapa.minutos_estimados) })),
   materiales: (producto.materiales || []).map(material => ({
     nombre: material.nombre?.trim() || '',
     precio_unitario: Number(material.precio_unitario) || 0,
@@ -106,7 +97,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   }
 
   const eliminar = async producto => {
-    if (!window.confirm(`¿Eliminar "${producto.nombre}"? Si tiene pedidos asociados solo se desactivará.`)) return
+    if (!window.confirm(`¿Eliminar "${producto.nombre}"? Deja de verse en el panel y en la web, y se contabiliza como vendido en las estadísticas.`)) return
     try {
       const respuesta = await api.del(`/productos/${producto.id}`, productos.token)
       await productos.load()
@@ -118,7 +109,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
     try {
       await api.patch(`/productos/${producto.id}/activo`, { activo: !producto.activo }, productos.token)
       await productos.load()
-      mostrar(producto.activo ? 'Producto desactivado.' : 'Producto reactivado.')
+      mostrar(producto.activo ? 'Producto desactivado: se contabiliza como vendido.' : 'Producto reactivado: vuelve a estar disponible y se anuló su venta.')
     } catch (error) { mostrar(error.message, 'error') }
   }
 
@@ -137,7 +128,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
   return (
     <>
-      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, categoría, fotos y las etapas que lo fabrican. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
+      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, costos, categoría y fotos. Las tareas de fabricación se definen en cada pedido. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
         <button className="primary" onClick={nuevoProducto}>+ Nuevo producto</button>
       </Heading>
 
@@ -154,7 +145,8 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
               <div className="product-info">
                 <h3>
                   {producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}
-                  {!producto.activo && <span className="badge-inactivo">Inactivo</span>}
+                  {/* Desactivado = vendido (mismo criterio que Panel de control y Estadísticas). */}
+                  {!producto.activo && <span className="badge-inactivo" title={`Vendido a ${dinero(producto.precio_vendido)}`}>Vendido {fecha(producto.vendido_en)}</span>}
                   {producto.publicado
                     ? <span className="badge-publicado" title="Visible en la web pública">En la web</span>
                     : <span className="badge-inactivo" title="Oculto en la web pública: sólo se ve en el panel">No publicado</span>}
@@ -173,7 +165,6 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                 <div className="product-numbers">
                   <span><small>Precio</small><b>{dinero(producto.precio_venta)}</b></span>
                   <span className={producto.margen >= 0 ? 'positivo' : 'negativo'}><small>Margen</small><b>{dinero(producto.margen)}</b></span>
-                  <span><small>Duración</small><b>{duracion(producto.minutos_totales)}</b></span>
                   <span><small>Horas-hombre</small><b>{producto.horas_hombre || '—'}</b></span>
                 </div>
 
@@ -184,16 +175,11 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                   <span><small>Costo total</small><b>{dinero(producto.costo_calculado_total)}</b></span>
                 </div>
 
-                <div className="tags">
-                  {producto.etapas.map(etapa => (
-                    <span key={etapa.id}>{etapa.orden}. {etapa.nombre} · {duracion(etapa.minutos_estimados)}</span>
-                  ))}
-                </div>
               </div>
 
               <div className="card-buttons">
                 <button onClick={() => editarProducto(producto)}>Editar</button>
-                <button className={producto.activo ? '' : 'activar-resaltado'} onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar' : 'Activar'}</button>
+                <button className={producto.activo ? '' : 'activar-resaltado'} title={producto.activo ? 'Lo saca de la venta y lo cuenta como vendido' : 'Vuelve a estar disponible y anula la venta'} onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar (vendido)' : 'Reactivar'}</button>
                 {producto.publicado && (
                   <button onClick={() => reintentarWhatsapp(producto)}>
                     {producto.whatsapp_sync_estado === 'ERROR' ? 'Reintentar WhatsApp' : 'Sincronizar WhatsApp'}
@@ -205,7 +191,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
           ))}
         </section>
       ) : (
-        <Empty title="No hay productos cargados" text="Creá el primer producto con sus etapas de fabricación." action={nuevoProducto} label="Crear producto" />
+        <Empty title="No hay productos cargados" text="Creá el primer producto con su precio y sus costos." action={nuevoProducto} label="Crear producto" />
       )}
 
       {editando && (
@@ -243,15 +229,11 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   // armando con mano de obra + este valor + costo de materiales.
   const [costoProducto] = useState(producto.costo_producto ?? 0)
   const [historia, setHistoria] = useState(producto.historia || '')
-  const [etapas, setEtapas] = useState(producto.etapas?.length ? producto.etapas.map(({ nombre, minutos_estimados }) => ({ nombre, minutos_estimados })) : etapasSugeridas)
   const [materiales, setMateriales] = useState(
     producto.materiales?.length ? producto.materiales.map(({ nombre, precio_unitario, cantidad }) => ({ nombre, precio_unitario, cantidad })) : []
   )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-
-  const cambiarEtapa = (indice, campo, valor) =>
-    setEtapas(etapas.map((etapa, posicion) => (posicion === indice ? { ...etapa, [campo]: valor } : etapa)))
 
   const cambiarMaterial = (indice, campo, valor) =>
     setMateriales(materiales.map((material, posicion) => (posicion === indice ? { ...material, [campo]: valor } : material)))
@@ -265,8 +247,6 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   // Marca junto a las etiquetas: los campos que pasan a ser obligatorios
   // al publicar muestran "*"; en un borrador se ven como opcionales.
   const marca = publicado ? ' *' : ' (opcional)'
-
-  const minutosTotal = etapas.reduce((total, etapa) => total + (Number(etapa.minutos_estimados) || 0), 0)
 
   // Borrador vs. publicado:
   // - Sin "Publicar en la web" el producto es un BORRADOR: sólo se exige el
@@ -302,8 +282,6 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
     }
     if (precio !== '' && Number(precio) < 0) return setError('El precio de venta no puede ser negativo.')
     if (horasHombre !== '' && !(Number(horasHombre) >= 0)) return setError('Las horas-hombre no pueden ser negativas.')
-    if (!etapas.length) return setError('El producto necesita al menos una etapa.')
-    if (etapas.some(etapa => !etapa.nombre.trim())) return setError('Cada etapa necesita un nombre.')
     if (medidas.trim().length > 200) return setError('Las medidas no pueden superar los 200 caracteres.')
     if (materiales.some(material => !material.nombre.trim())) return setError('Cada material necesita un nombre.')
     if (materiales.some(material => !(Number(material.precio_unitario) >= 0))) return setError('El precio unitario de cada material no puede ser negativo.')
@@ -312,13 +290,13 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
     try {
       await save({
         id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, publicado,
-        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, etapas, materiales
+        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, materiales
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
   return (
-    <Modal title={editar ? 'Editar producto' : 'Nuevo producto'} subtitle="Definí el precio, la categoría, las fotos y las etapas de fabricación." close={close} ancho="720px">
+    <Modal title={editar ? 'Editar producto' : 'Nuevo producto'} subtitle="Definí el precio, los costos, la categoría y las fotos. Las tareas se cargan en cada pedido." close={close} ancho="720px">
       <form onSubmit={enviar}>
         <div className="form-grid config-grid">
           <label>Nombre del producto
@@ -380,30 +358,6 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
         {editar
           ? <GestorImagenes productoId={producto.id} imagenesIniciales={producto.imagenes || []} token={token} />
           : <p className="muted" style={{ marginTop: 4 }}>Guardá el producto para poder cargarle fotos.</p>}
-
-        <div className="stage-edit">
-          <div>
-            <b>Etapas de fabricación</b>
-            <span>Nombre de cada etapa, para asignar tareas; la duración estimada es opcional. Esto es información interna: nunca se muestra en la web pública.</span>
-          </div>
-
-          <div className="etapa-grid-head">
-            <small>#</small><small>Etapa</small><small>Minutos (opcional)</small><small />
-          </div>
-
-          {etapas.map((etapa, indice) => (
-            <div className="etapa-grid-row" key={indice}>
-              <small>{indice + 1}</small>
-              <input required value={etapa.nombre} onChange={event => cambiarEtapa(indice, 'nombre', event.target.value)} placeholder="Nombre de la etapa" />
-              <input min="0" type="number" value={etapa.minutos_estimados} onChange={event => cambiarEtapa(indice, 'minutos_estimados', event.target.value)} placeholder="0" />
-              <button type="button" onClick={() => setEtapas(etapas.filter((_, posicion) => posicion !== indice))}>×</button>
-            </div>
-          ))}
-
-          <button type="button" className="add-stage" onClick={() => setEtapas([...etapas, etapaVacia()])}>+ Agregar etapa</button>
-
-          <p className="stage-total">Duración total {duracion(minutosTotal)}</p>
-        </div>
 
         <div className="stage-edit">
           <div>

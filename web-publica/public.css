@@ -29,6 +29,17 @@
   --fuente-mono: 'Cutive Mono', 'Courier New', monospace;
   --fuente-historia: 'Courier Prime', 'Cutive Mono', 'Courier New', monospace;
 
+  /* Escala tipográfica fluida: cada tamaño crece con el ancho de pantalla
+     entre un mínimo pensado para teléfonos de 320px y el valor que ya
+     tenía el diseño de escritorio (el máximo es el tamaño original, así
+     que en escritorio no cambia nada). */
+  --fs-menu-movil: clamp(1.4rem, 1rem + 2.6vw, 1.9rem);
+  --fs-boton: clamp(0.72rem, 0.68rem + 0.25vw, 0.78rem);
+  --ls-boton: clamp(0.1em, 0.04em + 0.9vw, 0.16em);
+  --pad-boton: 15px clamp(18px, 4vw, 30px);
+  --fs-eyebrow: clamp(0.66rem, 0.62rem + 0.2vw, 0.72rem);
+  --ls-eyebrow: clamp(0.14em, 0.08em + 0.9vw, 0.22em);
+
   --radio: 2px;
   --transicion: 420ms cubic-bezier(0.16, 1, 0.3, 1);
   --header-alto: 76px;
@@ -43,6 +54,18 @@
 }
 
 .public-root * { box-sizing: border-box; }
+
+/* Los estilos del panel de administración se cargan en toda la app, y uno
+   de ellos (auth.css: ".product-editor input, select, textarea") termina
+   aplicando a CUALQUIER select/textarea un margen lateral de 40px y un
+   borde redondeado: en la web pública eso empujaba los campos (filtros del
+   catálogo, formulario de contacto) fuera de su contenedor. Se neutraliza
+   acá, sólo dentro de la web pública, sin tocar el panel. */
+.public-root input, .public-root select, .public-root textarea { margin: 0; max-width: 100%; min-width: 0; }
+
+/* Textos largos (nombres de productos, direcciones, correos) se parten
+   antes que desbordar el ancho disponible. */
+.public-root h1, .public-root h2, .public-root h3, .public-root h4, .public-root p, .public-root a, .public-root li, .public-root address { overflow-wrap: break-word; }
 
 .public-root img { max-width: 100%; display: block; }
 
@@ -70,8 +93,8 @@
 .eyebrow-public {
   font-family: var(--fuente-texto);
   text-transform: uppercase;
-  letter-spacing: 0.22em;
-  font-size: 0.72rem;
+  letter-spacing: var(--ls-eyebrow);
+  font-size: var(--fs-eyebrow);
   color: var(--arena);
   margin: 0 0 14px;
 }
@@ -179,28 +202,70 @@
 .hamburguesa.abierto span:nth-child(2) { opacity: 0; }
 .hamburguesa.abierto span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
+.hamburguesa:focus-visible { outline: 1px solid var(--arena); outline-offset: 2px; }
+
+/* MENÚ MÓVIL
+   La capa ocupa exactamente el viewport (position: fixed + inset: 0) y
+   recorta lo que queda afuera: el panel cerrado espera a la derecha pero
+   DENTRO de la capa, así que nunca agrega ancho a la página ni asoma sobre
+   el contenido. Va debajo del header (z-index 100) para que la hamburguesa
+   siga visible y se pueda cerrar el menú. */
+.menu-movil-capa {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear 420ms;
+}
+.menu-movil-capa.abierto { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+
+.menu-movil-fondo {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 9, 8, 0.6);
+  opacity: 0;
+  transition: opacity var(--transicion);
+}
+.menu-movil-capa.abierto .menu-movil-fondo { opacity: 1; }
+
+/* Panel lateral: ancho propio (nunca más ancho que la pantalla), alto
+   completo, con el contenido debajo del header y scroll interno si la
+   pantalla es muy baja (teléfono apaisado). */
 .menu-movil {
-  position: fixed; inset: 0;
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: min(380px, 86%);
   background: var(--negro);
-  z-index: 105;
+  border-left: 1px solid var(--borde-claro);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 32px;
+  padding: calc(var(--header-alto) + 12px) clamp(20px, 7vw, 32px) 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform: translateX(100%);
   transition: transform var(--transicion);
 }
 .menu-movil.abierto { transform: translateX(0); }
-.menu-movil a {
+/* Sólo los enlaces de navegación (hijos directos). Antes era
+   ".menu-movil a", que también alcanzaba al botón de WhatsApp: el botón
+   heredaba la tipografía display a 1.9rem con el espaciado de letras de
+   botón y sin poder partirse, y por eso desbordaba el menú. */
+.menu-movil > a {
   font-family: var(--fuente-display);
-  font-size: 1.9rem;
+  font-size: var(--fs-menu-movil);
+  line-height: 1.2;
   padding: 14px 0;
   border-bottom: 1px solid var(--borde-claro);
   color: var(--texto-claro);
 }
 .menu-movil .nav-cta { display: flex; margin-top: 28px; }
+.menu-movil .nav-cta .btn-public { line-height: 1.4; }
 
 @media (min-width: 960px) {
+  .menu-movil-capa { display: none; }
   .nav-public { display: flex; }
   .nav-cta { display: flex; }
   .hamburguesa { display: none; }
@@ -214,14 +279,21 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 15px 30px;
-  font-size: 0.78rem;
+  padding: var(--pad-boton);
+  font-size: var(--fs-boton);
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--ls-boton);
   border: 1px solid transparent;
   border-radius: var(--radio);
   transition: background var(--transicion), color var(--transicion), border-color var(--transicion), transform 220ms ease;
-  white-space: nowrap;
+  /* Antes "nowrap": en pantallas angostas el texto del botón (por ejemplo
+     "Consultar por WhatsApp") quedaba más ancho que el propio botón y se
+     salía por los costados. Ahora puede partirse en dos líneas centradas
+     si no entra; en escritorio entra en una sola línea como siempre. */
+  white-space: normal;
+  text-align: center;
+  max-width: 100%;
+  text-wrap: balance;
 }
 .btn-public:active { transform: scale(0.98); }
 .btn-madera { background: var(--madera); color: var(--texto-claro); }
@@ -333,6 +405,14 @@
 }
 .destacados-letra { display: inline-block; will-change: transform, opacity; }
 .destacados-letra-espacio { width: 0.3em; }
+/* Cada palabra del título se mantiene entera y las palabras pueden pasar
+   a otra línea. El espacio real entre palabras mide lo mismo que el viejo
+   espaciador (0.3em) para no cambiar el aspecto en escritorio. */
+.destacados-palabra { display: inline-block; white-space: nowrap; }
+.destacados-titulo { max-width: 100%; }
+/* Mientras las letras entran desde los costados, la sección contiene ese
+   recorrido (clip, no crea barra de scroll): nunca ensancha la página. */
+.seccion-destacados { overflow-x: clip; }
 
 .destacados-subtitulo {
   max-width: 52ch;

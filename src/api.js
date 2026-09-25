@@ -79,3 +79,21 @@ export const etiquetaPrioridad = prioridad => {
   const nivel = Number(prioridad) || 0
   return nivel >= 2 ? 'Urgente' : nivel === 1 ? 'Alta' : 'Normal'
 }
+
+// Vuelve a pedir los datos cada `ms` milisegundos y cada vez que la
+// pestaña vuelve a estar visible: el Panel de control y Estadísticas se
+// mantienen al día cuando cambian productos, pedidos o etapas (también
+// desde otra sesión) sin tener que recargar la página.
+export function useAutoRefresco(load, ms = 30000) {
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === 'visible') load() }
+    const intervalo = setInterval(alVolver, ms)
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', alVolver)
+    return () => {
+      clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', alVolver)
+    }
+  }, [load, ms])
+}

@@ -6,7 +6,7 @@ const router = Router()
 
 const consultaObjetivos = `SELECT o.id, o.producto_id, p.nombre AS producto, o.cantidad_objetivo, o.tipo_recompensa,
     o.valor_recompensa::float8 AS valor_recompensa, o.descripcion_recompensa, o.activo, o.creado_en, o.actualizado_en
-  FROM objetivos_produccion o JOIN productos p ON p.id = o.producto_id`
+  FROM objetivos_produccion o JOIN productos p ON p.id = o.producto_id AND NOT p.eliminado`
 
 // -----------------------------------------------------------------------
 // OBJETIVOS DE PRODUCCIÓN DIARIA (uno por producto, editable)
@@ -25,7 +25,7 @@ router.put('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res
   const valor = Math.max(0, decimal(valor_recompensa))
   if (tipo_recompensa === 'libre' && !descripcion_recompensa?.trim()) throw fallo('Describí la recompensa para este objetivo.')
 
-  const producto = await pool.query('SELECT id FROM productos WHERE id = $1', [req.params.productoId])
+  const producto = await pool.query('SELECT id FROM productos WHERE id = $1 AND NOT eliminado', [req.params.productoId])
   if (!producto.rows[0]) throw fallo('Producto no encontrado.', 404)
 
   const { rows } = await pool.query(

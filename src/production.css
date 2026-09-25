@@ -484,7 +484,7 @@
 
 .item-linea {
     display: grid;
-    grid-template-columns: 1fr 70px 100px 26px;
+    grid-template-columns: 1fr 70px 26px;
     gap: 8px;
     align-items: center;
 }
@@ -610,6 +610,26 @@
 
 .etapa-fila select:disabled {
     opacity: .45;
+}
+
+/* Detalle del pedido: las tareas pendientes se pueden quitar (columna
+   extra con el botón ×). Mismo look de botón que .etapa-grid-row. */
+.etapa-fila-editable {
+    grid-template-columns: 1.4fr .8fr 1fr .8fr 1.1fr 26px;
+}
+
+.etapa-fila-editable button {
+    background: none;
+    border: 1px solid #4a423c;
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+/* Tareas del producto dentro del alta de pedido. */
+.item-tareas {
+    margin-top: 10px;
 }
 
 /* Responsable de la etapa en el detalle del pedido: solo lectura (la

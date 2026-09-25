@@ -46,6 +46,54 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
   res.json(rows)
 }))
 
+// ---------------------------------------------------------------------
+// TAREAS DEL PEDIDO
+// Las tareas (etapas de producción) pertenecen al PEDIDO, no al producto:
+// se definen al crear el pedido, una lista por cada producto del pedido, y
+// se guardan en pedido_etapas (una fila por tarea, con su propio nombre,
+// orden y tiempo estimado). Dos pedidos del mismo producto pueden tener
+// tareas distintas y editarlas nunca modifica el producto. Desde ahí siguen
+// funcionando igual que antes: se asignan en Tareas, el empleado las
+// completa en Mis tareas, generan semáforo/recompensas y definen el avance,
+// el estado del pedido y los gastos de producción de las estadísticas.
+// ---------------------------------------------------------------------
+
+// Valida la lista de tareas de un producto del pedido. Los minutos que
+// llegan son POR UNIDAD (como se cargan en el formulario) y se multiplican
+// por la cantidad del producto.
+const normalizarTareas = (tareas, nombreProducto) => {
+  if (!Array.isArray(tareas) || !tareas.length) throw fallo(`Agregá al menos una tarea para "${nombreProducto}".`)
+  return tareas.map((tarea, indice) => {
+    const nombre = tarea?.nombre?.toString().trim()
+    if (!nombre) throw fallo(`Cada tarea de "${nombreProducto}" necesita un nombre.`)
+    if (nombre.length > 120) throw fallo('El nombre de una tarea no puede superar los 120 caracteres.')
+    const minutos = Math.max(0, entero(tarea?.minutos_estimados) || 0)
+    return { nombre, orden: indice + 1, minutos_por_unidad: minutos }
+  })
+}
+
+// Tareas sugeridas para un producto al armar un pedido nuevo: las del
+// último pedido de ese producto (minutos por unidad) o, si nunca se pidió,
+// las etapas que tenía cargadas antes de que las tareas pasaran al pedido
+// (tabla etapas_producto, sólo lectura). Es una ayuda para no tipear de
+// nuevo: el admin las puede cambiar libremente para este pedido.
+router.get('/tareas-sugeridas', auth(['admin']), asyncRoute(async (req, res) => {
+  const productoId = req.query.producto_id
+  if (!productoId) throw fallo('Indicá el producto.')
+  const ultimo = await pool.query(
+    `SELECT i.id, i.cantidad FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
+     WHERE i.producto_id = $1 AND EXISTS (SELECT 1 FROM pedido_etapas e WHERE e.pedido_item_id = i.id)
+     ORDER BY p.creado_en DESC, i.id DESC LIMIT 1`, [productoId])
+  if (ultimo.rows[0]) {
+    const { rows } = await pool.query(
+      `SELECT nombre, GREATEST(0, ROUND(minutos_estimados::numeric / $2))::int AS minutos_estimados
+       FROM pedido_etapas WHERE pedido_item_id = $1 ORDER BY orden, id`, [ultimo.rows[0].id, Math.max(1, ultimo.rows[0].cantidad)])
+    return res.json({ origen: 'ultimo_pedido', tareas: rows })
+  }
+  const { rows } = await pool.query('SELECT nombre, minutos_estimados FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [productoId])
+  res.json({ origen: rows.length ? 'producto_anterior' : 'ninguno', tareas: rows })
+}))
+
 router.get('/:id', auth(), asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`${consultaPedidos} WHERE p.id = $1`, [req.params.id])
   if (!rows[0]) throw fallo('Pedido no encontrado.', 404)
@@ -53,19 +101,19 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
   res.json(rows[0])
 }))
 
-// Crea el pedido, sus items y despliega una etapa de trabajo por cada
-// etapa del producto. La duración se copia del catálogo y se multiplica
-// por la cantidad pedida, de modo que editar el producto más tarde no
-// altera lo que ya está en producción.
+// Crea el pedido, sus productos y las tareas de cada producto.
 //
-// El costo de producción de cada item (materiales + mano de obra) se
-// calcula igual que en conCostoCalculado() de server/rutas/productos.js y
-// se copia por unidad a pedido_items.costo_materiales_unitario /
-// costo_mano_obra_unitario: es una FOTO del costo del producto al momento
-// de crear el pedido, para que editar el producto (o sus materiales)
-// después no altere el costo de pedidos ya creados. El costo por etapa
-// (etapas_producto.costo) ya no se usa para esto: ese campo quedó solo
-// por compatibilidad.
+// PRECIO: ya no se pide en el formulario. Cada ítem toma el precio de venta
+// que tiene el producto al momento de crear el pedido (una foto: editar el
+// producto después no cambia pedidos ya creados). Si el cuerpo trae un
+// precio, se ignora.
+//
+// COSTO: materiales + mano de obra por unidad, calculados igual que en
+// conCostoCalculado() de server/rutas/productos.js y copiados a
+// pedido_items.costo_materiales_unitario / costo_mano_obra_unitario.
+//
+// TAREAS: vienen en items[].tareas (ver normalizarTareas) y se guardan en
+// pedido_etapas para ESTE pedido; el producto no se toca.
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const { items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
   if (!Array.isArray(items) || !items.length) throw fallo('El pedido necesita al menos un producto.')
@@ -83,36 +131,30 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     for (const item of items) {
       const cantidad = entero(item?.cantidad) || 1
       if (cantidad <= 0) throw fallo('La cantidad de cada producto debe ser mayor a cero.')
+      // Sólo productos disponibles (activos): uno vendido o eliminado no
+      // se puede volver a pedir.
       const producto = (await conexion.query(
         `SELECT p.id, p.nombre, p.precio_venta, p.horas_hombre,
             COALESCE((SELECT SUM(pm.precio_unitario * pm.cantidad) FROM producto_materiales pm WHERE pm.producto_id = p.id), 0) AS costo_materiales
-         FROM productos p WHERE p.id = $1`, [item?.producto_id])).rows[0]
-      if (!producto) throw fallo('Alguno de los productos seleccionados no existe.')
+         FROM productos p WHERE p.id = $1 AND p.activo AND NOT p.eliminado`, [item?.producto_id])).rows[0]
+      if (!producto) throw fallo('Alguno de los productos seleccionados no existe o ya no está disponible.')
 
-      // Costo de materiales por unidad del producto (suma de precio_unitario
-      // × cantidad de sus filas de producto_materiales, ver
-      // server/rutas/productos.js). En pedidos creados mientras la sección
-      // Materiales estuvo eliminada, esta columna quedó en 0: no se toca
-      // retroactivamente, sólo los pedidos nuevos usan el costo real.
+      const tareas = normalizarTareas(item?.tareas, producto.nombre)
       const costoMaterialesUnitario = decimal(producto.costo_materiales)
       const costoManoObraUnitario = decimal((Number(producto.horas_hombre) || 0) * costoHora)
 
-      const precio = item.precio_unitario === undefined || item.precio_unitario === null ? Number(producto.precio_venta) : decimal(item.precio_unitario)
       const itemId = (await conexion.query(
         `INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario, costo_materiales_unitario, costo_mano_obra_unitario)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [pedido.id, producto.id, cantidad, precio, costoMaterialesUnitario, costoManoObraUnitario])).rows[0].id
+        [pedido.id, producto.id, cantidad, decimal(producto.precio_venta), costoMaterialesUnitario, costoManoObraUnitario])).rows[0].id
 
-      const etapas = (await conexion.query('SELECT id, nombre, orden, minutos_estimados FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [producto.id])).rows
-      if (!etapas.length) throw fallo(`El producto "${producto.nombre}" no tiene etapas de fabricación cargadas.`)
-
-      // Las etapas nacen sin responsable: se asignan después, etapa por
-      // etapa, desde la sección Tareas (el pedido no asigna empleados).
-      for (const etapa of etapas) {
+      // Las tareas nacen sin responsable: se asignan después, tarea por
+      // tarea, desde la sección Tareas.
+      for (const tarea of tareas) {
         await conexion.query(
-          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, etapa_producto_id, nombre, orden, minutos_estimados, responsable_id)
-           VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
-          [pedido.id, itemId, etapa.id, etapa.nombre, etapa.orden, etapa.minutos_estimados * cantidad])
+          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, minutos_estimados, responsable_id)
+           VALUES ($1, $2, $3, $4, $5, NULL)`,
+          [pedido.id, itemId, tarea.nombre, tarea.orden, tarea.minutos_por_unidad * cantidad])
       }
     }
 
@@ -141,6 +183,68 @@ router.patch('/:id', auth(['admin']), asyncRoute(async (req, res) => {
 // La asignación de empleados a etapas ya NO se hace desde Pedidos: la
 // sección Pedidos es solo informativa. Las etapas se asignan desde Tareas
 // (PATCH /api/tareas/asignadas/:origen/:id/asignar, ver rutas/tareas.js).
+
+// ---------------------------------------------------------------------
+// EDITAR LAS TAREAS DE UN PEDIDO YA CREADO
+// Se puede agregar una tarea a un producto del pedido, y renombrar, cambiar
+// el tiempo o quitar una tarea que todavía no se completó. Las completadas
+// no se tocan (ya tienen tiempo real, semáforo y recompensa). Después de
+// cada cambio se recalcula el estado del pedido (sincronizarPedido).
+// ---------------------------------------------------------------------
+const responderPedido = async (res, id) => {
+  const { rows } = await pool.query(`${consultaPedidos} WHERE p.id = $1`, [id])
+  res.json(rows[0])
+}
+
+router.post('/:id/items/:itemId/tareas', auth(['admin']), asyncRoute(async (req, res) => {
+  const nombre = req.body?.nombre?.toString().trim()
+  if (!nombre) throw fallo('Indicá el nombre de la tarea.')
+  if (nombre.length > 120) throw fallo('El nombre de una tarea no puede superar los 120 caracteres.')
+  const minutos = Math.max(0, entero(req.body?.minutos_estimados) || 0)
+  const conexion = await pool.connect()
+  try {
+    await conexion.query('BEGIN')
+    const item = (await conexion.query('SELECT i.id FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id WHERE i.id = $1 AND i.pedido_id = $2 FOR UPDATE OF p',
+      [req.params.itemId, req.params.id])).rows[0]
+    if (!item) throw fallo('Producto del pedido no encontrado.', 404)
+    await conexion.query(
+      `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, minutos_estimados, responsable_id)
+       VALUES ($1, $2, $3, (SELECT COALESCE(MAX(orden), 0) + 1 FROM pedido_etapas WHERE pedido_item_id = $2), $4, NULL)`,
+      [req.params.id, item.id, nombre, minutos])
+    await sincronizarPedido(conexion, req.params.id)
+    await conexion.query('COMMIT')
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+  await responderPedido(res, req.params.id)
+}))
+
+router.patch('/:id/tareas/:tareaId', auth(['admin']), asyncRoute(async (req, res) => {
+  const nombre = req.body?.nombre === undefined ? null : req.body.nombre?.toString().trim()
+  if (nombre !== null && !nombre) throw fallo('La tarea necesita un nombre.')
+  const minutos = req.body?.minutos_estimados === undefined ? null : Math.max(0, entero(req.body.minutos_estimados) || 0)
+  const { rows } = await pool.query(
+    `UPDATE pedido_etapas SET nombre = COALESCE($1, nombre), minutos_estimados = COALESCE($2::int, minutos_estimados)
+     WHERE id = $3 AND pedido_id = $4 AND estado <> 'COMPLETADA' RETURNING id`,
+    [nombre, minutos, req.params.tareaId, req.params.id])
+  if (!rows[0]) throw fallo('Tarea no encontrada o ya completada.', 404)
+  await responderPedido(res, req.params.id)
+}))
+
+router.delete('/:id/tareas/:tareaId', auth(['admin']), asyncRoute(async (req, res) => {
+  const conexion = await pool.connect()
+  try {
+    await conexion.query('BEGIN')
+    const tarea = (await conexion.query('SELECT id, pedido_item_id, estado FROM pedido_etapas WHERE id = $1 AND pedido_id = $2 FOR UPDATE',
+      [req.params.tareaId, req.params.id])).rows[0]
+    if (!tarea) throw fallo('Tarea no encontrada.', 404)
+    if (tarea.estado === 'COMPLETADA') throw fallo('No se puede quitar una tarea ya completada.')
+    const restantes = (await conexion.query('SELECT COUNT(*)::int AS total FROM pedido_etapas WHERE pedido_item_id = $1', [tarea.pedido_item_id])).rows[0].total
+    if (restantes <= 1) throw fallo('Cada producto del pedido necesita al menos una tarea.')
+    await conexion.query('DELETE FROM pedido_etapas WHERE id = $1', [tarea.id])
+    await sincronizarPedido(conexion, req.params.id)
+    await conexion.query('COMMIT')
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+  await responderPedido(res, req.params.id)
+}))
 
 router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const { rows } = await pool.query('DELETE FROM pedidos WHERE id = $1 RETURNING id', [req.params.id])
