@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
-import { api, dinero, duracion, fecha, iniciales, useData } from './api.js'
+import { api, dinero, duracion, fecha, iniciales, useAutoRefresco, useData } from './api.js'
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
@@ -83,15 +83,22 @@ export default function WorkshopPanels({ section, setSection, rol }) {
 // ---------------------------------------------------------------------
 function Dashboard({ ir }) {
   const resumen = useData('/estadisticas/resumen', null)
+  useAutoRefresco(resumen.load)
   const datos = resumen.data
 
   if (resumen.loading && !datos) return <p>Cargando el panel...</p>
   if (resumen.error) return <p className="form-error">{resumen.error}</p>
   if (!datos) return null
 
-  const { pedidos, trabajo, catalogo, dinero: plata, mas_vendidos: masVendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
+  // El dinero sale de "metricas" (server/metricas.js): mismos criterios que
+  // la pantalla Estadísticas. REAL = lo que ya pasó (productos vendidos =
+  // desactivados/eliminados, pedidos terminados, etapas completadas,
+  // recompensas). PROYECTADO = además se venden todos los productos activos
+  // y se cobran los pedidos abiertos.
+  const { pedidos, trabajo, catalogo, metricas, productos_vendidos: vendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
+  const { en_curso: enCurso } = metricas
   const moneda = configuracion?.moneda || 'ARS'
-  const maxUnidades = Math.max(...masVendidos.map(producto => producto.unidades), 1)
+  const maxPrecio = Math.max(...vendidos.map(producto => producto.precio || 0), 1)
 
   return (
     <>
@@ -101,8 +108,8 @@ function Dashboard({ ir }) {
 
       <QuickActions
         acciones={[
-          { icono: '⌁', label: 'Nuevo pedido', texto: 'Productos y entrega', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
-          { icono: '▱', label: 'Nuevo producto', texto: 'Precio y etapas', onClick: () => ir('Productos', 'nuevo') },
+          { icono: '⌁', label: 'Nuevo pedido', texto: 'Productos y tareas', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
+          { icono: '▱', label: 'Nuevo producto', texto: 'Precio y costos', onClick: () => ir('Productos', 'nuevo') },
           // "admin" y "super_admin" pueden crear cuentas (ver PanelUsuarios).
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
           { icono: '✓', label: 'Asignar tareas', texto: `${trabajo.sin_asignar} etapas sin dueño`, onClick: () => ir('Tareas') },
@@ -112,10 +119,10 @@ function Dashboard({ ir }) {
       />
 
       <section className="stats-grid dashboard-stats">
-        <Stat label="Pedidos activos" value={pedidos.activos} hint={`${pedidos.terminados} terminados`} />
+        <Stat label="Pedidos abiertos" value={pedidos.abiertos} hint={`${pedidos.terminados} terminados${pedidos.pausados ? ` · ${pedidos.pausados} pausados` : ''}`} />
         <Stat label="Pedidos atrasados" value={pedidos.atrasados} tone={pedidos.atrasados ? 'danger' : ''} hint="Pasaron su fecha de entrega" />
         <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${trabajo.sin_asignar} sin asignar`} />
-        <Stat label="Ganancia estimada" value={dinero(plata.ganancia, moneda)} hint={`Ingresos ${dinero(plata.ingresos, moneda)}`} tone={plata.ganancia >= 0 ? '' : 'danger'} />
+        <Stat label="Ingresos en curso" value={dinero(enCurso.ingresos, moneda)} hint={`Pedidos abiertos · faltan ${dinero(enCurso.gastos_pendientes, moneda)} de costo`} />
         <Stat
           label="Semáforo del taller"
           value={
@@ -131,18 +138,18 @@ function Dashboard({ ir }) {
 
       <section className="analytics">
         <article className="chart-card">
-          <div className="card-title">Productos más vendidos</div>
-          {masVendidos.length ? (
+          <div className="card-title">Últimos productos vendidos</div>
+          {vendidos.length ? (
             <div className="ranking-simple">
-              {masVendidos.map(producto => (
+              {vendidos.map(producto => (
                 <div key={producto.id}>
-                  <b>{producto.nombre}</b>
-                  <Progress value={(producto.unidades / maxUnidades) * 100} />
-                  <span>{producto.unidades} u · {dinero(producto.facturado, moneda)}</span>
+                  <b>{producto.nombre}{producto.eliminado ? ' (eliminado)' : ''}</b>
+                  <Progress value={((producto.precio || 0) / maxPrecio) * 100} />
+                  <span>{fecha(producto.vendido_en)} · {dinero(producto.precio, moneda)}</span>
                 </div>
               ))}
             </div>
-          ) : <p className="muted">Todavía no hay productos vendidos.</p>}
+          ) : <p className="muted">Todavía no hay productos vendidos: un producto cuenta como vendido al desactivarlo o eliminarlo.</p>}
         </article>
 
         <article className="operator-summary">
@@ -548,7 +555,7 @@ function PanelTareas() {
           ))}
         </div>
       ) : (
-        <Empty title="No hay etapas en esta vista" text="Las etapas se generan al crear un pedido con productos del catálogo." />
+        <Empty title="No hay etapas en esta vista" text="Las tareas se definen al crear un pedido, para cada producto del pedido." />
       )}
 
       {seleccionada && (
@@ -719,7 +726,7 @@ function PanelConfiguracion({ rol }) {
         <article>
           <span>▣</span>
           <h3>Productos y pedidos</h3>
-          <p>Cada producto define su precio de venta y las etapas de fabricación con costo y duración. Al crear un pedido esas etapas se copian, de modo que editar el catálogo no altera la producción en curso.</p>
+          <p>Cada producto define su precio de venta y sus costos. Las tareas de fabricación se definen en cada pedido (dos pedidos del mismo producto pueden tener tareas distintas), y el pedido copia el precio y el costo del producto, de modo que editar el catálogo no altera la producción en curso.</p>
         </article>
 
         <article>

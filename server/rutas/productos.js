@@ -5,7 +5,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 import { pool } from '../db.js'
-import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, decimal, entero, fallo, leerConfiguracion, slugify } from '../comun.js'
+import { SLUGS_CATEGORIAS_PRODUCTO, asyncRoute, auth, decimal, fallo, leerConfiguracion, slugify } from '../comun.js'
 import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp.js'
 
 const router = Router()
@@ -14,17 +14,23 @@ const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta:
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre, p.chapita_id,
     p.medidas, p.costo_producto::float8 AS costo_producto, p.historia,
     p.whatsapp_sync_estado, p.whatsapp_sync_error, p.whatsapp_sync_actualizado_en,
-    COALESCE(SUM(e.minutos_estimados), 0)::int AS minutos_totales,
-    COALESCE(json_agg(json_build_object('id', e.id, 'nombre', e.nombre, 'descripcion', e.descripcion, 'orden', e.orden,
-      'minutos_estimados', e.minutos_estimados) ORDER BY e.orden) FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
+    p.vendido_en, p.precio_vendido::float8 AS precio_vendido, p.costo_vendido::float8 AS costo_vendido,
     COALESCE((SELECT json_agg(jsonb_build_object('id', pi.id, 'url', pi.url, 'orden', pi.orden, 'es_principal', pi.es_principal) ORDER BY pi.orden)
       FROM producto_imagenes pi WHERE pi.producto_id = p.id), '[]') AS imagenes,
     COALESCE((SELECT json_agg(jsonb_build_object('id', pm.id, 'nombre', pm.nombre, 'precio_unitario', pm.precio_unitario::float8, 'cantidad', pm.cantidad::float8, 'orden', pm.orden) ORDER BY pm.orden)
       FROM producto_materiales pm WHERE pm.producto_id = p.id), '[]') AS materiales
   FROM productos p
   LEFT JOIN categorias c ON c.id = p.categoria_id
-  LEFT JOIN etapas_producto e ON e.producto_id = p.id
+  WHERE NOT p.eliminado
   GROUP BY p.id, c.nombre, c.slug`
+
+// Estados de un producto (ver "VENTAS DE PRODUCTOS" en schema.sql):
+// - activo = TRUE  -> disponible: entra en la proyección de ventas.
+// - activo = FALSE -> VENDIDO (se desactivó o se eliminó). vendido_en,
+//   precio_vendido y costo_vendido los completa solo el trigger
+//   productos_registrar_venta. Reactivarlo anula la venta.
+// - eliminado      -> vendido y además oculto del panel (borrado lógico:
+//   la fila se conserva para que la venta siga en las estadísticas).
 
 // Agrega el desglose de costo calculado a cada fila: mano de obra (horas ×
 // costo de la hora configurable) + costo del producto (número de
@@ -50,33 +56,15 @@ const conCostoCalculado = async filas => {
   })
 }
 
-// Valida y normaliza las etapas que define el admin para un producto. Ya
-// no llevan costo (ver costo_producto más arriba): sólo nombre y duración
-// estimada, que es lo que se usa para asignar trabajo y medir rendimiento.
-// La duración es opcional (puede quedar sin cargar y completarse después):
-// si no viene, se guarda en 0, que la UI ya muestra como "—" en vez de un
-// tiempo estimado (ver duracion() en src/api.js). El nombre de la etapa sí
-// sigue siendo obligatorio: sin nombre no hay con qué asignar la tarea.
-const normalizarEtapas = etapas => {
-  if (!Array.isArray(etapas) || !etapas.length) throw fallo('El producto necesita al menos una etapa de fabricación.')
-  return etapas.map((etapa, indice) => {
-    if (!etapa?.nombre?.trim()) throw fallo('Cada etapa necesita un nombre.')
-    const minutos = Math.max(0, entero(etapa?.minutos_estimados) || 0)
-    return { nombre: etapa.nombre.trim(), descripcion: etapa.descripcion?.trim() || null, orden: indice + 1, minutos_estimados: minutos }
-  })
-}
-
-const guardarEtapas = async (cliente, productoId, etapas) => {
-  await cliente.query('DELETE FROM etapas_producto WHERE producto_id = $1', [productoId])
-  for (const etapa of etapas) {
-    await cliente.query('INSERT INTO etapas_producto (producto_id, nombre, descripcion, orden, minutos_estimados) VALUES ($1, $2, $3, $4, $5)',
-      [productoId, etapa.nombre, etapa.descripcion, etapa.orden, etapa.minutos_estimados])
-  }
-}
+// Los productos ya NO tienen tareas/etapas de fabricación: las tareas se
+// definen en cada pedido (ver POST /pedidos en server/rutas/pedidos.js), así
+// que dos pedidos del mismo producto pueden tener tareas distintas sin
+// tocar el producto. La vieja tabla etapas_producto se conserva sólo como
+// sugerencia de tareas para pedidos nuevos (GET /pedidos/tareas-sugeridas).
 
 // Valida y normaliza los materiales utilizados por el producto: nombre
 // libre obligatorio, precio unitario numérico ≥ 0 y cantidad numérica > 0.
-// A diferencia de las etapas, los materiales son opcionales: un producto
+// Los materiales son opcionales: un producto
 // puede no tener ninguno cargado (se guarda con costo de materiales 0), y
 // no hay límite de filas.
 const normalizarMateriales = materiales => {
@@ -199,7 +187,7 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 }))
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, materiales, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, materiales, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
@@ -209,7 +197,6 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const medidasNormalizadas = normalizarMedidas(medidas)
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
-  const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
   // Al publicar, el ID tiene que venir cargado (no se autocompleta).
@@ -225,7 +212,6 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, publicado === true]
     )
-    await guardarEtapas(cliente, rows[0].id, normalizadas)
     await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     sincronizarEnSegundoPlano(rows[0].id)
@@ -240,7 +226,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, materiales, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, materiales, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
@@ -250,14 +236,13 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const medidasNormalizadas = normalizarMedidas(medidas)
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
-  const normalizadas = normalizarEtapas(etapas)
   const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
 
   const cliente = await pool.connect()
   try {
     await cliente.query('BEGIN')
-    const actual = await cliente.query('SELECT nombre, slug, chapita_id, publicado FROM productos WHERE id = $1', [req.params.id])
+    const actual = await cliente.query('SELECT nombre, slug, chapita_id, publicado FROM productos WHERE id = $1 AND NOT eliminado', [req.params.id])
     if (!actual.rows[0]) throw fallo('Producto no encontrado.', 404)
     // Queda publicado si se pide publicarlo, o si ya lo estaba y el cuerpo
     // no trae el campo: en ambos casos se exigen los datos obligatorios.
@@ -282,10 +267,9 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
         typeof publicado === 'boolean' ? publicado : null]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-    // Los pedidos ya generados guardan copia de nombre, costo de mano de
-    // obra y costo de materiales, así que reescribir las etapas o los
-    // materiales acá no altera la producción en curso.
-    await guardarEtapas(cliente, rows[0].id, normalizadas)
+    // Los pedidos ya generados guardan copia del precio, del costo de mano
+    // de obra y del costo de materiales, así que editar el producto acá no
+    // altera la producción en curso.
     await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     sincronizarEnSegundoPlano(rows[0].id)
@@ -302,33 +286,29 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
 router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
   const { activo } = req.body
   if (typeof activo !== 'boolean') throw fallo('El campo activo debe ser booleano.')
-  const { rows } = await pool.query('UPDATE productos SET activo = $1, actualizado_en = NOW() WHERE id = $2 RETURNING id, nombre, activo', [activo, req.params.id])
+  // Desactivar = registrar la venta; reactivar = anularla (ver trigger
+  // productos_registrar_venta). Un producto eliminado no se puede reactivar.
+  const { rows } = await pool.query(`UPDATE productos SET activo = $1, actualizado_en = NOW() WHERE id = $2 AND NOT eliminado
+    RETURNING id, nombre, activo, vendido_en, precio_vendido::float8 AS precio_vendido`, [activo, req.params.id])
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
   sincronizarEnSegundoPlano(rows[0].id)
   res.json(rows[0])
 }))
 
-// Si el producto ya se usó en un pedido se desactiva en lugar de borrarse,
-// para no perder el historial de producción.
+// "Eliminar" es un borrado lógico: el producto desaparece del panel, de la
+// web pública y de WhatsApp, pero la fila se conserva porque un producto
+// eliminado cuenta como VENDIDO en las estadísticas (antes el DELETE
+// físico hacía perder esa venta). Si ya estaba desactivado (vendido), se
+// conserva la fecha y el precio de esa venta: no se cuenta dos veces.
 router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const usos = await pool.query('SELECT 1 FROM pedido_items WHERE producto_id = $1 LIMIT 1', [req.params.id])
-  if (usos.rows[0]) {
-    const { rows } = await pool.query('UPDATE productos SET activo = FALSE, actualizado_en = NOW() WHERE id = $1 RETURNING id', [req.params.id])
-    if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-    sincronizarEnSegundoPlano(rows[0].id)
-    return res.json({ mensaje: 'El producto tiene pedidos asociados: se desactivó en lugar de borrarse.', desactivado: true })
-  }
-  // Si ya estaba sincronizado en WhatsApp, primero se marca "discontinued"
-  // en Meta (misma alternativa que usa la desactivación: no hay nada más
-  // que avisarle a Meta una vez borrada la fila) y recién después se borra
-  // de PostgreSQL. Un error de Meta acá no impide borrar el producto local.
-  const previo = await pool.query('SELECT activo FROM productos WHERE id = $1', [req.params.id])
-  if (!previo.rows[0]) throw fallo('Producto no encontrado.', 404)
-  await pool.query('UPDATE productos SET activo = FALSE WHERE id = $1', [req.params.id])
-  await sincronizarProducto(req.params.id)
-  const { rows } = await pool.query('DELETE FROM productos WHERE id = $1 RETURNING id', [req.params.id])
+  const { rows } = await pool.query(
+    'UPDATE productos SET eliminado = TRUE, actualizado_en = NOW() WHERE id = $1 AND NOT eliminado RETURNING id',
+    [req.params.id])
   if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-  res.json({ mensaje: 'Producto eliminado.', desactivado: false })
+  // Si ya estaba sincronizado en WhatsApp se marca "discontinued" en Meta
+  // (un error de Meta no impide eliminarlo del sistema).
+  sincronizarEnSegundoPlano(rows[0].id)
+  res.json({ mensaje: 'Producto eliminado: se contabiliza como vendido en las estadísticas.', desactivado: false, vendido: true })
 }))
 
 // -----------------------------------------------------------------------
