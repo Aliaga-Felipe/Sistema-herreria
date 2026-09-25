@@ -18,7 +18,9 @@ const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta:
     COALESCE(json_agg(json_build_object('id', e.id, 'nombre', e.nombre, 'descripcion', e.descripcion, 'orden', e.orden,
       'minutos_estimados', e.minutos_estimados) ORDER BY e.orden) FILTER (WHERE e.id IS NOT NULL), '[]') AS etapas,
     COALESCE((SELECT json_agg(jsonb_build_object('id', pi.id, 'url', pi.url, 'orden', pi.orden, 'es_principal', pi.es_principal) ORDER BY pi.orden)
-      FROM producto_imagenes pi WHERE pi.producto_id = p.id), '[]') AS imagenes
+      FROM producto_imagenes pi WHERE pi.producto_id = p.id), '[]') AS imagenes,
+    COALESCE((SELECT json_agg(jsonb_build_object('id', pm.id, 'nombre', pm.nombre, 'precio_unitario', pm.precio_unitario::float8, 'cantidad', pm.cantidad::float8, 'orden', pm.orden) ORDER BY pm.orden)
+      FROM producto_materiales pm WHERE pm.producto_id = p.id), '[]') AS materiales
   FROM productos p
   LEFT JOIN categorias c ON c.id = p.categoria_id
   LEFT JOIN etapas_producto e ON e.producto_id = p.id
@@ -26,19 +28,22 @@ const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta:
 
 // Agrega el desglose de costo calculado a cada fila: mano de obra (horas ×
 // costo de la hora configurable) + costo del producto (número de
-// referencia que carga el admin a mano, ver costo_producto). El margen se
-// calcula acá, en un solo lugar, contra ese costo total. (La sección
-// Materiales se eliminó, así que ya no hay costo de materiales.)
+// referencia que carga el admin a mano, ver costo_producto) + costo de
+// materiales (suma de precio_unitario × cantidad de las filas de
+// producto_materiales, ver "materiales" en consultaProductos). El margen
+// se calcula acá, en un solo lugar, contra ese costo total.
 const conCostoCalculado = async filas => {
   const costoHora = Number((await leerConfiguracion()).costo_hora_mano_obra) || 0
   return filas.map(fila => {
     const costoManoObra = decimal((Number(fila.horas_hombre) || 0) * costoHora)
     const costoProducto = decimal(fila.costo_producto)
-    const costoCalculadoTotal = decimal(costoManoObra + costoProducto)
+    const costoMateriales = decimal((fila.materiales || []).reduce((total, material) => total + (Number(material.precio_unitario) || 0) * (Number(material.cantidad) || 0), 0))
+    const costoCalculadoTotal = decimal(costoManoObra + costoProducto + costoMateriales)
     return {
       ...fila,
       costo_hora_mano_obra: costoHora,
       costo_mano_obra: costoManoObra,
+      costo_materiales: costoMateriales,
       costo_calculado_total: costoCalculadoTotal,
       margen: decimal(fila.precio_venta - costoCalculadoTotal)
     }
@@ -66,6 +71,32 @@ const guardarEtapas = async (cliente, productoId, etapas) => {
   for (const etapa of etapas) {
     await cliente.query('INSERT INTO etapas_producto (producto_id, nombre, descripcion, orden, minutos_estimados) VALUES ($1, $2, $3, $4, $5)',
       [productoId, etapa.nombre, etapa.descripcion, etapa.orden, etapa.minutos_estimados])
+  }
+}
+
+// Valida y normaliza los materiales utilizados por el producto: nombre
+// libre obligatorio, precio unitario numérico ≥ 0 y cantidad numérica > 0.
+// A diferencia de las etapas, los materiales son opcionales: un producto
+// puede no tener ninguno cargado (se guarda con costo de materiales 0), y
+// no hay límite de filas.
+const normalizarMateriales = materiales => {
+  if (materiales === undefined || materiales === null) return []
+  if (!Array.isArray(materiales)) throw fallo('Los materiales del producto no tienen el formato esperado.')
+  return materiales.map((material, indice) => {
+    if (!material?.nombre?.toString().trim()) throw fallo('Cada material necesita un nombre.')
+    const precioUnitario = decimal(material.precio_unitario)
+    if (!(precioUnitario >= 0)) throw fallo('El precio unitario de cada material no puede ser negativo.')
+    const cantidad = decimal(material.cantidad)
+    if (!(cantidad > 0)) throw fallo('La cantidad de cada material debe ser mayor a cero.')
+    return { nombre: material.nombre.toString().trim(), precio_unitario: precioUnitario, cantidad, orden: indice + 1 }
+  })
+}
+
+const guardarMateriales = async (cliente, productoId, materiales) => {
+  await cliente.query('DELETE FROM producto_materiales WHERE producto_id = $1', [productoId])
+  for (const material of materiales) {
+    await cliente.query('INSERT INTO producto_materiales (producto_id, nombre, precio_unitario, cantidad, orden) VALUES ($1, $2, $3, $4, $5)',
+      [productoId, material.nombre, material.precio_unitario, material.cantidad, material.orden])
   }
 }
 
@@ -168,7 +199,7 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 }))
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, etapas, materiales, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
@@ -179,6 +210,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
   const normalizadas = normalizarEtapas(etapas)
+  const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
   // Al publicar, el ID tiene que venir cargado (no se autocompleta).
   if (publicado === true) validarPublicacion({ nombre: nombre.trim(), chapitaId, precio, descripcion: descripcionNormalizada, historia: historiaNormalizada, categoriaId: categoriaValida })
@@ -194,6 +226,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
       [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, publicado === true]
     )
     await guardarEtapas(cliente, rows[0].id, normalizadas)
+    await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     sincronizarEnSegundoPlano(rows[0].id)
     const creado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
@@ -207,7 +240,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
 }))
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { nombre, descripcion = '', precio_venta, etapas, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
+  const { nombre, descripcion = '', precio_venta, etapas, materiales, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
     chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
@@ -218,6 +251,7 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
   const normalizadas = normalizarEtapas(etapas)
+  const materialesNormalizados = normalizarMateriales(materiales)
   const categoriaValida = await validarCategoria(categoria_id)
 
   const cliente = await pool.connect()
@@ -248,10 +282,11 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
         typeof publicado === 'boolean' ? publicado : null]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-    // Los pedidos ya generados guardan copia de nombre y costo de mano de
-    // obra, así que reescribir las etapas no altera la producción
-    // en curso.
+    // Los pedidos ya generados guardan copia de nombre, costo de mano de
+    // obra y costo de materiales, así que reescribir las etapas o los
+    // materiales acá no altera la producción en curso.
     await guardarEtapas(cliente, rows[0].id, normalizadas)
+    await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
     sincronizarEnSegundoPlano(rows[0].id)
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])
