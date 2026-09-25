@@ -484,7 +484,7 @@ function PanelTareas() {
   const { mostrar, nodo } = useAviso()
   // Por defecto se ven TODAS las etapas: cuando un empleado termina una,
   // no desaparece de la tarjeta del producto, queda marcada "Completada".
-  const [filtro, setFiltro] = useState('TODAS')
+  const [filtro, setFiltro] = useState('PENDIENTES')
   const [seleccionada, setSeleccionada] = useState(null)
 
   const visibles = tareas.data.filter(tarea =>
