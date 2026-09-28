@@ -116,8 +116,8 @@ PORT=3001
 DATABASE_URL=postgresql://atelier:CLAVE_DB@localhost:5432/atelier_herreria
 DATABASE_SSL=false
 JWT_SECRET=<el secreto generado recién>
-CLIENT_URL=https://TU_DOMINIO
-PUBLIC_BASE_URL=https://TU_DOMINIO
+CLIENT_URL=https://unatelier.cloud
+PUBLIC_BASE_URL=https://unatelier.cloud
 WHATSAPP_SYNC_ENABLED=false
 ```
 
@@ -166,7 +166,9 @@ Tiene que devolver algo como `{"productos":[],...}`.
 
 ## 10. Nginx (el dominio apunta a la app)
 
-Como root:
+Estos pasos van **como root**. Si la línea de la terminal empieza con
+`atelier@...`, escribir `exit` hasta que empiece con `root@...` (si no,
+nano muestra "permission denied" al guardar).
 
 ```bash
 nano /etc/nginx/sites-available/atelier
@@ -177,7 +179,7 @@ Pegar esto (reemplazando `TU_DOMINIO` en las dos apariciones):
 ```nginx
 server {
     listen 80;
-    server_name TU_DOMINIO www.TU_DOMINIO;
+    server_name unatelier.cloud www.unatelier.cloud;
 
     # El video de la portada puede pesar hasta 40 MB.
     client_max_body_size 50M;
@@ -226,7 +228,7 @@ Con eso, `http://TU_DOMINIO` ya muestra el sitio.
 Cuando el dominio ya apunta al VPS:
 
 ```bash
-certbot --nginx -d TU_DOMINIO -d www.TU_DOMINIO
+certbot --nginx -d unatelier.cloud -d www.unatelier.cloud
 ```
 
 Pide un correo (para avisos de vencimiento) y aceptar los términos. El
@@ -248,7 +250,7 @@ crontab -e
 reemplazando `CLAVE_DB`:
 
 ```
-0 3 * * * pg_dump "postgresql://atelier:CLAVE_DB@localhost:5432/atelier_herreria" | gzip > ~/backups/db-$(date +\%F).sql.gz && find ~/backups -name 'db-*.sql.gz' -mtime +14 -delete
+0 3 * * * pg_dump "postgresql://atelier:560ef27b760832d2156a5e3e4a0289be79237b4a264f4996@localhost:5432/atelier_herreria" | gzip > ~/backups/db-$(date +\%F).sql.gz && find ~/backups -name 'db-*.sql.gz' -mtime +14 -delete
 ```
 
 Hace un respaldo por día a las 3 AM y guarda los últimos 14 días. Las
