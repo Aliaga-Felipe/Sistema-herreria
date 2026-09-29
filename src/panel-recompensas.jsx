@@ -11,12 +11,16 @@ export default function PanelRecompensas({ rol }) {
   const recompensas = useData('/recompensas')
   const ranking = useData('/recompensas/ranking')
   const empleados = useData('/usuarios/empleados')
+  // Días con objetivo de producción cumplido (se registran en Producción
+  // diaria, ver panel-produccion.jsx), mostrados acá junto a los bonos.
+  const registrosProduccion = useData('/produccion/registros')
   const { mostrar, nodo } = useAviso()
   const [manual, setManual] = useState(false)
 
   const total = recompensas.data.reduce((suma, item) => suma + Number(item.monto || 0), 0)
   const automaticas = recompensas.data.filter(item => item.automatica).length
   const minutosAhorrados = recompensas.data.reduce((suma, item) => suma + (item.minutos_ahorrados || 0), 0)
+  const diasCumplidos = registrosProduccion.data.filter(registro => registro.cumplido).length
 
   const recargar = () => Promise.all([recompensas.load(), ranking.load()])
 
@@ -49,6 +53,7 @@ export default function PanelRecompensas({ rol }) {
         <Stat label="Recompensas" value={recompensas.data.length} hint={`${automaticas} automáticas`} />
         <Stat label="Tiempo ahorrado" value={duracion(minutosAhorrados)} />
         <Stat label="Empleados premiados" value={new Set(recompensas.data.map(item => item.usuario_id)).size} />
+        <Stat label="Días con objetivo cumplido" value={diasCumplidos} tone={diasCumplidos ? '' : 'danger'} />
       </section>
 
       <ConfiguracionRecompensas soloLectura={!esSuperAdmin} onGuardar={() => mostrar('Parámetros de recompensa actualizados.')} />
