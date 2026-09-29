@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import './styles.css'
@@ -15,6 +15,10 @@ import Home from '../web-publica/Home.jsx'
 import Catalogo from '../web-publica/Catalogo.jsx'
 import ProductoDetalle from '../web-publica/ProductoDetalle.jsx'
 import Contacto from '../web-publica/Contacto.jsx'
+// Adaptación a móvil/tablet del panel interno. Va última para que sus
+// media queries tengan prioridad sobre las hojas de arriba sin tocar
+// ninguna regla de escritorio.
+import './responsive.css'
 
 // "admin" y "super_admin" comparten el panel (Shell); lo que cambia entre
 // ellos es qué secciones ve cada uno (ver seccionesPara en workshop-panels.jsx).
@@ -115,15 +119,41 @@ function Login() {
 
 function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
   const { session, close } = useSession()
+  // Menú hamburguesa (solo móvil): en pantallas chicas la misma barra
+  // lateral se convierte en un panel deslizable. En escritorio la clase
+  // "abierta" no tiene ningún efecto (ver responsive.css).
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const cerrarMenu = () => setMenuAbierto(false)
+
+  useEffect(() => {
+    if (!menuAbierto) return undefined
+    const alTeclear = event => { if (event.key === 'Escape') setMenuAbierto(false) }
+    // Si se agranda la ventana a escritorio con el menú abierto, se cierra.
+    const escritorio = window.matchMedia('(min-width: 768px)')
+    const alCambiar = event => { if (event.matches) setMenuAbierto(false) }
+    const raiz = document.documentElement
+    const overflowPrevio = raiz.style.overflow
+    raiz.style.overflow = 'hidden'
+    window.addEventListener('keydown', alTeclear)
+    escritorio.addEventListener('change', alCambiar)
+    return () => {
+      raiz.style.overflow = overflowPrevio
+      window.removeEventListener('keydown', alTeclear)
+      escritorio.removeEventListener('change', alCambiar)
+    }
+  }, [menuAbierto])
+
+  const elegirSeccion = nombre => { if (menuAbierto) { cerrarMenu(); window.scrollTo(0, 0) } onSeccion(nombre) }
 
   return (
     <div className="app-shell auth-shell">
-      <aside className="sidebar">
+      <div className={`sidebar-fondo ${menuAbierto ? 'abierto' : ''}`} onClick={cerrarMenu} aria-hidden="true" />
+      <aside id="menu-panel" className={`sidebar ${menuAbierto ? 'abierta' : ''}`}>
         <div className="brand">El Atelier<span>HUB DE PRODUCCIÓN</span></div>
 
         <nav>
           {secciones.map(([nombre, icono]) => (
-            <button key={nombre} className={seccionActiva === nombre ? 'selected' : ''} onClick={() => onSeccion(nombre)}>
+            <button key={nombre} className={seccionActiva === nombre ? 'selected' : ''} onClick={() => elegirSeccion(nombre)}>
               <span className="icon">{icono}</span>{nombre}
             </button>
           ))}
@@ -140,6 +170,16 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
 
       <main>
         <header>
+          <button
+            type="button"
+            className={`menu-toggle ${menuAbierto ? 'abierto' : ''}`}
+            onClick={() => setMenuAbierto(!menuAbierto)}
+            aria-label={menuAbierto ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={menuAbierto}
+            aria-controls="menu-panel"
+          >
+            <span /><span /><span />
+          </button>
           <div className="crumb">{title}</div>
           <span className={`role-badge ${session.usuario.rol}`} title={session.usuario.rol}>
             {session.usuario.rol === 'super_admin' ? 'S' : session.usuario.rol === 'admin' ? 'A' : 'O'}

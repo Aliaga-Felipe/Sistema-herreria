@@ -61,6 +61,12 @@ export const iniciales = nombre =>
 export const dinero = (valor, moneda = 'ARS') =>
   `${moneda === 'ARS' ? '$' : `${moneda} `}${Number(valor || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 
+// Precio de venta opcional (panel interno): sin precio se muestra
+// "Sin precio" en vez de "$0". En la web pública se muestra "Consultar
+// precio" (ver precioPublico en web-publica/api.js).
+export const tienePrecio = valor => valor !== null && valor !== undefined && valor !== '' && Number(valor) > 0
+export const precioVenta = (valor, moneda = 'ARS') => (tienePrecio(valor) ? dinero(valor, moneda) : 'Sin precio')
+
 export const duracion = minutos => {
   const total = Math.round(Number(minutos) || 0)
   if (!total) return '—'
@@ -78,4 +84,22 @@ export const etiquetaEstado = estado => String(estado || '').replace(/_/g, ' ').
 export const etiquetaPrioridad = prioridad => {
   const nivel = Number(prioridad) || 0
   return nivel >= 2 ? 'Urgente' : nivel === 1 ? 'Alta' : 'Normal'
+}
+
+// Vuelve a pedir los datos cada `ms` milisegundos y cada vez que la
+// pestaña vuelve a estar visible: el Panel de control y Estadísticas se
+// mantienen al día cuando cambian productos, pedidos o etapas (también
+// desde otra sesión) sin tener que recargar la página.
+export function useAutoRefresco(load, ms = 30000) {
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === 'visible') load() }
+    const intervalo = setInterval(alVolver, ms)
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', alVolver)
+    return () => {
+      clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', alVolver)
+    }
+  }, [load, ms])
 }

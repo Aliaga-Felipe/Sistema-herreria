@@ -36,12 +36,12 @@ try {
   const admin = (await pool.query(
     `INSERT INTO usuarios (nombre, email, contrasena_hash, rol)
      VALUES ('Admin de prueba', $1, $2,
-       (SELECT enumlabel::rol_usuario FROM pg_enum WHERE enumtypid = 'rol_usuario'::regtype AND LOWER(enumlabel) = 'admin'))
+       (SELECT enumlabel::rol_usuario FROM pg_enum WHERE enumtypid = 'rol_usuario'::regtype AND LOWER(enumlabel) = 'super_admin'))
      RETURNING id`, [`${marca}_admin@prueba.local`, hash])).rows[0]
   creados.usuarios.push(admin.id)
 
   const sesion = await llamar('/auth/iniciar-sesion', { method: 'POST', cuerpo: { email: `${marca}_admin@prueba.local`, contrasena: 'ClaveDePrueba123' } })
-  ok('login del admin', sesion.usuario.rol === 'admin')
+  ok('login del admin', ['admin', 'super_admin'].includes(sesion.usuario.rol))
   const token = sesion.token
 
   // --- alta de empleado hecha por el admin ----------------------------
@@ -57,18 +57,14 @@ try {
   try { await llamar('/usuarios', {}, tokenEmpleado) } catch (error) { prohibido = error.message.includes('403') }
   ok('el empleado no accede a la gestión de usuarios', prohibido)
 
-  // --- producto con etapas --------------------------------------------
+  // --- producto (sin tareas: las tareas se definen en cada pedido) ------
   const producto = await llamar('/productos', { method: 'POST', cuerpo: {
     nombre: `Portón ${marca}`, descripcion: 'Producto de prueba', historia: 'Historia de prueba', precio_venta: 400000,
-    etapas: [
-      { nombre: 'Corte', costo: 30000, minutos_estimados: 120 },
-      { nombre: 'Soldadura', costo: 50000, minutos_estimados: 240 },
-      { nombre: 'Pintura', costo: 20000, minutos_estimados: 60 }
-    ]
+    materiales: [{ nombre: 'Hierro', precio_unitario: 50000, cantidad: 2 }]
   } }, token)
   creados.productos.push(producto.id)
-  ok('producto creado con precio y etapas', producto.etapas.length === 3 && producto.precio_venta === 400000)
-  ok('costo y margen calculados', producto.costo_total === 100000 && producto.margen === 300000, `costo ${producto.costo_total} margen ${producto.margen}`)
+  ok('producto creado con precio y sin tareas', producto.precio_venta === 400000 && !('etapas' in producto))
+  ok('costo y margen calculados', producto.costo_calculado_total === 100000 && producto.margen === 300000, `costo ${producto.costo_calculado_total} margen ${producto.margen}`)
 
   // --- integración con el catálogo de WhatsApp (ver server/meta-whatsapp.js) ---
   // No se hace ninguna llamada real a Meta: en este entorno de prueba
@@ -87,26 +83,52 @@ try {
   const categoriaMesas = (await pool.query("SELECT id FROM categorias WHERE slug = 'mesas' LIMIT 1")).rows[0]
   const productoPublicado = await llamar('/productos', { method: 'POST', cuerpo: {
     nombre: `Mesa publicada ${marca}`, descripcion: 'Mesa de prueba', historia: 'Historia de prueba', precio_venta: 250000,
-    categoria_id: categoriaMesas?.id || null, chapita_id: `H${Date.now()}`.slice(0, 20), publicado: true,
-    etapas: [{ nombre: 'Corte', minutos_estimados: 60 }]
+    categoria_id: categoriaMesas?.id || null, chapita_id: `H${Date.now()}`.slice(0, 20), publicado: true
   } }, token)
   creados.productos.push(productoPublicado.id)
   ok('producto publicado se guarda igual aunque WhatsApp esté apagado', productoPublicado.publicado === true)
   ok('el guardado no se rompe por la sincronización en segundo plano', productoPublicado.whatsapp_sync_estado === 'NO_SINCRONIZADO', productoPublicado.whatsapp_sync_estado)
 
   // --- pedido con dos unidades ------------------------------------------
-  // El pedido no asigna empleados: las etapas se asignan después, una por
-  // una, desde Tareas (PATCH /tareas/asignadas/:origen/:id/asignar).
+  // El precio NO se manda: sale del producto (si viene, se ignora). Las
+  // tareas se definen para este pedido, con minutos por unidad.
+  let sinTareas = null
+  try { await llamar('/pedidos', { method: 'POST', cuerpo: { items: [{ producto_id: producto.id, cantidad: 1 }] } }, token) }
+  catch (error) { sinTareas = error.message }
+  ok('un pedido sin tareas se rechaza con un mensaje claro', /al menos una tarea/i.test(sinTareas || ''), sinTareas)
+
   const pedido = await llamar('/pedidos', { method: 'POST', cuerpo: {
     fecha_entrega: '2026-12-01', prioridad: 1, notas: 'Pedido de prueba',
-    items: [{ producto_id: producto.id, cantidad: 2 }]
+    items: [{ producto_id: producto.id, cantidad: 2, precio_unitario: 1, tareas: [
+      { nombre: 'Corte', minutos_estimados: 120 },
+      { nombre: 'Soldadura', minutos_estimados: 240 },
+      { nombre: 'Pintura', minutos_estimados: 60 }
+    ] }]
   } }, token)
   creados.pedidos.push(pedido.id)
   ok('pedido creado con código automático', /^PED-\d{5}$/.test(pedido.codigo), pedido.codigo)
-  ok('etapas desplegadas por item', pedido.etapas.length === 3)
-  ok('cantidad multiplica costo y tiempo', pedido.etapas[0].minutos_estimados === 240 && pedido.etapas[0].costo_estimado === 60000)
-  ok('total del pedido', pedido.total === 800000, String(pedido.total))
+  ok('tareas del pedido creadas', pedido.etapas.length === 3 && pedido.etapas.map(etapa => etapa.nombre).join() === 'Corte,Soldadura,Pintura')
+  ok('cantidad multiplica tiempo y costo', pedido.etapas[0].minutos_estimados === 240 && pedido.items[0].costo_produccion === 200000)
+  ok('el precio sale del producto (el del cuerpo se ignora)', pedido.total === 800000, String(pedido.total))
   ok('el pedido no guarda datos de cliente', !('cliente' in pedido))
+
+  // Otro pedido del MISMO producto con tareas distintas: no se mezclan y
+  // el producto no cambia.
+  const otro = await llamar('/pedidos', { method: 'POST', cuerpo: {
+    items: [{ producto_id: producto.id, cantidad: 1, tareas: [{ nombre: 'Diseño', minutos_estimados: 30 }, { nombre: 'Instalación', minutos_estimados: 90 }] }]
+  } }, token)
+  creados.pedidos.push(otro.id)
+  ok('dos pedidos del mismo producto tienen tareas distintas', otro.etapas.map(etapa => etapa.nombre).join() === 'Diseño,Instalación'
+    && (await llamar(`/pedidos/${pedido.id}`, {}, token)).etapas.length === 3)
+  const sugeridas = await llamar(`/pedidos/tareas-sugeridas?producto_id=${producto.id}`, {}, token)
+  ok('las tareas sugeridas salen del último pedido (minutos por unidad)', sugeridas.tareas.map(tarea => `${tarea.nombre}:${tarea.minutos_estimados}`).join() === 'Diseño:30,Instalación:90')
+  const conExtra = await llamar(`/pedidos/${otro.id}/items/${otro.items[0].id}/tareas`, { method: 'POST', cuerpo: { nombre: 'Embalaje', minutos_estimados: 15 } }, token)
+  ok('se agrega una tarea a un pedido ya creado', conExtra.etapas.length === 3 && conExtra.etapas[2].nombre === 'Embalaje' && conExtra.etapas[2].orden === 3)
+  const sinExtra = await llamar(`/pedidos/${otro.id}/tareas/${conExtra.etapas[2].id}`, { method: 'DELETE' }, token)
+  ok('se quita una tarea pendiente del pedido', sinExtra.etapas.length === 2)
+  const productoIntacto = await llamar(`/productos/${producto.id}`, {}, token)
+  ok('el producto no se modifica al configurar tareas', !('etapas' in productoIntacto) && productoIntacto.precio_venta === 400000)
+  await llamar(`/pedidos/${otro.id}`, { method: 'DELETE' }, token)
 
   ok('las etapas del pedido nacen sin asignar', pedido.etapas.every(etapa => !etapa.responsable_id))
   for (const etapa of pedido.etapas) {
@@ -163,18 +185,40 @@ try {
   await llamar('/configuracion', { method: 'PUT', cuerpo: { recompensa_valor_hora: '2500' } }, token)
 
   // --- estadísticas -----------------------------------------------------
+  // Las métricas de dinero salen de server/metricas.js y son las mismas en
+  // el Panel de control (resumen) y en Estadísticas (generales).
   const resumen = await llamar('/estadisticas/resumen', {}, token)
   ok('resumen del panel con pedidos terminados', resumen.pedidos.terminados >= 1)
-  ok('resumen con productos más vendidos', resumen.mas_vendidos.some(item => String(item.id) === String(producto.id)))
   ok('resumen con conteo de semáforos', resumen.trabajo.verdes >= 1 && resumen.trabajo.rojos >= 1)
 
   const generales = await llamar('/estadisticas/generales', {}, token)
-  ok('ingresos cobrados del pedido terminado', generales.ingresos.cobrados >= 800000, String(generales.ingresos.cobrados))
-  ok('gastos de producción registrados', generales.gastos.produccion_ejecutada >= 200000, String(generales.gastos.produccion_ejecutada))
-  ok('recompensas contadas como gasto', generales.gastos.recompensas >= 1875, String(generales.gastos.recompensas))
-  ok('ganancia neta = ingresos - gastos', Math.round(generales.ganancia.neta) === Math.round(generales.ingresos.cobrados - generales.gastos.total))
+  const m = generales.metricas
+  ok('panel y estadísticas muestran los mismos números', JSON.stringify(resumen.metricas) === JSON.stringify(m))
+  ok('ingresos cobrados del pedido terminado', m.real.ingresos_pedidos >= 800000, String(m.real.ingresos_pedidos))
+  ok('gastos de producción de etapas completadas', m.real.gastos_etapas_pedidos > 0, String(m.real.gastos_etapas_pedidos))
+  ok('recompensas contadas como gasto', m.real.recompensas >= 1875, String(m.real.recompensas))
+  ok('ganancia neta = ingresos - gastos', Math.round(m.real.ganancia) === Math.round(m.real.ingresos - m.real.gastos))
   ok('rendimiento por empleado', generales.rendimiento.some(persona => String(persona.id) === String(empleado.id) && persona.completadas === 3))
   ok('rentabilidad por producto', generales.por_producto.some(item => String(item.id) === String(producto.id)))
+
+  // --- venta de productos: activo = proyección, desactivado = vendido ----
+  const precioProducto = Number(producto.precio_venta)
+  ok('el producto activo entra en la proyección y no figura como vendido',
+    m.productos.activos >= 1 && m.proyectado.ingresos_stock >= precioProducto)
+  await llamar(`/productos/${producto.id}/activo`, { method: 'PATCH', cuerpo: { activo: false } }, token)
+  const trasVenta = (await llamar('/estadisticas/generales', {}, token)).metricas
+  ok('al desactivarlo pasa a vendido', trasVenta.productos.vendidos === m.productos.vendidos + 1 && trasVenta.productos.activos === m.productos.activos - 1)
+  ok('su precio pasa de proyectado a cobrado', Math.round(trasVenta.real.ingresos_productos - m.real.ingresos_productos) === Math.round(precioProducto)
+    && Math.round(m.proyectado.ingresos_stock - trasVenta.proyectado.ingresos_stock) === Math.round(precioProducto))
+  ok('los ingresos proyectados totales no cambian (no se duplica)', Math.round(trasVenta.proyectado.ingresos) === Math.round(m.proyectado.ingresos))
+  await llamar(`/productos/${producto.id}/activo`, { method: 'PATCH', cuerpo: { activo: false } }, token)
+  await llamar(`/productos/${producto.id}`, { method: 'DELETE' }, token)
+  const trasBorrar = (await llamar('/estadisticas/generales', {}, token)).metricas
+  ok('desactivar dos veces y después eliminar no duplica la venta', trasBorrar.productos.vendidos === trasVenta.productos.vendidos
+    && Math.round(trasBorrar.real.ingresos_productos) === Math.round(trasVenta.real.ingresos_productos))
+  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const futuro = (await llamar(`/estadisticas/generales?desde=${manana}`, {}, token)).metricas
+  ok('el filtro de fechas deja afuera la venta de hoy', futuro.real.ingresos === 0 && futuro.productos.vendidos_periodo === 0)
 
   // --- baja lógica de usuarios -------------------------------------------
   const desactivado = await llamar(`/usuarios/${empleado.id}/activo`, { method: 'PATCH', cuerpo: { activo: false } }, token)

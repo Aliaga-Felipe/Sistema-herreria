@@ -57,7 +57,7 @@ router.put('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res
   const cantidad = entero(cantidad_objetivo)
   if (!cantidad || cantidad <= 0) throw fallo('El objetivo diario debe ser una cantidad mayor a cero.')
 
-  const producto = await pool.query('SELECT id FROM productos WHERE id = $1', [req.params.productoId])
+  const producto = await pool.query('SELECT id FROM productos WHERE id = $1 AND NOT eliminado', [req.params.productoId])
   if (!producto.rows[0]) throw fallo('Producto no encontrado.', 404)
 
   const { rows } = await pool.query(

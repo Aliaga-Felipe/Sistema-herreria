@@ -1,0 +1,722 @@
+/* =========================================================
+   RESPONSIVE DEL PANEL INTERNO (admin / empleado / login)
+   ---------------------------------------------------------
+   Breakpoints del sistema:
+     - Escritorio: >= 1024px  → sin cambios (nada de este archivo aplica,
+       salvo el botón hamburguesa, que ahí queda oculto).
+     - Tablet:     768px – 1023px
+     - Móvil:      <= 767px
+   Todo va dentro de media queries y con ámbito ".app-shell" /
+   ".auth-page" para no tocar el diseño de escritorio ni la web pública
+   (que tiene su propio responsive en web-publica/public.css).
+   Este archivo se importa último en auth-app.jsx.
+   ========================================================= */
+
+/* Botón hamburguesa y fondo del menú: ocultos por defecto (escritorio). */
+.menu-toggle,
+.sidebar-fondo {
+    display: none;
+}
+
+/* Las imágenes de productos se gestionan con botones que aparecen al
+   pasar el mouse: en pantallas táctiles no hay "hover", así que quedan
+   siempre visibles. */
+@media (hover: none) {
+    .imagen-acciones {
+        opacity: 1;
+    }
+}
+
+/* =========================
+   TABLET Y MÓVIL (<= 900px)
+   production.css colapsa las tablas a una sola columna desde 900px y
+   oculta el encabezado, así que los valores quedaban sin rótulo. En su
+   lugar, cada tabla conserva sus columnas y se desplaza horizontalmente
+   DENTRO de su tarjeta (la página nunca se desborda).
+*/
+@media (max-width: 900px) {
+    .app-shell .orders-card,
+    .app-shell .ranking-tabla {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+    }
+
+    .app-shell .order-head,
+    .app-shell .ranking-head {
+        display: grid;
+    }
+
+    .app-shell .pedidos-head,
+    .app-shell .pedidos-row {
+        grid-template-columns: minmax(170px, 1.6fr) repeat(6, minmax(84px, 1fr));
+        min-width: 800px;
+    }
+
+    .app-shell .order-head.pedidos-head {
+        font-size: 13px;
+    }
+
+    .app-shell .resumen-head,
+    .app-shell .resumen-row {
+        grid-template-columns: 1.4fr .9fr 1.1fr .8fr;
+        min-width: 540px;
+    }
+
+    .app-shell .resumen-head {
+        font-size: 13px;
+    }
+
+    .app-shell .order-row .progress {
+        margin-right: 12px;
+    }
+
+    .app-shell .ranking-head,
+    .app-shell .ranking-fila {
+        grid-template-columns: 1.4fr .6fr 1.3fr .8fr .8fr .9fr;
+        min-width: 660px;
+    }
+
+    .app-shell .productos-head,
+    .app-shell .productos-fila {
+        grid-template-columns: 1.6fr .6fr 1fr 1fr 1fr;
+        min-width: 560px;
+    }
+
+    .app-shell .materiales-head,
+    .app-shell .materiales-fila {
+        grid-template-columns: 1.4fr .7fr .9fr .8fr 1.4fr;
+        min-width: 600px;
+    }
+
+    .app-shell .produccion-head,
+    .app-shell .produccion-fila {
+        grid-template-columns: .9fr 1.4fr .8fr .8fr 1fr;
+        min-width: 560px;
+    }
+
+    /* Grillas de formularios dentro de modales: se mantienen en fila
+       (con su encabezado) porque entran en el ancho de un celular. */
+    .app-shell .etapa-grid-head {
+        display: grid;
+    }
+
+    .app-shell .etapa-grid-head,
+    .app-shell .etapa-grid-row {
+        grid-template-columns: 20px minmax(0, 1fr) 76px 30px;
+    }
+
+    .app-shell .producto-material-grid-head {
+        display: grid;
+    }
+
+    .app-shell .producto-material-grid-head,
+    .app-shell .producto-material-grid-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto 30px;
+    }
+
+    /* El nombre del material ocupa la fila entera; debajo van precio,
+       cantidad, costo y quitar (mismo orden que el encabezado). */
+    .app-shell .producto-material-grid-head > small:first-child,
+    .app-shell .producto-material-grid-row > input:first-child {
+        grid-column: 1 / -1;
+    }
+
+    .app-shell .producto-material-grid-row {
+        padding-bottom: 8px;
+        border-bottom: 1px solid #26221f;
+    }
+
+    .app-shell .stage-grid-head.registro-grid-head {
+        display: grid;
+    }
+
+    .app-shell .registro-grid-head,
+    .app-shell .registro-grid-row {
+        grid-template-columns: minmax(0, 1fr) 52px 70px auto;
+    }
+}
+
+/* =========================
+   TABLET (768px – 1023px)
+*/
+@media (min-width: 768px) and (max-width: 1023px) {
+    /* auth.css ocultaba la barra lateral desde 800px sin ofrecer otra
+       navegación: en tablet se mantiene visible (170px, ver styles.css). */
+    .app-shell.auth-shell {
+        display: grid;
+    }
+
+    .app-shell.auth-shell .sidebar {
+        display: flex;
+    }
+
+    .app-shell .content {
+        padding: 28px 22px 44px;
+    }
+
+    .app-shell .auth-content {
+        margin-top: 28px;
+        margin-bottom: 28px;
+    }
+
+    .app-shell .product-grid,
+    .app-shell .employee-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .monthly-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .app-shell .stat-card {
+        min-width: 0;
+    }
+
+    .app-shell .analytics {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .headline {
+        flex-wrap: wrap;
+        gap: 14px;
+    }
+
+    .app-shell .actions {
+        flex-wrap: wrap;
+    }
+}
+
+/* =========================
+   MÓVIL (<= 767px)
+*/
+@media (max-width: 767px) {
+
+    /* ---------- Estructura general ---------- */
+    .app-shell {
+        display: block;
+        overflow-x: clip;
+    }
+
+    .app-shell main {
+        min-height: 100vh;
+        background: #100d0b;
+    }
+
+    /* ---------- Encabezado ---------- */
+    .app-shell header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        height: 58px;
+        padding: 0 12px;
+        gap: 10px;
+    }
+
+    .app-shell .crumb {
+        display: block;
+        flex: 1;
+        min-width: 0;
+        font-size: 18px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .app-shell .role-badge {
+        flex: none;
+    }
+
+    /* ---------- Botón hamburguesa ---------- */
+    .menu-toggle {
+        display: inline-flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 5px;
+        flex: none;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border: 1px solid #423b35;
+        border-radius: 2px;
+        background: transparent;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .menu-toggle span {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: #f7bb96;
+        transition: transform .2s ease, opacity .2s ease;
+    }
+
+    .menu-toggle.abierto span:nth-child(1) {
+        transform: translateY(7px) rotate(45deg);
+    }
+
+    .menu-toggle.abierto span:nth-child(2) {
+        opacity: 0;
+    }
+
+    .menu-toggle.abierto span:nth-child(3) {
+        transform: translateY(-7px) rotate(-45deg);
+    }
+
+    .menu-toggle:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    /* ---------- Menú lateral deslizable ----------
+       Es la misma barra lateral de escritorio (mismas opciones, mismo
+       estilo), convertida en un panel que entra desde la izquierda. */
+    .app-shell .sidebar,
+    .auth-shell .sidebar {
+        display: flex;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 40;
+        width: min(290px, 84vw);
+        padding: 20px 12px calc(16px + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform .25s ease, visibility 0s linear .25s;
+        box-shadow: 8px 0 30px rgba(0, 0, 0, .45);
+    }
+
+    .app-shell .sidebar.abierta {
+        transform: translateX(0);
+        visibility: visible;
+        transition: transform .25s ease, visibility 0s;
+    }
+
+    .app-shell .brand {
+        padding-bottom: 22px;
+    }
+
+    .app-shell .sidebar button {
+        min-height: 46px;
+        padding: 12px;
+        font-size: 14px;
+    }
+
+    .app-shell .sidebar .icon {
+        width: 28px;
+        font-size: 17px;
+    }
+
+    .app-shell .side-bottom {
+        margin-top: 24px;
+    }
+
+    .app-shell .user b {
+        font-size: 13px;
+    }
+
+    .app-shell .user small {
+        font-size: 11px;
+    }
+
+    .sidebar-fondo {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        background: rgba(8, 7, 6, .7);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .25s ease;
+    }
+
+    .sidebar-fondo.abierto {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* ---------- Contenido ---------- */
+    .app-shell .content,
+    .app-shell .auth-content {
+        margin: 0;
+        max-width: none;
+        padding: 22px 14px 48px;
+    }
+
+    .app-shell .headline {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+
+    .app-shell .headline h1 {
+        font-size: 22px;
+        letter-spacing: -.5px;
+    }
+
+    .app-shell .headline .muted {
+        font-size: 11px;
+        line-height: 1.5;
+    }
+
+    .app-shell .headline > .primary,
+    .app-shell .headline > .filter,
+    .app-shell .headline > select {
+        align-self: flex-start;
+    }
+
+    .app-shell .actions {
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+
+    .app-shell .section-heading {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    /* Botones con área táctil cómoda. */
+    .app-shell .primary,
+    .app-shell .secondary,
+    .app-shell .filter,
+    .app-shell .new-small {
+        min-height: 40px;
+        font-size: 11px;
+    }
+
+    .app-shell .row-action,
+    .app-shell .add-stage,
+    .app-shell .danger-link {
+        min-height: 36px;
+    }
+
+    .app-shell .form-actions {
+        flex-wrap: wrap;
+    }
+
+    /* ---------- Formularios ----------
+       16px evita el zoom automático de iOS al enfocar un campo. La regla
+       global "select, textarea" de auth.css les suma márgenes laterales
+       que en un celular los sacaban de su contenedor. */
+    .app-shell input:not([type='checkbox']):not([type='radio']):not([type='file']),
+    .app-shell select,
+    .app-shell textarea,
+    .app-shell .campo-auto,
+    .auth-page input {
+        font-size: 16px;
+        max-width: 100%;
+    }
+
+    .app-shell select,
+    .app-shell textarea {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .app-shell .status-control {
+        flex-wrap: wrap;
+    }
+
+    .app-shell .rango input {
+        min-height: 38px;
+    }
+
+    /* ---------- Tarjetas de estadísticas ---------- */
+    .app-shell .stats-grid,
+    .app-shell .monthly-stats,
+    .app-shell .dashboard-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-bottom: 24px;
+    }
+
+    .app-shell .stat-card {
+        min-width: 0;
+        min-height: 92px;
+    }
+
+    .app-shell .stat-card strong {
+        font-size: 19px;
+        overflow-wrap: anywhere;
+    }
+
+    .app-shell .quick-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .app-shell .quick-actions .quick {
+        min-width: 0;
+    }
+
+    .app-shell .analytics,
+    .app-shell .bottom-panels {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .ranking-simple > div {
+        grid-template-columns: minmax(0, 1fr) auto;
+        row-gap: 4px;
+    }
+
+    .app-shell .ranking-simple .progress {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        margin-right: 0;
+    }
+
+    .app-shell .person {
+        grid-template-columns: 27px minmax(0, 1fr) 70px 18px;
+    }
+
+    /* ---------- Tarjetas de productos y usuarios ---------- */
+    .app-shell .product-grid,
+    .app-shell .employee-grid,
+    .app-shell .team-grid,
+    .app-shell .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .product-card,
+    .app-shell .employee-card {
+        flex-wrap: wrap;
+    }
+
+    .app-shell .product-info,
+    .app-shell .employee-card > div {
+        flex: 1 1 180px;
+        min-width: 0;
+    }
+
+    .app-shell .product-info p,
+    .app-shell .employee-card p,
+    .app-shell .employee-card h3,
+    .app-shell .product-info h3 {
+        overflow-wrap: anywhere;
+    }
+
+    .app-shell .product-numbers {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .app-shell .card-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 18px;
+        width: 100%;
+        margin-left: 0;
+        padding-top: 8px;
+        border-top: 1px solid #302c29;
+    }
+
+    .app-shell .card-buttons button {
+        min-height: 36px;
+        font-size: 11px;
+        text-align: left;
+    }
+
+    .app-shell .card-buttons .activar-resaltado {
+        min-height: 36px;
+    }
+
+    .app-shell .employee-card .status-control {
+        margin-top: 0;
+    }
+
+    .app-shell .empty {
+        min-height: 190px;
+        padding: 26px 16px;
+    }
+
+    .app-shell .config-card {
+        padding: 14px;
+    }
+
+    .app-shell .imagen-nosotros-zona,
+    .app-shell .video-hero-preview {
+        max-width: 100%;
+    }
+
+    /* ---------- Tareas ---------- */
+    .app-shell .tareas-grid,
+    .app-shell .rendimiento-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .etapa-item {
+        flex-wrap: wrap;
+        min-height: 44px;
+        row-gap: 4px;
+    }
+
+    .app-shell .etapa-item-nombre {
+        flex: 1 1 100%;
+        font-size: 12px;
+    }
+
+    .app-shell .etapa-item-responsable {
+        max-width: none;
+        flex: 1;
+    }
+
+    .app-shell .task-card-head {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .app-shell .tarea-tiempos {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* ---------- Modales ---------- */
+    .app-shell .modal-back {
+        padding: 10px;
+        align-items: center;
+    }
+
+    .app-shell .modal {
+        width: 100% !important;
+        max-height: calc(100vh - 20px);
+        max-height: calc(100dvh - 20px);
+        padding: 22px 16px 18px;
+    }
+
+    .app-shell .modal h2 {
+        font-size: 20px;
+        margin-bottom: 18px;
+        padding-right: 36px;
+        overflow-wrap: anywhere;
+    }
+
+    .app-shell .modal > .muted {
+        padding-right: 30px;
+    }
+
+    .app-shell .modal .close {
+        top: 4px;
+        right: 4px;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+    }
+
+    .app-shell .modal-icon {
+        width: 26px;
+        height: 26px;
+        margin-right: 8px;
+        vertical-align: -5px;
+    }
+
+    .app-shell .item-linea-presupuesto {
+        grid-template-columns: 1fr;
+    }
+
+    .app-shell .item-etapas label {
+        grid-template-columns: 1fr;
+    }
+
+    /* Fila de tarea en el detalle del pedido: nombre + quitar arriba,
+       estado / tiempo / semáforo al medio y responsable abajo. */
+    .app-shell .etapa-fila-editable {
+        grid-template-columns: auto auto minmax(0, 1fr) 30px;
+        column-gap: 10px;
+        row-gap: 6px;
+        padding: 9px 0;
+    }
+
+    .app-shell .etapa-fila-editable > :nth-child(1) {
+        grid-column: 1 / 4;
+        grid-row: 1;
+        font-weight: 700;
+    }
+
+    .app-shell .etapa-fila-editable > :nth-child(2) { grid-column: 1; grid-row: 2; justify-self: start; }
+    .app-shell .etapa-fila-editable > :nth-child(3) { grid-column: 2; grid-row: 2; }
+    .app-shell .etapa-fila-editable > :nth-child(4) { grid-column: 3; grid-row: 2; justify-self: start; }
+    .app-shell .etapa-fila-editable > :nth-child(5) { grid-column: 1 / -1; grid-row: 3; }
+
+    .app-shell .etapa-fila-editable > :nth-child(6) {
+        grid-column: 4;
+        grid-row: 1;
+        height: 30px;
+    }
+
+    .app-shell .item-linea {
+        grid-template-columns: minmax(0, 1fr) 64px 32px;
+    }
+
+    .app-shell .item-linea button,
+    .app-shell .etapa-grid-row button,
+    .app-shell .producto-material-grid-row button {
+        height: 30px;
+    }
+
+    .app-shell .etapa-responsable {
+        text-align: left;
+    }
+
+    .app-shell .fecha-selector select {
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+
+    /* Título + explicación de cada bloque del formulario, apilados. */
+    .app-shell .stage-edit > div:first-child {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    /* ---------- Avisos ---------- */
+    .app-shell .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+    }
+
+    /* ---------- Login ---------- */
+    .auth-page {
+        padding: 16px;
+    }
+
+    .auth-card {
+        padding: 28px 20px;
+    }
+
+    .auth-brand {
+        margin-bottom: 28px;
+    }
+}
+
+/* Móvil pequeño (~320px) */
+@media (max-width: 360px) {
+    .app-shell .content,
+    .app-shell .auth-content {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    .app-shell .stat-card {
+        padding: 11px 9px;
+    }
+
+    .app-shell .stat-card strong {
+        font-size: 17px;
+    }
+
+    .app-shell .quick-actions .quick {
+        padding: 10px;
+    }
+
+    .app-shell .quick-actions .quick b {
+        font-size: 12px;
+    }
+
+    .app-shell .crumb {
+        font-size: 16px;
+    }
+}

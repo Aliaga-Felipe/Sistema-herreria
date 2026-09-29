@@ -86,11 +86,10 @@ export const clavesConfiguracionPublica = [
   'negocio_facebook', 'negocio_horario', 'negocio_hero_video', 'negocio_nosotros_imagen', 'moneda'
 ]
 
-// Categorías de producto: lista FIJA de exactamente tres. Es la única
-// fuente de verdad del backend (panel, API interna y web pública filtran
-// por estos slugs); database/schema.sql crea/renombra estas mismas filas en
-// la tabla `categorias` y borra cualquier otra. La categoría de un
-// producto es opcional.
+// Categorías BASE de producto: database/schema.sql garantiza que estas tres
+// existan siempre. Además, el administrador puede crear categorías nuevas
+// desde el panel (POST /api/categorias), que se guardan en la misma tabla
+// `categorias` y ya no se borran. La categoría de un producto es opcional.
 export const CATEGORIAS_PRODUCTO = [
   { slug: 'mesas', nombre: 'Mesas' },
   { slug: 'mesitas-ratoneras', nombre: 'Mesitas ratoneras' },

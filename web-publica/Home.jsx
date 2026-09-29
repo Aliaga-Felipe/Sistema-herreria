@@ -38,7 +38,7 @@ export default function Home() {
         <span className="hero-scroll">Desplazate para ver más</span>
       </section>
 
-      <section className="seccion-publica seccion-oscura">
+      <section className="seccion-publica seccion-oscura seccion-destacados">
         <div className="contenedor">
           <DestacadosAnimados productos={destacados} moneda={config.moneda} />
         </div>
