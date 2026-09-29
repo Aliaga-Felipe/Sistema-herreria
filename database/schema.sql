@@ -254,6 +254,19 @@ ALTER TABLE etapas_producto ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER N
 -- manual de arriba. La vieja tabla "materiales" (catálogo compartido) no
 -- se recrea: este formato de carga no la necesita.
 -- ---------------------------------------------------------------------
+-- Las bases que corrieron migracion_007 pero no migracion_010 todavía
+-- tienen el producto_materiales viejo (con material_id → materiales):
+-- su FK impide borrar "materiales" y su forma no sirve para el formato
+-- nuevo, así que se descarta antes de recrearlo.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'producto_materiales' AND column_name = 'material_id'
+  ) THEN
+    DROP TABLE producto_materiales;
+  END IF;
+END $$;
 DROP TABLE IF EXISTS materiales;
 CREATE TABLE IF NOT EXISTS producto_materiales (
   id BIGSERIAL PRIMARY KEY,
@@ -470,6 +483,24 @@ ALTER TABLE recompensas ADD CONSTRAINT recompensas_pedido_id_fkey FOREIGN KEY (p
 ALTER TABLE tareas ALTER COLUMN asignado_a DROP NOT NULL;
 ALTER TABLE tareas DROP CONSTRAINT IF EXISTS tareas_asignado_a_fkey;
 ALTER TABLE tareas ADD CONSTRAINT tareas_asignado_a_fkey FOREIGN KEY (asignado_a) REFERENCES usuarios(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------
+-- OBJETIVO "TERMINAR UN PEDIDO ESPECÍFICO"
+-- objetivos_produccion admite dos tipos: 'producto' (cantidad diaria de
+-- un producto, el de siempre) y 'pedido' (terminar un pedido puntual).
+-- El objetivo de pedido no tiene producto ni cantidad: se cumple cuando
+-- el pedido pasa a TERMINADO. Las columnas de recompensa quedan por
+-- compatibilidad, pero la interfaz ya no las pide.
+-- ---------------------------------------------------------------------
+ALTER TABLE objetivos_produccion ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) NOT NULL DEFAULT 'producto';
+ALTER TABLE objetivos_produccion ADD COLUMN IF NOT EXISTS pedido_id BIGINT UNIQUE REFERENCES pedidos(id) ON DELETE CASCADE;
+ALTER TABLE objetivos_produccion ALTER COLUMN producto_id DROP NOT NULL;
+ALTER TABLE objetivos_produccion ALTER COLUMN cantidad_objetivo DROP NOT NULL;
+ALTER TABLE objetivos_produccion DROP CONSTRAINT IF EXISTS objetivos_produccion_tipo_check;
+ALTER TABLE objetivos_produccion ADD CONSTRAINT objetivos_produccion_tipo_check CHECK (
+  (tipo = 'producto' AND producto_id IS NOT NULL AND cantidad_objetivo IS NOT NULL)
+  OR (tipo = 'pedido' AND pedido_id IS NOT NULL)
+);
 
 -- ---------------------------------------------------------------------
 -- INDICES
