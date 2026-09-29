@@ -1,12 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { api, dinero, fecha, useData } from './api.js'
-import { Actions, Empty, Heading, Modal, Stat, useAviso } from './ui.jsx'
+import { api, duracion, fecha, porcentaje, useData } from './api.js'
+import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, Stat, useAviso } from './ui.jsx'
 
 const hoy = () => new Date().toISOString().slice(0, 10)
+
+const textoEstadoPedido = { PENDIENTE: 'pendiente', EN_PRODUCCION: 'en producción', PAUSADO: 'pausado', TERMINADO: 'terminado', CANCELADO: 'cancelado' }
+
+// Resumen legible de los productos de un pedido, para elegirlo como objetivo.
+const resumenPedido = pedido =>
+  `${pedido.codigo} · ${pedido.items.map(item => `${item.cantidad}× ${item.producto}`).join(', ') || 'Sin productos'} · ${textoEstadoPedido[pedido.estado] || pedido.estado}`
 
 export default function PanelProduccion() {
   const objetivos = useData('/produccion/objetivos')
   const productos = useData('/productos?activos=true')
+  const pedidos = useData('/pedidos')
   const { mostrar, nodo } = useAviso()
   const [editando, setEditando] = useState(null)
 
@@ -22,17 +29,22 @@ export default function PanelProduccion() {
 
   const recargar = () => Promise.all([objetivos.load(), registros.load()])
 
+  const rutaObjetivo = objetivo => objetivo.tipo === 'pedido'
+    ? `/produccion/objetivos/pedido/${objetivo.pedido_id}`
+    : `/produccion/objetivos/${objetivo.producto_id}`
+
   const guardarObjetivo = async objetivo => {
-    await api.put(`/produccion/objetivos/${objetivo.producto_id}`, objetivo, objetivos.token)
+    await api.put(rutaObjetivo(objetivo), objetivo, objetivos.token)
     setEditando(null)
     await objetivos.load()
-    mostrar('Objetivo diario guardado.')
+    mostrar('Objetivo guardado.')
   }
 
   const eliminarObjetivo = async objetivo => {
-    if (!window.confirm(`¿Quitar el objetivo diario de "${objetivo.producto}"?`)) return
+    const nombre = objetivo.tipo === 'pedido' ? `terminar el pedido ${objetivo.pedido}` : `"${objetivo.producto}"`
+    if (!window.confirm(`¿Quitar el objetivo de ${nombre}?`)) return
     try {
-      await api.del(`/produccion/objetivos/${objetivo.producto_id}`, objetivos.token)
+      await api.del(rutaObjetivo(objetivo), objetivos.token)
       await objetivos.load()
       mostrar('Objetivo eliminado.')
     } catch (error) { mostrar(error.message, 'error') }
@@ -42,46 +54,105 @@ export default function PanelProduccion() {
     try {
       const resultado = await api.post('/produccion/registros', registro, registros.token)
       await recargar()
-      mostrar(resultado.cumplido ? `¡Objetivo cumplido! Se desbloquea la recompensa de ${resultado.producto}.` : `Producción registrada. No llegó al objetivo de ${resultado.producto}.`, resultado.cumplido ? 'ok' : 'error')
+      mostrar(resultado.cumplido ? `¡Objetivo cumplido para ${resultado.producto}!` : `Producción registrada. No llegó al objetivo de ${resultado.producto}.`, resultado.cumplido ? 'ok' : 'error')
     } catch (error) { mostrar(error.message, 'error') }
   }
 
-  const productosConObjetivo = new Set(objetivos.data.map(objetivo => String(objetivo.producto_id)))
+  const objetivosProducto = objetivos.data.filter(objetivo => objetivo.tipo !== 'pedido')
+  const objetivosActivos = objetivosProducto.filter(objetivo => objetivo.activo)
+  const productosConObjetivo = new Set(objetivosProducto.map(objetivo => String(objetivo.producto_id)))
   const productosSinObjetivo = productos.data.filter(producto => !productosConObjetivo.has(String(producto.id)))
 
-  const cumplidos = registros.data.filter(registro => registro.cumplido).length
+  // Pedidos que se pueden elegir como objetivo: abiertos y sin objetivo propio.
+  const pedidosConObjetivo = new Set(objetivos.data.filter(objetivo => objetivo.tipo === 'pedido').map(objetivo => String(objetivo.pedido_id)))
+  const pedidosDisponibles = pedidos.data.filter(pedido => !['TERMINADO', 'CANCELADO'].includes(pedido.estado) && !pedidosConObjetivo.has(String(pedido.id)))
+
+  // Un producto por fila de pedido en producción, con sus propias etapas
+  // (mismo armado que la tabla de Pedidos, ver panel-pedidos.jsx).
+  const enProduccion = pedidos.data
+    .filter(pedido => pedido.estado === 'EN_PRODUCCION')
+    .flatMap(pedido => pedido.items.map(item => {
+      const etapasItem = pedido.etapas
+        .filter(etapa => String(etapa.pedido_item_id) === String(item.id))
+        .sort((a, b) => a.orden - b.orden)
+      const completadas = etapasItem.filter(etapa => etapa.estado === 'COMPLETADA').length
+      return { clave: `${pedido.id}-${item.id}`, pedido, item, etapasItem, completadas, avance: porcentaje(completadas, etapasItem.length) }
+    }))
 
   return (
     <>
-      <Heading kicker="Producción diaria" title="Objetivos y recompensas" text="Definí cuánto tiene que producirse por día de cada producto. Si se cumple o se supera, se desbloquea la recompensa asociada.">
+      <Heading kicker="Producción diaria" title="Producción y objetivos" text="Seguí cómo avanza cada producto en producción y definí objetivos diarios por producto o la terminación de un pedido.">
         <button className="primary" onClick={() => setEditando({})}>+ Nuevo objetivo</button>
       </Heading>
 
       {nodo}
 
       <section className="stats-grid dashboard-stats">
-        <Stat label="Productos con objetivo" value={objetivos.data.length} hint={`${objetivos.data.filter(o => o.activo).length} activos`} />
-        <Stat label="Días registrados" value={registros.data.length} />
-        <Stat label="Días con objetivo cumplido" value={cumplidos} tone={cumplidos ? '' : 'danger'} />
+        <Stat label="Productos en producción" value={enProduccion.length} />
+        <Stat label="Objetivos" value={objetivos.data.length} hint={`${objetivos.data.filter(o => o.activo).length} activos`} />
       </section>
 
       <section className="section-heading">
-        <div><h2>Objetivos por producto</h2><p>Cantidad diaria esperada y la recompensa que se otorga al cumplirla.</p></div>
+        <div><h2>Productos en producción</h2><p>Avance de cada producto de los pedidos en producción, etapa por etapa.</p></div>
+      </section>
+
+      {pedidos.loading ? <p>Cargando producción...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : enProduccion.length ? (
+        <section>
+          {enProduccion.map(fila => (
+            <article className="config-card" key={fila.clave}>
+              <div className="detalle-item-head">
+                <b>{fila.item.cantidad}× {fila.item.producto}</b>
+                <span className="task-status en_progreso">En producción</span>
+              </div>
+              <p className="stage-total">
+                Pedido {fila.pedido.codigo} · Entrega {fecha(fila.pedido.fecha_entrega)} ·
+                <b> Progreso general {fila.avance}%</b> ({fila.completadas} de {fila.etapasItem.length} etapas)
+              </p>
+              <Progress value={fila.avance} />
+
+              <div className="etapas-tabla">
+                {fila.etapasItem.map(etapa => (
+                  <div className="etapa-fila" key={etapa.id}>
+                    <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
+                    <Badge estado={etapa.estado} />
+                    <span className="etapa-tiempo">
+                      {duracion(etapa.minutos_estimados)}
+                      {etapa.minutos_reales ? <b> → {duracion(etapa.minutos_reales)}</b> : null}
+                    </span>
+                    <Semaforo valor={etapa.semaforo} compacto />
+                    <span className="etapa-responsable" title="La asignación se gestiona desde Tareas">{etapa.responsable || 'Sin asignar'}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <p className="notice">No hay productos en producción en este momento.</p>
+      )}
+
+      <section className="section-heading">
+        <div><h2>Objetivos</h2><p>Cantidad diaria esperada por producto o pedidos que se busca terminar.</p></div>
       </section>
 
       {objetivos.loading ? <p>Cargando objetivos...</p> : objetivos.data.length ? (
         <section className="product-grid">
           {objetivos.data.map(objetivo => (
             <article className={`product-card ${objetivo.activo ? '' : 'inactivo'}`} key={objetivo.id}>
-              <div className="product-symbol">◈</div>
+              <div className="product-symbol">{objetivo.tipo === 'pedido' ? '⌁' : '◈'}</div>
               <div className="product-info">
-                <h3>{objetivo.producto}</h3>
-                <p>Objetivo: {objetivo.cantidad_objetivo} por día</p>
-                <p>
-                  {objetivo.tipo_recompensa === 'monto'
-                    ? `Recompensa: ${dinero(objetivo.valor_recompensa)}`
-                    : `Recompensa: ${objetivo.descripcion_recompensa || 'Sin descripción'}`}
-                </p>
+                {objetivo.tipo === 'pedido' ? (
+                  <>
+                    <h3>Terminar pedido {objetivo.pedido}</h3>
+                    <p>{objetivo.pedido_estado === 'TERMINADO' ? '✅ Pedido terminado' : `Avance: ${objetivo.pedido_avance}% · ${textoEstadoPedido[objetivo.pedido_estado] || objetivo.pedido_estado}`}</p>
+                    <p>Entrega: {fecha(objetivo.pedido_fecha_entrega)}</p>
+                  </>
+                ) : (
+                  <>
+                    <h3>{objetivo.producto}</h3>
+                    <p>Objetivo: {objetivo.cantidad_objetivo} por día</p>
+                  </>
+                )}
               </div>
               <div className="card-buttons">
                 <button onClick={() => setEditando(objetivo)}>Editar</button>
@@ -91,17 +162,17 @@ export default function PanelProduccion() {
           ))}
         </section>
       ) : (
-        <Empty title="No hay objetivos cargados" text="Definí cuántas unidades de un producto se esperan por día." action={() => setEditando({})} label="Crear objetivo" />
+        <Empty title="No hay objetivos cargados" text="Definí cuántas unidades de un producto se esperan por día o qué pedido hay que terminar." action={() => setEditando({})} label="Crear objetivo" />
       )}
 
       <section className="section-heading">
         <div><h2>Registrar producción de hoy</h2><p>Cargá lo producido por cada producto con objetivo activo.</p></div>
       </section>
 
-      {objetivos.data.filter(objetivo => objetivo.activo).length ? (
-        <RegistroDiario objetivos={objetivos.data.filter(objetivo => objetivo.activo)} save={registrarProduccion} />
+      {objetivosActivos.length ? (
+        <RegistroDiario objetivos={objetivosActivos} save={registrarProduccion} />
       ) : (
-        <p className="notice">Cargá al menos un objetivo activo para poder registrar producción.</p>
+        <p className="notice">Cargá al menos un objetivo diario de producto activo para poder registrar producción.</p>
       )}
 
       <section className="section-heading">
@@ -132,89 +203,100 @@ export default function PanelProduccion() {
         <Empty title="Todavía no hay producción registrada" text="Registrá la producción del día para empezar a ver el historial." />
       )}
 
-      {editando && <ObjetivoModal objetivo={editando} productos={editando.id ? productos.data : productosSinObjetivo} close={() => setEditando(null)} save={guardarObjetivo} />}
+      {editando && (
+        <ObjetivoModal
+          objetivo={editando}
+          productos={editando.id ? productos.data : productosSinObjetivo}
+          pedidos={pedidosDisponibles}
+          close={() => setEditando(null)}
+          save={guardarObjetivo}
+        />
+      )}
     </>
   )
 }
 
 // ---------------------------------------------------------------------
-// FORMULARIO DE OBJETIVO (alta o edición, uno por producto)
+// FORMULARIO DE OBJETIVO (alta o edición)
+// Dos tipos: producción diaria de un producto (uno por producto) o
+// terminar un pedido específico (uno por pedido, elegido de los pedidos
+// reales abiertos). En la edición el tipo y el producto/pedido quedan fijos.
 // ---------------------------------------------------------------------
-function ObjetivoModal({ objetivo, productos, close, save }) {
+function ObjetivoModal({ objetivo, productos, pedidos, close, save }) {
   const editar = Boolean(objetivo.id)
+  const [tipo, setTipo] = useState(objetivo.tipo || (!productos.length && pedidos.length ? 'pedido' : 'producto'))
   const [productoId, setProductoId] = useState(objetivo.producto_id || '')
+  const [pedidoId, setPedidoId] = useState(objetivo.pedido_id || '')
   const [cantidad, setCantidad] = useState(objetivo.cantidad_objetivo ?? '')
-  const [tipoRecompensa, setTipoRecompensa] = useState(objetivo.tipo_recompensa || 'monto')
-  const [valorRecompensa, setValorRecompensa] = useState(objetivo.valor_recompensa ?? '')
-  const [descripcionRecompensa, setDescripcionRecompensa] = useState(objetivo.descripcion_recompensa || '')
   const [activo, setActivo] = useState(objetivo.activo ?? true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const enviar = async event => {
     event.preventDefault()
-    if (!productoId) return setError('Elegí un producto.')
+    if (tipo === 'producto' && !productoId) return setError('Elegí un producto.')
+    if (tipo === 'pedido' && !pedidoId) return setError('Elegí el pedido a terminar.')
     setBusy(true); setError('')
     try {
-      await save({
-        producto_id: productoId,
-        cantidad_objetivo: Number(cantidad),
-        tipo_recompensa: tipoRecompensa,
-        valor_recompensa: tipoRecompensa === 'monto' ? Number(valorRecompensa) || 0 : 0,
-        descripcion_recompensa: descripcionRecompensa,
-        activo
-      })
+      await save(tipo === 'pedido'
+        ? { tipo, pedido_id: pedidoId, activo }
+        : { tipo, producto_id: productoId, cantidad_objetivo: Number(cantidad), activo })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
-  if (!editar && !productos.length) {
-    return (
-      <Modal title="Nuevo objetivo" close={close}>
-        <Empty title="Todos los productos activos ya tienen un objetivo" text="Editá un objetivo existente o creá un producto nuevo." action={close} label="Entendido" />
-      </Modal>
-    )
-  }
+  const sinOpciones = !editar && (tipo === 'producto' ? !productos.length : !pedidos.length)
 
   return (
-    <Modal title={editar ? 'Editar objetivo' : 'Nuevo objetivo diario'} subtitle="Cantidad esperada por día y la recompensa que se otorga al cumplirla." close={close}>
+    <Modal title={editar ? 'Editar objetivo' : 'Nuevo objetivo'} subtitle="Producción diaria de un producto o terminación de un pedido específico." close={close}>
       <form onSubmit={enviar}>
-        <label>Producto
-          <select required disabled={editar} value={productoId} onChange={event => setProductoId(event.target.value)}>
-            <option value="">Seleccionar producto</option>
-            {productos.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
+        <label>Tipo de objetivo
+          <select disabled={editar} value={tipo} onChange={event => { setTipo(event.target.value); setError('') }}>
+            <option value="producto">Producción diaria de un producto</option>
+            <option value="pedido">Terminar un pedido específico</option>
           </select>
         </label>
 
-        <label>Cantidad objetivo por día
-          <input required min="1" type="number" value={cantidad} onChange={event => setCantidad(event.target.value)} placeholder="Ej. 2" />
-        </label>
+        {tipo === 'producto' ? (
+          productos.length || editar ? (
+            <>
+              <label>Producto
+                <select required disabled={editar} value={productoId} onChange={event => setProductoId(event.target.value)}>
+                  <option value="">Seleccionar producto</option>
+                  {productos.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
+                </select>
+              </label>
 
-        <div className="form-grid config-grid">
-          <label>Tipo de recompensa
-            <select value={tipoRecompensa} onChange={event => setTipoRecompensa(event.target.value)}>
-              <option value="monto">Monto fijo</option>
-              <option value="libre">Otra (día libre, premio, etc.)</option>
+              <label>Cantidad objetivo por día
+                <input required min="1" type="number" value={cantidad} onChange={event => setCantidad(event.target.value)} placeholder="Ej. 2" />
+              </label>
+            </>
+          ) : (
+            <p className="notice">Todos los productos activos ya tienen un objetivo. Editá uno existente o creá un producto nuevo.</p>
+          )
+        ) : editar ? (
+          <label>Pedido
+            <select disabled value={pedidoId}><option value={pedidoId}>{objetivo.pedido}</option></select>
+          </label>
+        ) : pedidos.length ? (
+          <label>Pedido a terminar
+            <select required value={pedidoId} onChange={event => setPedidoId(event.target.value)}>
+              <option value="">Seleccionar pedido</option>
+              {pedidos.map(pedido => <option key={pedido.id} value={pedido.id}>{resumenPedido(pedido)}</option>)}
             </select>
           </label>
-
-          {tipoRecompensa === 'monto' && (
-            <label>Monto de la recompensa
-              <input min="0" step="0.01" type="number" value={valorRecompensa} onChange={event => setValorRecompensa(event.target.value)} placeholder="0" />
-            </label>
-          )}
-        </div>
-
-        <label>Descripción de la recompensa {tipoRecompensa === 'libre' ? '' : '(opcional)'}
-          <textarea required={tipoRecompensa === 'libre'} value={descripcionRecompensa} onChange={event => setDescripcionRecompensa(event.target.value)} placeholder="Ej. Media jornada libre, entrada al cine, etc." />
-        </label>
+        ) : (
+          <p className="notice">No hay pedidos abiertos sin objetivo. Creá un pedido desde la sección Pedidos.</p>
+        )}
 
         <label className="config-check">
           <input type="checkbox" checked={activo} onChange={event => setActivo(event.target.checked)} />
-          Objetivo activo (se puede registrar producción contra él)
+          Objetivo activo
         </label>
 
         {error && <p className="form-error">{error}</p>}
-        <Actions close={close} label={editar ? 'Guardar cambios' : 'Crear objetivo'} busy={busy} />
+        {sinOpciones
+          ? <div className="form-actions"><button type="button" className="primary" onClick={close}>Entendido</button></div>
+          : <Actions close={close} label={editar ? 'Guardar cambios' : 'Crear objetivo'} busy={busy} />}
       </form>
     </Modal>
   )

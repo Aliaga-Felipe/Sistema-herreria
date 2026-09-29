@@ -333,7 +333,34 @@ main {
 
 .actions {
     display: flex;
+    align-items: center;
     gap: 7px;
+}
+
+/* Botones y filtros del encabezado de cada sección: tamaño compacto, en una
+   sola línea y sin achicarse cuando el texto de la izquierda es largo.
+   El margin: 0 anula los márgenes que auth.css le pone a todos los
+   <select> (regla del editor de productos que se aplica de forma global). */
+.headline > div:first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.headline {
+    gap: 24px;
+}
+
+.actions > .primary,
+.actions > .secondary,
+.actions > .filter,
+.headline > .primary,
+.headline > .secondary,
+.headline > .filter {
+    flex-shrink: 0;
+    white-space: nowrap;
+    margin: 0;
+    padding: 8px 14px;
+    line-height: 1.2;
 }
 
 /* =========================

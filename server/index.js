@@ -44,6 +44,18 @@ app.use('/api/configuracion', configuracion)
 app.use('/api/produccion', produccion)
 app.use('/api/presupuestos', presupuestos)
 
+// En producción el mismo servidor entrega el frontend ya compilado (dist/,
+// generado con "npm run build"): panel y web pública en un solo dominio.
+// Cualquier ruta que no sea /api, /uploads ni /assets devuelve index.html
+// para que React Router resuelva la página (por ejemplo al recargar
+// /productos/:slug).
+// En desarrollo dist/ no hace falta: el frontend lo sirve Vite.
+const directorioDist = path.join(directorio, '..', 'dist')
+app.use(express.static(directorioDist))
+app.get(/^\/(?!api\/|uploads\/|assets\/).*/, (_, res, next) => {
+  res.sendFile(path.join(directorioDist, 'index.html'), error => error && next())
+})
+
 app.use((error, _, res, __) => {
   if (error.code === '23505') return res.status(409).json({ error: 'Ya existe un registro con esos datos (correo o código repetido).' })
   if (error.code === '23503') return res.status(409).json({ error: 'No se puede completar: el registro está referenciado por otros datos.' })
