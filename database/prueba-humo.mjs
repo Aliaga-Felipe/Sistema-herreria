@@ -1,8 +1,8 @@
 /**
  * Prueba de humo del flujo completo contra la API.
  * Crea un admin temporal, un empleado, un producto, un pedido, cierra una
- * etapa rápido y otra lenta, revisa el semáforo, las recompensas y las
- * estadísticas, y al final borra todo lo que creó.
+ * etapa rápido y otra lenta, revisa el semáforo, la recompensa del equipo
+ * y las estadísticas, y al final borra todo lo que creó.
  *
  * Uso:  node database/prueba-humo.mjs [http://localhost:3001]
  */
@@ -148,15 +148,12 @@ try {
   // 240 estimados → 150 reales: bien por debajo, tiene que dar verde.
   const rapido = await llamar(`/tareas/asignadas/PEDIDO/${corte.id}/completar`, { method: 'PATCH', cuerpo: { minutos_reales: 150, observaciones: 'Sin contratiempos' } }, tokenEmpleado)
   ok('semáforo verde al terminar antes', rapido.semaforo === 'VERDE', `${rapido.minutos_reales}/${rapido.minutos_estimados} min`)
-  ok('recompensa automática generada', rapido.recompensa && rapido.recompensa.monto > 0, `$${rapido.recompensa?.monto}`)
-  // (240-150)/60 * 2500 * 0.5 = 1875
-  ok('monto según la fórmula configurada', Number(rapido.recompensa.monto) === 1875, String(rapido.recompensa.monto))
+  ok('el verde ya no genera bono individual', !('recompensa' in rapido))
   ok('el pedido pasó a producción', rapido.estado_pedido === 'EN_PRODUCCION', rapido.estado_pedido)
 
   // 480 estimados → 500 reales: se pasa más del 10%, tiene que dar rojo.
   const lento = await llamar(`/tareas/asignadas/PEDIDO/${soldadura.id}/completar`, { method: 'PATCH', cuerpo: { minutos_reales: 600 } }, tokenEmpleado)
   ok('semáforo rojo al pasarse', lento.semaforo === 'ROJO', `${lento.minutos_reales}/${lento.minutos_estimados} min`)
-  ok('sin recompensa en rojo', !lento.recompensa)
 
   // 120 estimados → 118 reales: dentro del ±10%, amarillo.
   const promedio = await llamar(`/tareas/asignadas/PEDIDO/${pintura.id}/completar`, { method: 'PATCH', cuerpo: { minutos_reales: 118 } }, tokenEmpleado)
@@ -171,18 +168,46 @@ try {
   const pedidoFinal = await llamar(`/pedidos/${pedido.id}`, {}, token)
   ok('avance del pedido al 100%', pedidoFinal.avance === 100 && pedidoFinal.estado === 'TERMINADO')
 
-  // --- recompensas -----------------------------------------------------
-  const misRecompensas = await llamar('/recompensas', {}, tokenEmpleado)
-  ok('el empleado ve solo sus recompensas', misRecompensas.length === 1 && String(misRecompensas[0].usuario_id) === String(empleado.id))
+  const bonosIndividuales = (await pool.query('SELECT COUNT(*)::int AS n FROM recompensas WHERE usuario_id = $1', [empleado.id])).rows[0].n
+  ok('no se generan recompensas individuales', bonosIndividuales === 0, String(bonosIndividuales))
 
-  const ranking = await llamar('/recompensas/ranking', {}, token)
-  const fila = ranking.find(persona => String(persona.id) === String(empleado.id))
-  ok('ranking con el reparto de semáforos', fila.verdes === 1 && fila.amarillos === 1 && fila.rojos === 1, JSON.stringify(fila))
+  // --- recompensa del equipo --------------------------------------------
+  // Fecha lejana para no tocar días reales: 2 personas × 8 hs = 16 hs,
+  // silla de 4 hs → objetivo sugerido 16 hs (4 sillas); se producen 5.
+  const dia = '2001-01-01'
+  const silla = await llamar('/productos', { method: 'POST', cuerpo: { nombre: `Silla ${marca}`, descripcion: 'Silla de prueba', horas_hombre: 4 } }, token)
+  creados.productos.push(silla.id)
 
-  // --- configuración editable ------------------------------------------
-  const config = await llamar('/configuracion', { method: 'PUT', cuerpo: { recompensa_valor_hora: '4000' } }, token)
-  ok('el admin edita la fórmula de recompensas', config.recompensa_valor_hora === '4000')
-  await llamar('/configuracion', { method: 'PUT', cuerpo: { recompensa_valor_hora: '2500' } }, token)
+  let horasProhibidas = false
+  try { await llamar('/produccion/horas', { method: 'PUT', cuerpo: { fecha: dia, horas: [{ usuario_id: empleado.id, horas: 8 }] } }, tokenEmpleado) } catch (error) { horasProhibidas = error.message.includes('403') }
+  ok('el empleado no puede cargar horas', horasProhibidas)
+
+  const conHoras = await llamar('/produccion/horas', { method: 'PUT', cuerpo: { fecha: dia, horas: [{ usuario_id: empleado.id, horas: 8 }, { usuario_id: admin.id, horas: 8 }] } }, token)
+  ok('horas totales del equipo', conHoras.horas_totales === 16 && conHoras.objetivo_horas === 16, JSON.stringify({ totales: conHoras.horas_totales, objetivo: conHoras.objetivo_horas }))
+
+  await llamar('/produccion/registros', { method: 'POST', cuerpo: { producto_id: silla.id, fecha: dia, cantidad_producida: 5 } }, tokenEmpleado)
+  const jornada = await llamar(`/recompensas/equipo/dia/${dia}`, {}, tokenEmpleado)
+  const valorHora = jornada.valor_hora
+  ok('5 sillas: excedente de 4 hs', jornada.horas_producidas === 20 && jornada.excedente_horas === 4, JSON.stringify({ producidas: jornada.horas_producidas, excedente: jornada.excedente_horas }))
+  ok('recompensa = excedente × valor hora × % premio', jornada.recompensa === Math.round(4 * valorHora * (jornada.porcentaje_premio / 100) * 100) / 100, `$${jornada.recompensa}`)
+
+  let objetivoProhibido = false
+  try { await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { objetivo_horas: 4 } }, tokenEmpleado) } catch (error) { objetivoProhibido = error.message.includes('403') }
+  ok('el empleado no puede cambiar el objetivo', objetivoProhibido)
+
+  const conObjetivo = await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { objetivo_horas: 20 } }, token)
+  ok('el objetivo del admin reemplaza al sugerido', conObjetivo.objetivo_manual && conObjetivo.objetivo_horas === 20 && conObjetivo.recompensa === 0)
+  const guardada = (await pool.query('SELECT objetivo_horas::float8 AS objetivo, recompensa::float8 AS recompensa FROM jornadas_equipo WHERE fecha = $1', [dia])).rows[0]
+  ok('el objetivo queda guardado en el día', guardada.objetivo === 20 && guardada.recompensa === 0)
+  await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { automatico: true } }, token)
+
+  let parametrosProhibidos = false
+  try { await llamar('/recompensas/parametros', { method: 'PUT', cuerpo: { valor_hora: 1 } }, tokenEmpleado) } catch (error) { parametrosProhibidos = error.message.includes('403') }
+  ok('el empleado no puede cambiar el valor hora', parametrosProhibidos)
+  const nuevos = await llamar('/recompensas/parametros', { method: 'PUT', cuerpo: { valor_hora: valorHora + 1000, porcentaje_premio: 50 } }, token)
+  ok('el admin cambia valor hora y % premio', nuevos.valor_hora === valorHora + 1000 && nuevos.porcentaje_premio === 50)
+  const sinCambio = await llamar(`/recompensas/equipo/dia/${dia}`, {}, token)
+  ok('el valor nuevo no recalcula días anteriores', sinCambio.valor_hora === valorHora && sinCambio.recompensa === jornada.recompensa, `$${sinCambio.recompensa}`)
 
   // --- estadísticas -----------------------------------------------------
   // Las métricas de dinero salen de server/metricas.js y son las mismas en
@@ -196,7 +221,8 @@ try {
   ok('panel y estadísticas muestran los mismos números', JSON.stringify(resumen.metricas) === JSON.stringify(m))
   ok('ingresos cobrados del pedido terminado', m.real.ingresos_pedidos >= 800000, String(m.real.ingresos_pedidos))
   ok('gastos de producción de etapas completadas', m.real.gastos_etapas_pedidos > 0, String(m.real.gastos_etapas_pedidos))
-  ok('recompensas contadas como gasto', m.real.recompensas >= 1875, String(m.real.recompensas))
+  const metricasDia = (await llamar(`/estadisticas/generales?desde=${dia}&hasta=${dia}`, {}, token)).metricas
+  ok('la recompensa del equipo cuenta como gasto', metricasDia.real.recompensas === jornada.recompensa, String(metricasDia.real.recompensas))
   ok('ganancia neta = ingresos - gastos', Math.round(m.real.ganancia) === Math.round(m.real.ingresos - m.real.gastos))
   ok('rendimiento por empleado', generales.rendimiento.some(persona => String(persona.id) === String(empleado.id) && persona.completadas === 3))
   ok('rentabilidad por producto', generales.por_producto.some(item => String(item.id) === String(producto.id)))
@@ -234,6 +260,8 @@ try {
   for (const id of creados.pedidos) await pool.query('DELETE FROM pedidos WHERE id = $1', [id])
   for (const id of creados.productos) await pool.query('DELETE FROM productos WHERE id = $1', [id])
   await pool.query('DELETE FROM recompensas WHERE usuario_id = ANY($1)', [creados.usuarios])
+  await pool.query("DELETE FROM jornadas_equipo WHERE fecha = '2001-01-01'")
+  await pool.query('DELETE FROM parametros_recompensa_historial WHERE creado_por = ANY($1)', [creados.usuarios])
   for (const id of creados.usuarios) await pool.query('DELETE FROM usuarios WHERE id = $1', [id])
   await pool.end()
   console.log(process.exitCode ? '\nLa prueba de humo encontró fallas.' : '\nPrueba de humo completa. Datos de prueba eliminados.')

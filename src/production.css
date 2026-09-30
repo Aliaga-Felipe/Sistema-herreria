@@ -683,6 +683,16 @@
     grid-template-columns: .9fr 1.4fr .8fr .8fr 1fr;
 }
 
+/* Historial de la recompensa del equipo (panel-recompensas.jsx). */
+.jornada-head,
+.jornada-fila {
+    grid-template-columns: .9fr .8fr .8fr .8fr .8fr 1.2fr .9fr;
+}
+
+.jornada-fila {
+    cursor: pointer;
+}
+
 .ranking-head {
     font-size: 9px;
     text-transform: uppercase;

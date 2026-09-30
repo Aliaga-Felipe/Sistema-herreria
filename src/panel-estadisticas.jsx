@@ -50,7 +50,7 @@ export default function PanelEstadisticas() {
       <section className="stats-grid monthly-stats">
         <Stat label="Ingresos cobrados" value={dinero(real.ingresos, moneda)} hint={`${productos.vendidos_periodo} productos vendidos ${dinero(real.ingresos_productos, moneda)} · ${pedidos.cobrados} pedidos terminados ${dinero(real.ingresos_pedidos, moneda)}`} />
         <Stat label="Gastos de producción" value={dinero(real.gastos_produccion, moneda)} hint={`Etapas completadas ${dinero(real.gastos_etapas_pedidos + real.gastos_tareas, moneda)} · Costo de lo vendido ${dinero(real.costo_productos_vendidos, moneda)}`} />
-        <Stat label="Recompensas pagadas" value={dinero(real.recompensas, moneda)} hint={`${real.recompensas_cantidad} recompensas otorgadas`} />
+        <Stat label="Recompensas pagadas" value={dinero(real.recompensas, moneda)} hint={`Premio del equipo por día (y bonos anteriores) · ${real.recompensas_cantidad} registros`} />
         <Stat
           label="Ganancia neta"
           value={dinero(real.ganancia, moneda)}
@@ -134,7 +134,7 @@ export default function PanelEstadisticas() {
 
       {/* ---------- EMPLEADOS ---------- */}
       <section className="section-heading">
-        <div><h2>Rendimiento de empleados</h2><p>Etapas completadas, tiempos y recompensas del período; pendientes a hoy.</p></div>
+        <div><h2>Rendimiento de empleados</h2><p>Etapas completadas y tiempos del período; pendientes a hoy.</p></div>
       </section>
 
       {rendimiento.length ? (
@@ -151,7 +151,6 @@ export default function PanelEstadisticas() {
               <div className="rendimiento-datos">
                 <span><small>Promedio por etapa</small><b>{duracion(empleado.promedio_minutos)}</b></span>
                 <span><small>Estimado / real</small><b>{duracion(empleado.minutos_estimados)} / {duracion(empleado.minutos_reales)}</b></span>
-                <span><small>Recompensas</small><b>{dinero(empleado.recompensas_monto, moneda)}</b></span>
               </div>
 
               {empleado.eficiencia !== null && (

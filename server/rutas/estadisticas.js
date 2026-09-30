@@ -71,7 +71,7 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
 // ---------------------------------------------------------------------
 // ESTADÍSTICAS GENERALES (apartado propio, más detallado)
 // "desde" / "hasta" (YYYY-MM-DD, opcionales) filtran todo lo que tiene
-// fecha: ventas, cobros, etapas completadas, recompensas y semáforos.
+// fecha: ventas, cobros, etapas completadas, recompensas del equipo y semáforos.
 // ---------------------------------------------------------------------
 router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   const desde = validarFecha(req.query.desde)
@@ -90,8 +90,7 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
       COUNT(v.id) FILTER (WHERE v.semaforo = 'ROJO' AND ${enRango('v.completado_en')})::int AS rojos,
       COALESCE(SUM(v.minutos_estimados) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::int AS minutos_estimados,
       COALESCE(SUM(v.minutos_reales) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::int AS minutos_reales,
-      COALESCE(ROUND(AVG(v.minutos_reales) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})), 0)::int AS promedio_minutos,
-      COALESCE((SELECT SUM(r.monto) FROM recompensas r WHERE r.usuario_id = u.id AND ${enRango('r.otorgado_en')}), 0)::float8 AS recompensas_monto
+      COALESCE(ROUND(AVG(v.minutos_reales) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})), 0)::int AS promedio_minutos
     FROM usuarios u
     LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
     WHERE LOWER(u.rol::text) = 'empleado'

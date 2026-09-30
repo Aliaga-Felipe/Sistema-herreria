@@ -4,7 +4,7 @@ import { api, dinero, duracion, fecha, iniciales, precioVenta, useAutoRefresco, 
 import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
-import PanelRecompensas, { ConfiguracionRecompensas } from './panel-recompensas.jsx'
+import PanelRecompensas, { ConfiguracionSemaforo } from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
 import PanelProduccion from './panel-produccion.jsx'
@@ -117,7 +117,7 @@ function Dashboard({ ir }) {
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
           { icono: '✓', label: 'Asignar tareas', texto: `${trabajo.sin_asignar} etapas sin dueño`, onClick: () => ir('Tareas') },
           { icono: '◫', label: 'Estadísticas', texto: 'Gastos y ganancias', onClick: () => ir('Estadísticas') },
-          { icono: '♛', label: 'Recompensas', texto: 'Semáforo y bonos', onClick: () => ir('Recompensas') }
+          { icono: '♛', label: 'Recompensas', texto: 'Premio del equipo', onClick: () => ir('Recompensas') }
         ]}
       />
 
@@ -707,7 +707,7 @@ function PanelConfiguracion({ rol }) {
 
   return (
     <>
-      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller, datos de la web pública y reglas del sistema de recompensas." />
+      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller, datos de la web pública y semáforo de rendimiento." />
 
       {aviso && <p className="notice">{aviso}</p>}
 
@@ -717,7 +717,7 @@ function PanelConfiguracion({ rol }) {
 
       <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
 
-      <ConfiguracionRecompensas onGuardar={() => setAviso('Parámetros guardados.')} />
+      <ConfiguracionSemaforo onGuardar={() => setAviso('Tolerancia del semáforo guardada.')} />
 
       <section className="settings-grid">
         <article>
@@ -735,7 +735,7 @@ function PanelConfiguracion({ rol }) {
         <article>
           <span>🚦</span>
           <h3>Semáforo de rendimiento</h3>
-          <p>El sistema compara el tiempo real informado por el empleado contra el estimado por el administrador y clasifica la etapa en verde, amarillo o rojo. Solo el verde genera bono.</p>
+          <p>El sistema compara el tiempo real informado por el empleado contra el estimado por el administrador y clasifica la etapa en verde, amarillo o rojo. Es un indicador: la recompensa es una sola por día para todo el equipo (ver Recompensas).</p>
         </article>
       </section>
     </>

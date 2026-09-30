@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, calcularSemaforo, decimal, entero, esAdmin, fallo, leerConfiguracion, registrarRecompensa, sincronizarPedido } from '../comun.js'
+import { asyncRoute, auth, calcularSemaforo, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido } from '../comun.js'
 
 const router = Router()
 const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecución', minutos: 120 }, { nombre: 'Control de calidad', minutos: 20 }]
@@ -67,7 +67,7 @@ router.patch('/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
 // - TAREA: etapa de una tarea libre; las tareas libres tienen un único
 //   responsable, así que se reasigna la tarea a la que pertenece la etapa.
 // Una etapa ya completada no se reasigna, para no alterar el historial de
-// semáforo y recompensas de quien la hizo.
+// semáforo de quien la hizo.
 router.patch('/asignadas/:origen/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
   const responsable = await validarEmpleadoActivo(req.body.responsable_id)
 
@@ -118,7 +118,6 @@ router.patch('/:tareaId/etapas/:etapaId', auth(), asyncRoute(async (req, res) =>
     const { rows } = await pool.query(`UPDATE tarea_etapas e SET realizada = FALSE, completada_en = NULL, minutos_reales = NULL, semaforo = NULL
       FROM tareas t WHERE e.id = $1 AND e.tarea_id = $2 AND t.id = e.tarea_id${propia} RETURNING e.id`, valores)
     if (!rows[0]) throw fallo('Etapa no encontrada o sin permisos.', 404)
-    await pool.query('DELETE FROM recompensas WHERE tarea_etapa_id = $1', [req.params.etapaId])
     return res.json({ id: rows[0].id, realizada: false })
   }
   res.json(await completarEtapaTarea({ etapaId: req.params.etapaId, tareaId: req.params.tareaId, minutosReales, usuario: req.user }))
@@ -151,7 +150,7 @@ router.patch('/asignadas/:origen/:id/iniciar', auth(), asyncRoute(async (req, re
 }))
 
 // Cierre de la etapa: el empleado informa cuánto tardó realmente y el
-// sistema devuelve el semáforo y la recompensa generada, si corresponde.
+// sistema devuelve el semáforo (indicador; la recompensa es por equipo).
 router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, res) => {
   const { minutos_reales: minutosReales, observaciones = null } = req.body
   const minutos = entero(minutosReales)
@@ -176,13 +175,9 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
       completado_en = NOW(), iniciado_en = COALESCE(iniciado_en, NOW()), observaciones = COALESCE($3, observaciones) WHERE id = $4`,
       [minutos, resultado.semaforo, observaciones, etapa.id])
 
-    const recompensa = await registrarRecompensa(conexion, {
-      usuarioId: etapa.responsable_id, pedidoId: etapa.pedido_id, pedidoEtapaId: etapa.id,
-      motivo: `Etapa "${etapa.nombre}" terminada ${resultado.minutos_ahorrados} min antes de lo estimado.`, resultado
-    })
     const estadoPedido = await sincronizarPedido(conexion, etapa.pedido_id)
     await conexion.query('COMMIT')
-    res.json({ id: etapa.id, origen: 'PEDIDO', estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, recompensa, estado_pedido: estadoPedido })
+    res.json({ id: etapa.id, origen: 'PEDIDO', estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, estado_pedido: estadoPedido })
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
@@ -203,11 +198,6 @@ async function completarEtapaTarea({ etapaId, tareaId = null, minutosReales, usu
     await conexion.query(`UPDATE tarea_etapas SET realizada = TRUE, completada_en = NOW(), minutos_reales = $1, semaforo = $2::semaforo_rendimiento WHERE id = $3`,
       [minutos || null, resultado.semaforo, etapa.id])
 
-    const recompensa = await registrarRecompensa(conexion, {
-      usuarioId: etapa.asignado_a, tareaEtapaId: etapa.id,
-      motivo: `Etapa "${etapa.nombre}" terminada ${resultado.minutos_ahorrados} min antes de lo estimado.`, resultado
-    })
-
     // Si ya no quedan etapas pendientes, la tarea pasa a REALIZADA.
     const pendientes = (await conexion.query('SELECT COUNT(*)::int AS pendientes FROM tarea_etapas WHERE tarea_id = $1 AND NOT realizada', [etapa.tarea_id])).rows[0].pendientes
     await conexion.query(`UPDATE tareas SET estado = $1::estado_tarea, actualizada_en = NOW(),
@@ -215,7 +205,7 @@ async function completarEtapaTarea({ etapaId, tareaId = null, minutosReales, usu
       [pendientes ? 'EN_PROGRESO' : 'REALIZADA', etapa.tarea_id])
 
     await conexion.query('COMMIT')
-    return { id: etapa.id, origen: 'TAREA', realizada: true, estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, recompensa, etapas_pendientes: pendientes }
+    return { id: etapa.id, origen: 'TAREA', realizada: true, estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, etapas_pendientes: pendientes }
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }
 
