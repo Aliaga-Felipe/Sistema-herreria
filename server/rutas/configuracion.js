@@ -12,13 +12,18 @@ const guardarValor = (clave, valor) =>
   pool.query(`INSERT INTO configuracion (clave, valor) VALUES ($1, $2)
     ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = NOW()`, [clave, valor])
 
-router.get('/', auth(), asyncRoute(async (_, res) => {
+// El correo receptor de consultas es exclusivo de super_admin (ver
+// GET/PUT /mail-receptor): no se devuelve en estas listas a los demás roles.
+const CLAVES_SOLO_SUPER_ADMIN = ['mail_receptor_consultas']
+const visibleParaRol = rol => clave => rol === 'super_admin' || !CLAVES_SOLO_SUPER_ADMIN.includes(clave)
+
+router.get('/', auth(), asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT clave, valor, descripcion, actualizado_en FROM configuracion ORDER BY clave')
   const guardadas = new Set(rows.map(fila => fila.clave))
   const faltantes = Object.entries(configuracionPorDefecto)
     .filter(([clave]) => !guardadas.has(clave))
     .map(([clave, valor]) => ({ clave, valor, descripcion: '', actualizado_en: null }))
-  res.json([...rows, ...faltantes])
+  res.json([...rows, ...faltantes].filter(fila => visibleParaRol(req.user.rol)(fila.clave)))
 }))
 
 // Vista compacta usada por el frontend para formatear montos y explicar el semáforo.
@@ -65,8 +70,8 @@ router.get('/mail-receptor', auth(['super_admin']), asyncRoute(async (_, res) =>
 }))
 
 router.put('/mail-receptor', auth(['super_admin']), asyncRoute(async (req, res) => {
-  const valor = validarEmail(req.body?.mail_receptor_consultas)
-  if (!valor) throw fallo('Indicá un correo válido para recibir las consultas.')
+  // Vacío es válido: la web usa entonces el correo de contacto general como respaldo.
+  const valor = validarEmail(req.body?.mail_receptor_consultas) || ''
   await guardarValor('mail_receptor_consultas', valor)
   res.json({ mail_receptor_consultas: valor })
 }))

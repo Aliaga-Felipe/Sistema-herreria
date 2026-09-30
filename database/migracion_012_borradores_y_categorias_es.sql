@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Migración 012
+-- Un atelier - Migración 012
 -- 1) Borradores: un producto sin "Publicar en la web" puede guardarse sin
 --    precio, descripción técnica, historia ni categoría.
 -- 2) Publicar exige nombre, ID, precio > 0, descripción técnica, historia

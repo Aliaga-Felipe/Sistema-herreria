@@ -101,7 +101,7 @@ function construirPayload(producto, retailerId, config, configuracionNegocio) {
     // usado para recomendaciones). Ver INTEGRACION_WHATSAPP.md.
     availability: disponible ? 'in stock' : 'discontinued',
     condition: 'new',
-    brand: recortar(configuracionNegocio.negocio_nombre || 'El Atelier', RECORTE_MARCA),
+    brand: recortar(configuracionNegocio.negocio_nombre || 'Un atelier', RECORTE_MARCA),
     allow_upsert: true
   }
 }
@@ -116,7 +116,10 @@ async function llamarMeta(config, payload) {
   const datos = await respuesta.json().catch(() => ({}))
   if (!respuesta.ok || datos.error) {
     const codigo = datos.error?.code ? ` (código ${datos.error.code})` : ''
-    throw new Error(`${datos.error?.message || `Meta respondió con estado ${respuesta.status}`}${codigo}`)
+    // "Invalid parameter" sólo dice que algún campo está mal: el detalle de
+    // cuál viene aparte, en error_user_title / error_user_msg.
+    const detalle = [datos.error?.error_user_title, datos.error?.error_user_msg].filter(Boolean).join(': ')
+    throw new Error(`${datos.error?.message || `Meta respondió con estado ${respuesta.status}`}${codigo}${detalle ? ` — ${detalle}` : ''}`)
   }
   return datos // { id: '<whatsapp_product_id>' }
 }

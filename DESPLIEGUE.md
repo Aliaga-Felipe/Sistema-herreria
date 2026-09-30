@@ -250,7 +250,7 @@ crontab -e
 reemplazando `CLAVE_DB`:
 
 ```
-0 3 * * * pg_dump "postgresql://atelier:560ef27b760832d2156a5e3e4a0289be79237b4a264f4996@localhost:5432/atelier_herreria" | gzip > ~/backups/db-$(date +\%F).sql.gz && find ~/backups -name 'db-*.sql.gz' -mtime +14 -delete
+0 3 * * * pg_dump "postgresql://atelier:CLAVE_DB@localhost:5432/atelier_herreria" | gzip > ~/backups/db-$(date +\%F).sql.gz && find ~/backups -name 'db-*.sql.gz' -mtime +14 -delete
 ```
 
 Hace un respaldo por día a las 3 AM y guarda los últimos 14 días. Las

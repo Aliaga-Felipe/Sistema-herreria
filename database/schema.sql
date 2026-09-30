@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Hub de produccion (herreria)
+-- Un atelier - Hub de produccion (herreria)
 -- Esquema completo de PostgreSQL. El script es IDEMPOTENTE: se puede
 -- ejecutar sobre una base vacia o sobre una base ya en uso sin perder
 -- datos. Para una instalacion existente tambien existe el delta en
@@ -67,10 +67,10 @@ CREATE TABLE IF NOT EXISTS configuracion (
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('semaforo_tolerancia', '0.1', 'Margen sobre el tiempo estimado que se considera dentro del promedio (0.1 = 10%).'),
   ('moneda', 'ARS', 'Simbolo de moneda usado en los reportes.'),
-  ('negocio_nombre', 'El Atelier', 'Nombre de la herreria mostrado en la web publica.'),
+  ('negocio_nombre', 'Un atelier', 'Nombre de la herreria mostrado en la web publica.'),
   ('negocio_rubro', 'Herrería de diseño', 'Frase corta que acompaña al nombre del negocio en el encabezado y la portada.'),
-  ('negocio_eslogan', 'Diseño que perdura', 'Frase corta mostrada en el hero de la web publica.'),
-  ('negocio_descripcion', 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.', 'Descripcion breve usada en la portada y en las meta etiquetas SEO.'),
+  ('negocio_eslogan', 'Un galpón de objetos con historia', 'Frase corta mostrada en el hero de la web publica.'),
+  ('negocio_descripcion', 'Cuidamos lo que el tiempo dejó en cada objeto y construimos con materiales que todavía tienen mucho por contar.', 'Descripcion breve usada en la portada y en las meta etiquetas SEO.'),
   ('negocio_whatsapp', '5491100000000', 'Numero de WhatsApp (con codigo de pais, sin signos) para el boton de consulta. Ejemplo Argentina: 5491122334455.'),
   ('negocio_email', 'contacto@elatelier.com', 'Correo de contacto mostrado en la web publica.'),
   ('negocio_telefono', '', 'Telefono alternativo mostrado en el pie de pagina (opcional).'),
@@ -82,6 +82,27 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
   ('costo_hora_mano_obra', '0', 'Costo por hora de mano de obra, usado junto a las horas-hombre del producto para calcular el costo de mano de obra.'),
   ('mail_receptor_consultas', '', 'Correo que recibe las consultas del formulario de Contacto de la web publica. Exclusivo de super_admin (ver GET/PUT /api/configuracion/mail-receptor). Si queda vacio se usa negocio_email como respaldo.')
 ON CONFLICT (clave) DO NOTHING;
+
+-- Nombre de la marca: corregir variantes incorrectas ya guardadas (migracion_018).
+UPDATE configuracion SET valor = 'Un atelier', actualizado_en = NOW()
+ WHERE clave = 'negocio_nombre' AND valor ~* '^\s*(el|un)\s+(atelier|ateriel)\s*$' AND valor <> 'Un atelier';
+
+-- Textos de la portada de la web pública (migracion_021).
+UPDATE configuracion
+   SET valor = 'Un galpón de objetos con historia', actualizado_en = NOW()
+ WHERE clave = 'negocio_eslogan'
+   AND valor ~* '^\s*dise(ñ|n)o\s+que\s+perdura\W*$';
+
+UPDATE configuracion
+   SET valor = 'Cuidamos lo que el tiempo dejó en cada objeto y construimos con materiales que todavía tienen mucho por contar.', actualizado_en = NOW()
+ WHERE clave = 'negocio_descripcion'
+   AND valor ~* '^\s*muebles\s+y\s+piezas\s+de\s+herrer(í|i)a\s+artesanal';
+
+UPDATE configuracion
+   SET valor = 'Herrería de diseño', actualizado_en = NOW()
+ WHERE clave = 'negocio_rubro'
+   AND valor ~* '^\s*herrer(í|i)a\s+(e|de)\s+dise(ñ|n)o\s*$'
+   AND valor <> 'Herrería de diseño';
 
 -- ---------------------------------------------------------------------
 -- TAREAS LIBRES (trabajo interno que no nace de un pedido)
@@ -681,27 +702,34 @@ ALTER TABLE productos ADD CONSTRAINT productos_publicado_completo CHECK (
 );
 
 -- ---------------------------------------------------------------------
--- VENTAS DE PRODUCTOS (activo / vendido / eliminado)
--- Regla de negocio de las estadísticas: un producto ACTIVO está disponible
--- para la venta y entra en la PROYECCIÓN (se supone que se va a vender a
--- su precio_venta). Un producto se considera VENDIDO recién cuando el admin
--- lo desactiva o lo elimina. Para no perder esa venta:
---   * vendido_en      fecha en que dejó de estar activo (fecha de la venta).
---   * precio_vendido  precio de venta al momento de venderse.
---   * costo_vendido   costo calculado (mano de obra + costo del producto +
---                     materiales) al momento de venderse.
---   * eliminado       "Eliminar" ya no borra la fila: la oculta del panel y
---                     de la web, pero la venta sigue contando en las
---                     estadísticas (antes se perdía con el DELETE).
--- El trigger productos_registrar_venta mantiene estas columnas solas, sin
--- importar qué ruta cambie "activo": así un producto nunca queda a la vez
--- activo y vendido, y desactivarlo dos veces (o desactivarlo y después
--- eliminarlo) no duplica la venta. Reactivarlo anula la venta.
+-- ESTADOS DE PRODUCTO: ACTIVO / VENDIDO / DESACTIVADO (+ ventas históricas)
+--   * ACTIVO       disponible: se ve en la web (si está publicado) y entra en
+--                  el stock / la proyección de las estadísticas.
+--   * VENDIDO      se vendió (botón "Producto vendido" o una venta registrada
+--                  con registrarVentaProducto). Guarda vendido_en,
+--                  precio_vendido y costo_vendido. Sigue existiendo para
+--                  conservar el historial. No se muestra en la web.
+--   * DESACTIVADO  sigue existiendo y se consulta en el panel, pero no se
+--                  ve en la web y NO cuenta como stock ni como venta.
+--   "activo" se mantiene como columna derivada (activo = estado='ACTIVO')
+--   para no tocar las consultas que ya la usan (web pública, pedidos,
+--   WhatsApp). El trigger la sincroniza solo, y también acepta código viejo
+--   que sólo cambie "activo".
+--   Eliminar un producto ahora lo BORRA de verdad (ver DELETE /productos/:id):
+--   se van con él sus fotos, materiales y objetivos, y su ID de producto
+--   (chapita_id) y su URL (slug) quedan libres. Si estaba VENDIDO, antes de
+--   borrarlo el trigger guarda la venta en historial_ventas_productos para
+--   que las estadísticas no la pierdan. La vista ventas_productos_registradas
+--   junta las dos fuentes (productos vendidos + historial).
+--   Los productos "eliminados" con el modelo anterior (borrado lógico, que
+--   contaban como vendidos) se conservan ocultos como VENDIDO, sin ID ni URL,
+--   así no se pierde ninguna venta ya registrada.
 -- ---------------------------------------------------------------------
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS eliminado BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS vendido_en TIMESTAMPTZ;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_vendido NUMERIC(12,2);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_vendido NUMERIC(12,2);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS estado VARCHAR(12);
 
 -- Costo unitario de un producto: misma fórmula que conCostoCalculado en
 -- server/rutas/productos.js (horas-hombre × costo de la hora configurable
@@ -716,46 +744,128 @@ CREATE OR REPLACE FUNCTION costo_unitario_producto(p_id BIGINT, p_horas NUMERIC,
   , 2)
 $$ LANGUAGE sql STABLE;
 
+-- Historial de ventas de productos que ya no existen (se borraron estando
+-- vendidos). Sin clave foránea a propósito: el producto ya no está.
+CREATE TABLE IF NOT EXISTS historial_ventas_productos (
+  id BIGSERIAL PRIMARY KEY,
+  producto_id_original BIGINT,
+  chapita_id VARCHAR(20),
+  nombre VARCHAR(160) NOT NULL,
+  precio_vendido NUMERIC(12,2),
+  costo_vendido NUMERIC(12,2),
+  vendido_en TIMESTAMPTZ NOT NULL,
+  eliminado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_historial_ventas_productos_fecha ON historial_ventas_productos(vendido_en);
+
+-- Migración de datos (sólo corre una vez: mientras estado sea NULL). Se
+-- suelta el trigger y la restricción viejos para poder reclasificar.
+DROP TRIGGER IF EXISTS trg_productos_registrar_venta ON productos;
+DROP TRIGGER IF EXISTS trg_productos_conservar_venta ON productos;
+ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_venta_coherente;
+-- Eliminados con el modelo anterior: siguen ocultos y contando como vendidos
+-- (con su fecha, precio y costo), pero liberan su ID de producto y su URL.
+UPDATE productos SET estado = 'VENDIDO', activo = FALSE, publicado = FALSE,
+    chapita_id = NULL, slug = LEFT(slug || '-eliminado-' || id, 200),
+    vendido_en = COALESCE(vendido_en, actualizado_en, creado_en),
+    precio_vendido = COALESCE(precio_vendido, precio_venta),
+    costo_vendido = COALESCE(costo_vendido, costo_unitario_producto(id, horas_hombre, costo_producto))
+  WHERE estado IS NULL AND eliminado;
+-- Desactivados: pasan a DESACTIVADO (dejan de contarse como venta).
+UPDATE productos SET estado = 'DESACTIVADO', vendido_en = NULL, precio_vendido = NULL, costo_vendido = NULL
+  WHERE estado IS NULL AND NOT activo;
+UPDATE productos SET estado = 'ACTIVO' WHERE estado IS NULL;
+ALTER TABLE productos ALTER COLUMN estado SET DEFAULT 'ACTIVO';
+ALTER TABLE productos ALTER COLUMN estado SET NOT NULL;
+
 CREATE OR REPLACE FUNCTION productos_registrar_venta() RETURNS trigger AS $$
 BEGIN
-  -- Un producto eliminado nunca puede volver a estar activo.
-  IF NEW.eliminado THEN NEW.activo := FALSE; END IF;
-  IF NEW.activo THEN
+  -- Compatibilidad: código que sólo cambia "activo" (true = ACTIVO,
+  -- false = DESACTIVADO; nunca implica una venta).
+  IF TG_OP = 'UPDATE' AND NEW.estado IS NOT DISTINCT FROM OLD.estado AND NEW.activo IS DISTINCT FROM OLD.activo THEN
+    NEW.estado := CASE WHEN NEW.activo THEN 'ACTIVO' ELSE 'DESACTIVADO' END;
+  END IF;
+  -- Un producto oculto (eliminado con el modelo anterior) nunca vuelve a estar activo.
+  IF NEW.eliminado AND NEW.estado = 'ACTIVO' THEN NEW.estado := 'DESACTIVADO'; END IF;
+  NEW.activo := (NEW.estado = 'ACTIVO');
+  IF NEW.estado = 'VENDIDO' THEN
+    IF NEW.vendido_en IS NULL THEN
+      NEW.vendido_en := NOW();
+      NEW.precio_vendido := NEW.precio_venta;
+      NEW.costo_vendido := costo_unitario_producto(NEW.id, NEW.horas_hombre, NEW.costo_producto);
+    ELSIF TG_OP = 'UPDATE' AND NEW.precio_venta IS DISTINCT FROM OLD.precio_venta THEN
+      -- Si el admin corrige el precio de un producto ya vendido, se toma
+      -- como el precio real al que se vendió.
+      NEW.precio_vendido := NEW.precio_venta;
+    END IF;
+  ELSE
+    -- ACTIVO o DESACTIVADO: no hay venta (reactivar o desactivar la anula).
     NEW.vendido_en := NULL;
     NEW.precio_vendido := NULL;
     NEW.costo_vendido := NULL;
-  ELSIF NEW.vendido_en IS NULL THEN
-    NEW.vendido_en := NOW();
-    NEW.precio_vendido := NEW.precio_venta;
-    NEW.costo_vendido := costo_unitario_producto(NEW.id, NEW.horas_hombre, NEW.costo_producto);
-  ELSIF TG_OP = 'UPDATE' AND NEW.precio_venta IS DISTINCT FROM OLD.precio_venta THEN
-    -- Si el admin corrige el precio de un producto ya vendido, se toma
-    -- como el precio real al que se vendió.
-    NEW.precio_vendido := NEW.precio_venta;
   END IF;
   RETURN NEW;
 END
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_productos_registrar_venta ON productos;
 CREATE TRIGGER trg_productos_registrar_venta
-  BEFORE INSERT OR UPDATE OF activo, eliminado, precio_venta ON productos
+  BEFORE INSERT OR UPDATE OF estado, activo, eliminado, precio_venta ON productos
   FOR EACH ROW EXECUTE FUNCTION productos_registrar_venta();
 
--- Compatibilidad con datos existentes: los productos que ya estaban
--- desactivados se toman como vendidos en su última actualización, al
--- precio y costo que tienen hoy (no hay un dato mejor guardado).
-UPDATE productos SET
-    vendido_en = COALESCE(actualizado_en, creado_en),
-    precio_vendido = precio_venta,
-    costo_vendido = costo_unitario_producto(id, horas_hombre, costo_producto)
-  WHERE NOT activo AND vendido_en IS NULL;
+-- Al borrar un producto VENDIDO, la venta pasa al historial.
+CREATE OR REPLACE FUNCTION productos_conservar_venta() RETURNS trigger AS $$
+BEGIN
+  IF OLD.estado = 'VENDIDO' THEN
+    INSERT INTO historial_ventas_productos (producto_id_original, chapita_id, nombre, precio_vendido, costo_vendido, vendido_en)
+    VALUES (OLD.id, OLD.chapita_id, OLD.nombre, OLD.precio_vendido, OLD.costo_vendido, OLD.vendido_en);
+  END IF;
+  RETURN OLD;
+END
+$$ LANGUAGE plpgsql;
 
-ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_venta_coherente;
+CREATE TRIGGER trg_productos_conservar_venta
+  BEFORE DELETE ON productos
+  FOR EACH ROW EXECUTE FUNCTION productos_conservar_venta();
+
 ALTER TABLE productos ADD CONSTRAINT productos_venta_coherente CHECK (
-  (activo AND NOT eliminado AND vendido_en IS NULL) OR (NOT activo AND vendido_en IS NOT NULL)
+  estado IN ('ACTIVO', 'VENDIDO', 'DESACTIVADO')
+  AND activo = (estado = 'ACTIVO')
+  AND ((estado = 'VENDIDO') = (vendido_en IS NOT NULL))
+  AND NOT (eliminado AND estado = 'ACTIVO')
 );
 CREATE INDEX IF NOT EXISTS idx_productos_vendido_en ON productos(vendido_en) WHERE vendido_en IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_productos_estado ON productos(estado);
+
+-- Ventas de productos: los que están vendidos + los vendidos que se borraron.
+CREATE OR REPLACE VIEW ventas_productos_registradas AS
+  SELECT id AS producto_id, chapita_id, nombre, precio_vendido, costo_vendido, vendido_en, eliminado
+    FROM productos WHERE estado = 'VENDIDO'
+  UNION ALL
+  SELECT producto_id_original, chapita_id, nombre, precio_vendido, costo_vendido, vendido_en, TRUE
+    FROM historial_ventas_productos;
+
+-- ---------------------------------------------------------------------
+-- VERIFICACIÓN EN DOS PASOS (código por email al iniciar sesión)
+-- Cada inicio de sesión con contraseña correcta crea un "desafío": un código
+-- de 6 dígitos que se manda por email. El código NUNCA se guarda: sólo su
+-- hash HMAC con una sal propia. Vence a los 10 minutos, se usa una sola vez
+-- (usado_en), admite 5 intentos y como mucho 3 envíos por desafío. Los
+-- controles viven en server/rutas/autenticacion.js. Se borran solos al día.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS codigos_acceso (
+  id BIGSERIAL PRIMARY KEY,
+  desafio_id VARCHAR(64) NOT NULL UNIQUE,
+  usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  codigo_hash VARCHAR(64) NOT NULL,
+  sal VARCHAR(32) NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  intentos SMALLINT NOT NULL DEFAULT 0,
+  envios SMALLINT NOT NULL DEFAULT 1,
+  ultimo_envio_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  usado_en TIMESTAMPTZ,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_codigos_acceso_usuario ON codigos_acceso(usuario_id, creado_en);
 
 -- ---------------------------------------------------------------------
 -- TAREAS POR PEDIDO (no por producto) Y PRECIO TOMADO DEL PRODUCTO

@@ -10,6 +10,7 @@ import PanelUsuarios from './panel-usuarios.jsx'
 import PanelProduccion from './panel-produccion.jsx'
 import PanelPresupuestos from './panel-presupuestos.jsx'
 import PanelCategorias from './panel-categorias.jsx'
+import PanelManual from './panel-manual.jsx'
 
 // "Presupuestos" ya no es un paso aparte del menú: el presupuesto (costo
 // de materiales + mano de obra, precio y ganancia) ahora se arma solo
@@ -31,7 +32,8 @@ export const seccionesAdmin = [
   ['Estadísticas', '◫'],
   ['Recompensas', '♛'],
   ['Usuarios', '♙'],
-  ['Configuración', '⚙']
+  ['Configuración', '⚙'],
+  ['Manual de usuario', '?']
 ]
 
 // Secciones exclusivas de "super_admin": un "admin" común no las ve en el
@@ -68,7 +70,8 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Recompensas: <PanelRecompensas />,
     Estadísticas: <PanelEstadisticas />,
     Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
-    Configuración: <PanelConfiguracion rol={rol} />
+    Configuración: <PanelConfiguracion rol={rol} />,
+    'Manual de usuario': <PanelManual />
   }
 
   // Defensa extra: aunque el menú ya oculta estos botones para un "admin"
@@ -94,8 +97,8 @@ function Dashboard({ ir }) {
   if (!datos) return null
 
   // El dinero sale de "metricas" (server/metricas.js): mismos criterios que
-  // la pantalla Estadísticas. REAL = lo que ya pasó (productos vendidos =
-  // desactivados/eliminados, pedidos terminados, etapas completadas,
+  // la pantalla Estadísticas. REAL = lo que ya pasó (productos VENDIDOS —los
+  // desactivados no cuentan—, pedidos terminados, etapas completadas,
   // recompensas). PROYECTADO = además se venden todos los productos activos
   // y se cobran los pedidos abiertos.
   const { pedidos, trabajo, catalogo, metricas, productos_vendidos: vendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
@@ -152,7 +155,7 @@ function Dashboard({ ir }) {
                 </div>
               ))}
             </div>
-          ) : <p className="muted">Todavía no hay productos vendidos: un producto cuenta como vendido al desactivarlo o eliminarlo.</p>}
+          ) : <p className="muted">Todavía no hay productos vendidos: un producto cuenta como vendido cuando se usa el botón “Producto vendido”. Los desactivados no cuentan.</p>}
         </article>
 
         <article className="operator-summary">
@@ -280,13 +283,13 @@ function ConfiguracionSitioPublico({ onGuardar }) {
 
       <div className="form-grid config-grid">
         <label>Nombre del negocio
-          <input required value={valores.negocio_nombre} onChange={cambiar('negocio_nombre')} placeholder="Ej. El Atelier" />
+          <input value={valores.negocio_nombre} onChange={cambiar('negocio_nombre')} placeholder="Ej. Un atelier" />
         </label>
         <label>Rubro (junto al nombre, en el encabezado y la portada)
           <input value={valores.negocio_rubro} onChange={cambiar('negocio_rubro')} placeholder="Ej. Herrería de diseño" />
         </label>
         <label>Frase del hero (portada)
-          <input value={valores.negocio_eslogan} onChange={cambiar('negocio_eslogan')} placeholder="Ej. Diseño que perdura" />
+          <input value={valores.negocio_eslogan} onChange={cambiar('negocio_eslogan')} placeholder="Ej. Un galpón de objetos con historia" />
         </label>
         <label>WhatsApp (con código de país, sin signos)
           <input value={valores.negocio_whatsapp} onChange={cambiar('negocio_whatsapp')} placeholder="Ej. 5491122334455" />
@@ -682,7 +685,7 @@ function ConfiguracionMailReceptor({ onGuardar }) {
 
       <div className="form-grid config-grid">
         <label>Correo receptor
-          <input required type="email" value={valor} onChange={event => setValor(event.target.value)} placeholder="consultas@tuherreria.com" />
+          <input type="email" value={valor} onChange={event => setValor(event.target.value)} placeholder="consultas@tuherreria.com" />
         </label>
       </div>
 

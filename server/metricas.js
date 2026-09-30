@@ -7,9 +7,11 @@ import { pool } from './db.js'
 // que los dos muestran siempre los mismos números con los mismos criterios.
 //
 // REAL (lo que efectivamente ocurrió, filtrado por la fecha del evento):
-//   * Venta de producto: un producto se vende cuando se desactiva o se
-//     elimina (productos.vendido_en, precio_vendido, costo_vendido: los
-//     mantiene el trigger productos_registrar_venta, ver schema.sql).
+//   * Venta de producto: un producto se vende cuando se marca como VENDIDO
+//     (botón "Producto vendido" o una venta registrada). Se leen de la vista
+//     ventas_productos_registradas: productos vendidos + ventas de productos
+//     que se borraron después (historial). Un producto DESACTIVADO no es una
+//     venta ni stock: no entra en ninguna cuenta de dinero.
 //   * Pedido cobrado: pedido TERMINADO (fecha: terminado_en).
 //   * Gastos de producción: costo de cada etapa de pedido COMPLETADA (el
 //     costo del item del pedido se reparte en partes iguales entre sus
@@ -24,13 +26,13 @@ import { pool } from './db.js'
 //     las etapas que les faltan completar.
 //
 // PROYECTADO (supone que se vende todo el stock activo):
-//   * Stock: productos activos a su precio_venta, menos su costo unitario.
+//   * Stock: productos ACTIVOS a su precio_venta, menos su costo unitario.
 //     Es el estado actual del catálogo, por eso no depende del rango.
 //   * Ganancia proyectada = ganancia neta real + margen de pedidos en curso
 //     + margen del stock activo.
 //
-// Un mismo producto nunca está a la vez en el stock y en las ventas
-// (restricción productos_venta_coherente), así que no se cuenta dos veces.
+// Un mismo producto tiene un solo estado (restricción productos_venta_coherente),
+// así que nunca está a la vez en el stock y en las ventas ni se cuenta dos veces.
 // =====================================================================
 
 const ESTADOS_ABIERTOS = `('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO')`
@@ -57,17 +59,20 @@ export async function calcularMetricas({ desde = null, hasta = null } = {}, db =
   const fila = async sql => (await db.query(sql, rango)).rows[0]
 
   // --- Productos: estado actual del catálogo + ventas del período -------
-  const productos = await fila(`SELECT
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE activo)::int AS activos,
-      COUNT(*) FILTER (WHERE NOT activo)::int AS vendidos,
-      COUNT(*) FILTER (WHERE NOT activo AND ${enRango('vendido_en')})::int AS vendidos_periodo,
-      COALESCE(SUM(precio_vendido) FILTER (WHERE NOT activo AND ${enRango('vendido_en')}), 0)::float8 AS ingresos_vendidos,
-      COALESCE(SUM(costo_vendido) FILTER (WHERE NOT activo AND ${enRango('vendido_en')}), 0)::float8 AS costo_vendidos,
-      COALESCE(SUM(precio_venta) FILTER (WHERE activo), 0)::float8 AS ingresos_stock,
-      COALESCE(SUM(costo_unitario_producto(id, horas_hombre, costo_producto)) FILTER (WHERE activo), 0)::float8 AS costo_stock,
-      COUNT(*) FILTER (WHERE activo AND COALESCE(precio_venta, 0) <= 0)::int AS activos_sin_precio
-    FROM productos`)
+  const stock = (await db.query(`SELECT
+      COUNT(*) FILTER (WHERE estado = 'ACTIVO')::int AS activos,
+      COUNT(*) FILTER (WHERE estado = 'DESACTIVADO')::int AS desactivados,
+      COALESCE(SUM(precio_venta) FILTER (WHERE estado = 'ACTIVO'), 0)::float8 AS ingresos_stock,
+      COALESCE(SUM(costo_unitario_producto(id, horas_hombre, costo_producto)) FILTER (WHERE estado = 'ACTIVO'), 0)::float8 AS costo_stock,
+      COUNT(*) FILTER (WHERE estado = 'ACTIVO' AND COALESCE(precio_venta, 0) <= 0)::int AS activos_sin_precio
+    FROM productos`)).rows[0]
+  const ventas = await fila(`SELECT
+      COUNT(*)::int AS vendidos,
+      COUNT(*) FILTER (WHERE ${enRango('vendido_en')})::int AS vendidos_periodo,
+      COALESCE(SUM(precio_vendido) FILTER (WHERE ${enRango('vendido_en')}), 0)::float8 AS ingresos_vendidos,
+      COALESCE(SUM(costo_vendido) FILTER (WHERE ${enRango('vendido_en')}), 0)::float8 AS costo_vendidos
+    FROM ventas_productos_registradas`)
+  const productos = { ...stock, ...ventas, total: stock.activos + stock.desactivados + ventas.vendidos }
 
   // --- Pedidos ----------------------------------------------------------
   const pedidos = await fila(`SELECT
@@ -109,6 +114,7 @@ export async function calcularMetricas({ desde = null, hasta = null } = {}, db =
     productos: {
       total: productos.total,
       activos: productos.activos,
+      desactivados: productos.desactivados,
       vendidos: productos.vendidos,
       vendidos_periodo: productos.vendidos_periodo,
       activos_sin_precio: productos.activos_sin_precio

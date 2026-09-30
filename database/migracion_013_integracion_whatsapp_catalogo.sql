@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Migración 013: integración con el catálogo de WhatsApp Business
+-- Un atelier - Migración 013: integración con el catálogo de WhatsApp Business
 --
 -- Cada producto activo y "Publicado en la web" se sincroniza automáticamente
 -- contra el catálogo de Meta conectado al WhatsApp Business del cliente (ver
