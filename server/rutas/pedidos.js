@@ -54,7 +54,7 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
 // orden y tiempo estimado). Dos pedidos del mismo producto pueden tener
 // tareas distintas y editarlas nunca modifica el producto. Desde ahí siguen
 // funcionando igual que antes: se asignan en Tareas, el empleado las
-// completa en Mis tareas, generan semáforo/recompensas y definen el avance,
+// completa en Mis tareas, generan el semáforo y definen el avance,
 // el estado del pedido y los gastos de producción de las estadísticas.
 // ---------------------------------------------------------------------
 
@@ -188,7 +188,7 @@ router.patch('/:id', auth(['admin']), asyncRoute(async (req, res) => {
 // EDITAR LAS TAREAS DE UN PEDIDO YA CREADO
 // Se puede agregar una tarea a un producto del pedido, y renombrar, cambiar
 // el tiempo o quitar una tarea que todavía no se completó. Las completadas
-// no se tocan (ya tienen tiempo real, semáforo y recompensa). Después de
+// no se tocan (ya tienen tiempo real y semáforo). Después de
 // cada cambio se recalcula el estado del pedido (sincronizarPedido).
 // ---------------------------------------------------------------------
 const responderPedido = async (res, id) => {

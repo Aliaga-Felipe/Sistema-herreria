@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "manual:pdf": "node scripts/generar-manual-pdf.mjs"
+    "test": "node --test \"server/**/*.test.js\""
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

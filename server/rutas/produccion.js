@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, entero, fallo } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, fallo } from '../comun.js'
+import { guardarJornada, validarFechaDia } from '../jornadas.js'
 
 const router = Router()
 
@@ -80,7 +81,7 @@ router.delete('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, 
 // -----------------------------------------------------------------------
 // REGISTRO DIARIO DE PRODUCCIÓN
 // -----------------------------------------------------------------------
-const consultaRegistros = `SELECT r.id, r.producto_id, p.nombre AS producto, r.fecha, r.cantidad_producida, r.objetivo_cantidad, r.cumplido,
+const consultaRegistros = `SELECT r.id, r.producto_id, p.nombre AS producto, r.fecha, r.cantidad_producida, r.objetivo_cantidad, r.cumplido, r.tiempo_estandar::float8 AS tiempo_estandar,
     r.registrado_por, u.nombre AS registrado_por_nombre, r.creado_en, r.actualizado_en
   FROM registros_produccion r JOIN productos p ON p.id = r.producto_id LEFT JOIN usuarios u ON u.id = r.registrado_por`
 
@@ -96,37 +97,104 @@ router.get('/registros', auth(), asyncRoute(async (req, res) => {
   res.json(rows)
 }))
 
-// Carga o corrige la producción de un producto en una fecha. El objetivo se
-// copia del vigente al momento de registrar, así que cambiarlo más adelante
-// no reescribe el cumplimiento de días ya cargados.
+// Carga o corrige la producción de un producto en una fecha. El objetivo
+// por producto es opcional (solo informativo); si existe se copia junto
+// con las horas-hombre del producto, así que editarlos más adelante no
+// reescribe días ya cargados. Después se recalcula la jornada del equipo.
 router.post('/registros', auth(), asyncRoute(async (req, res) => {
-  const { producto_id: productoId, fecha, cantidad_producida } = req.body
+  const { producto_id: productoId, fecha: fechaTexto, cantidad_producida } = req.body
   if (!productoId) throw fallo('Indicá el producto.')
+  const fecha = validarFechaDia(fechaTexto)
   if (!fecha) throw fallo('Indicá la fecha de producción.')
   const cantidad = entero(cantidad_producida)
   if (cantidad === null || cantidad < 0) throw fallo('La cantidad producida debe ser un número mayor o igual a cero.')
 
+  const producto = (await pool.query('SELECT id, horas_hombre FROM productos WHERE id = $1 AND NOT eliminado', [productoId])).rows[0]
+  if (!producto) throw fallo('Producto no encontrado.', 404)
   const objetivo = await pool.query("SELECT cantidad_objetivo FROM objetivos_produccion WHERE tipo = 'producto' AND producto_id = $1 AND activo", [productoId])
-  if (!objetivo.rows[0]) throw fallo('Ese producto todavía no tiene un objetivo diario cargado.')
-  const objetivoCantidad = objetivo.rows[0].cantidad_objetivo
-  const cumplido = cantidad >= objetivoCantidad
+  const objetivoCantidad = objetivo.rows[0]?.cantidad_objetivo ?? null
+  const cumplido = objetivoCantidad !== null && cantidad >= objetivoCantidad
 
-  const { rows } = await pool.query(
-    `INSERT INTO registros_produccion (producto_id, fecha, cantidad_producida, objetivo_cantidad, cumplido, registrado_por)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (producto_id, fecha) DO UPDATE SET cantidad_producida = EXCLUDED.cantidad_producida,
-       objetivo_cantidad = EXCLUDED.objetivo_cantidad, cumplido = EXCLUDED.cumplido, registrado_por = EXCLUDED.registrado_por, actualizado_en = NOW()
-     RETURNING id`,
-    [productoId, fecha, cantidad, objetivoCantidad, cumplido, req.user.id]
-  )
-  const creado = await pool.query(`${consultaRegistros} WHERE r.id = $1`, [rows[0].id])
+  const conexion = await pool.connect()
+  let id
+  try {
+    await conexion.query('BEGIN')
+    const { rows } = await conexion.query(
+      `INSERT INTO registros_produccion (producto_id, fecha, cantidad_producida, objetivo_cantidad, cumplido, tiempo_estandar, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (producto_id, fecha) DO UPDATE SET cantidad_producida = EXCLUDED.cantidad_producida,
+         objetivo_cantidad = EXCLUDED.objetivo_cantidad, cumplido = EXCLUDED.cumplido, tiempo_estandar = EXCLUDED.tiempo_estandar,
+         registrado_por = EXCLUDED.registrado_por, actualizado_en = NOW()
+       RETURNING id`,
+      [productoId, fecha, cantidad, objetivoCantidad, cumplido, producto.horas_hombre, req.user.id]
+    )
+    id = rows[0].id
+    await guardarJornada(conexion, fecha)
+    await conexion.query('COMMIT')
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+  const creado = await pool.query(`${consultaRegistros} WHERE r.id = $1`, [id])
   res.status(201).json(creado.rows[0])
 }))
 
 router.delete('/registros/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('DELETE FROM registros_produccion WHERE id = $1 RETURNING id', [req.params.id])
-  if (!rows[0]) throw fallo('Registro no encontrado.', 404)
+  const conexion = await pool.connect()
+  try {
+    await conexion.query('BEGIN')
+    const { rows } = await conexion.query('DELETE FROM registros_produccion WHERE id = $1 RETURNING fecha::text AS fecha', [req.params.id])
+    if (!rows[0]) throw fallo('Registro no encontrado.', 404)
+    await guardarJornada(conexion, rows[0].fecha)
+    await conexion.query('COMMIT')
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
   res.json({ mensaje: 'Registro eliminado.' })
+}))
+
+// -----------------------------------------------------------------------
+// HORAS TRABAJADAS POR EMPLEADO (planilla diaria, solo el administrador)
+// Solo se usan para sumar las horas totales del equipo en ese día.
+// -----------------------------------------------------------------------
+router.get('/horas', auth(['admin']), asyncRoute(async (req, res) => {
+  const fecha = validarFechaDia(req.query.fecha)
+  if (!fecha) throw fallo('Indicá la fecha con el formato AAAA-MM-DD.')
+  // Empleados activos + cualquiera que ya tenga horas ese día (aunque hoy esté inactivo).
+  const { rows } = await pool.query(
+    `SELECT u.id AS usuario_id, u.nombre, COALESCE(h.horas, 0)::float8 AS horas
+     FROM usuarios u LEFT JOIN horas_trabajadas h ON h.usuario_id = u.id AND h.fecha = $1::date
+     WHERE (LOWER(u.rol::text) = 'empleado' AND u.activo) OR h.id IS NOT NULL
+     ORDER BY u.nombre`, [fecha])
+  res.json(rows)
+}))
+
+// Guarda la planilla completa del día: [{ usuario_id, horas }]. Horas en 0
+// borran la fila de ese empleado.
+router.put('/horas', auth(['admin']), asyncRoute(async (req, res) => {
+  const fecha = validarFechaDia(req.body?.fecha)
+  if (!fecha) throw fallo('Indicá la fecha con el formato AAAA-MM-DD.')
+  const planilla = Array.isArray(req.body?.horas) ? req.body.horas : null
+  if (!planilla) throw fallo('Enviá las horas de cada empleado.')
+  for (const fila of planilla) {
+    const horas = Number(fila.horas || 0)
+    if (!fila.usuario_id) throw fallo('Falta el empleado en una de las filas.')
+    if (!Number.isFinite(horas) || horas < 0 || horas > 24) throw fallo('Las horas trabajadas van de 0 a 24 por empleado.')
+  }
+
+  const conexion = await pool.connect()
+  try {
+    await conexion.query('BEGIN')
+    for (const fila of planilla) {
+      const horas = decimal(fila.horas || 0)
+      if (horas > 0) {
+        await conexion.query(
+          `INSERT INTO horas_trabajadas (usuario_id, fecha, horas, cargado_por) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (usuario_id, fecha) DO UPDATE SET horas = EXCLUDED.horas, cargado_por = EXCLUDED.cargado_por, actualizado_en = NOW()`,
+          [fila.usuario_id, fecha, horas, req.user.id])
+      } else {
+        await conexion.query('DELETE FROM horas_trabajadas WHERE usuario_id = $1 AND fecha = $2', [fila.usuario_id, fecha])
+      }
+    }
+    const jornada = await guardarJornada(conexion, fecha)
+    await conexion.query('COMMIT')
+    res.json(jornada)
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
 export default router

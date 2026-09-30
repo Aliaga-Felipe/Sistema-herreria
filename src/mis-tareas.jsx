@@ -1,11 +1,10 @@
 import React, { useState } from 'react'
-import { api, dinero, duracion, useData, useSession } from './api.js'
+import { api, duracion, useData, useSession } from './api.js'
 import { Actions, Badge, Empty, Heading, Modal, Semaforo, Stat, semaforos, useAviso } from './ui.jsx'
 
 export default function MisTareas() {
   const { session } = useSession()
   const tareas = useData('/tareas/asignadas/mias')
-  const recompensas = useData('/recompensas')
   const { mostrar, nodo } = useAviso()
   const [cerrando, setCerrando] = useState(null)
   const [resultado, setResultado] = useState(null)
@@ -17,7 +16,6 @@ export default function MisTareas() {
   // misma posición mostrando el estado "Completada".
   const ordenadas = [...tareas.data].sort((a, b) =>
     a.origen.localeCompare(b.origen) || Number(a.contenedor_id) - Number(b.contenedor_id) || (a.orden || 0) - (b.orden || 0))
-  const acumulado = recompensas.data.reduce((total, recompensa) => total + Number(recompensa.monto || 0), 0)
 
   const iniciar = async tarea => {
     try {
@@ -31,7 +29,7 @@ export default function MisTareas() {
     const respuesta = await api.patch(`/tareas/asignadas/${tarea.origen}/${tarea.id}/completar`, { minutos_reales: Number(minutos), observaciones }, tareas.token)
     setCerrando(null)
     setResultado({ ...respuesta, tarea })
-    await Promise.all([tareas.load(), recompensas.load()])
+    await tareas.load()
   }
 
   return (
@@ -49,7 +47,6 @@ export default function MisTareas() {
         <Stat label="Completadas" value={completadas.length} />
         <Stat label="🟢 Más rápido" value={completadas.filter(tarea => tarea.semaforo === 'VERDE').length} />
         <Stat label="🟡 En promedio" value={completadas.filter(tarea => tarea.semaforo === 'AMARILLO').length} />
-        <Stat label="Recompensas ganadas" value={dinero(acumulado)} />
       </section>
 
       {tareas.loading ? <p>Cargando tus tareas...</p> : tareas.error ? <p className="form-error">{tareas.error}</p> : (
@@ -177,11 +174,7 @@ function ResultadoModal({ resultado, close }) {
         </p>
       </section>
 
-      {resultado.recompensa ? (
-        <p className="notice">🏆 Ganaste una recompensa de <b>{dinero(resultado.recompensa.monto)}</b> por terminar antes de lo estimado.</p>
-      ) : (
-        <p className="form-note">Esta etapa no genera recompensa. El bono se paga cuando terminás por debajo del tiempo estimado.</p>
-      )}
+      <p className="form-note">La recompensa es para todo el equipo: se paga cuando la producción del día supera el objetivo.</p>
 
       <div className="form-actions">
         <button type="button" className="primary" onClick={close}>Listo</button>

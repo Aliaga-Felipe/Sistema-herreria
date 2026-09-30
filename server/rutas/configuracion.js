@@ -26,24 +26,20 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
   res.json([...rows, ...faltantes].filter(fila => visibleParaRol(req.user.rol)(fila.clave)))
 }))
 
-// Vista compacta usada por el frontend para formatear montos y explicar la fórmula.
-router.get('/valores', auth(), asyncRoute(async (req, res) => {
-  const valores = await leerConfiguracion()
-  res.json(Object.fromEntries(Object.entries(valores).filter(([clave]) => visibleParaRol(req.user.rol)(clave))))
-}))
+// Vista compacta usada por el frontend para formatear montos y explicar el semáforo.
+router.get('/valores', auth(), asyncRoute(async (_, res) => res.json(await leerConfiguracion())))
 
-// Editar configuración (datos del negocio, recompensas, video del hero):
+// Editar configuración (datos del negocio, semáforo, video del hero):
 // exclusivo de "super_admin", igual que la sección "Usuarios".
 router.put('/', auth(['super_admin']), asyncRoute(async (req, res) => {
   const valores = req.body || {}
   const claves = Object.keys(valores).filter(clave => clave in configuracionPorDefecto)
   if (!claves.length) throw fallo('No hay parámetros válidos para guardar.')
 
-  const numericas = ['recompensa_valor_hora', 'recompensa_factor_ahorro', 'recompensa_bono_minimo', 'semaforo_tolerancia', 'costo_hora_mano_obra']
+  const numericas = ['semaforo_tolerancia', 'costo_hora_mano_obra']
   for (const clave of claves) {
     if (numericas.includes(clave) && !(Number(valores[clave]) >= 0)) throw fallo(`El parámetro "${clave}" debe ser un número mayor o igual a cero.`)
   }
-  if ('recompensa_factor_ahorro' in valores && Number(valores.recompensa_factor_ahorro) > 1) throw fallo('El factor de ahorro va de 0 a 1.')
 
   const conexion = await pool.connect()
   try {

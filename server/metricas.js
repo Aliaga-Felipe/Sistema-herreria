@@ -17,7 +17,9 @@ import { pool } from './db.js'
 //     costo del item del pedido se reparte en partes iguales entre sus
 //     etapas; fecha: completado_en) + costo de las etapas de tareas libres
 //     realizadas + costo de los productos vendidos.
-//   * Recompensas pagadas (fecha: otorgado_en).
+//   * Recompensas: la del equipo por día (jornadas_equipo, fecha: fecha)
+//     + las individuales del sistema anterior (recompensas, fecha:
+//     otorgado_en), que se conservan como historial.
 //
 // EN CURSO (pedidos abiertos, filtrados por fecha de creación):
 //   * Ingresos de pedidos PENDIENTE / EN_PRODUCCION / PAUSADO y el costo de
@@ -92,8 +94,11 @@ export async function calcularMetricas({ desde = null, hasta = null } = {}, db =
   const tareas = await fila(`SELECT COALESCE(SUM(te.costo) FILTER (WHERE te.realizada AND ${enRango('te.completada_en')}), 0)::float8 AS completadas
     FROM tarea_etapas te`)
 
-  const recompensas = await fila(`SELECT COUNT(*)::int AS cantidad, COALESCE(SUM(monto), 0)::float8 AS monto
-    FROM recompensas WHERE ${enRango('otorgado_en')}`)
+  const recompensas = await fila(`SELECT
+      (SELECT COUNT(*) FROM recompensas WHERE ${enRango('otorgado_en')})::int
+        + (SELECT COUNT(*) FROM jornadas_equipo WHERE recompensa > 0 AND ${enRango('fecha')})::int AS cantidad,
+      COALESCE((SELECT SUM(monto) FROM recompensas WHERE ${enRango('otorgado_en')}), 0)::float8
+        + COALESCE((SELECT SUM(recompensa) FROM jornadas_equipo WHERE ${enRango('fecha')}), 0)::float8 AS monto`)
 
   // --- Armado -----------------------------------------------------------
   const ingresosReales = numero(productos.ingresos_vendidos + pedidos.ingresos_cobrados)

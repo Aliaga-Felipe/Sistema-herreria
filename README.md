@@ -1,6 +1,6 @@
 # Un atelier — Hub de producción
 
-Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC, catálogo de productos con etapas de fabricación, pedidos multiproducto, semáforo de rendimiento con recompensas automáticas y estadísticas de gestión.
+Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC, catálogo de productos con etapas de fabricación, pedidos multiproducto, semáforo de rendimiento, recompensa diaria por equipo y estadísticas de gestión.
 
 ## Puesta en marcha
 
@@ -64,7 +64,7 @@ Las etapas guardan su propia copia de nombre, costo y minutos, así que editar e
 
 En **Mis tareas** el empleado ve las etapas asignadas, las marca como iniciadas y, al terminarlas, **informa cuánto tiempo le llevó**. Ese dato es el que alimenta el semáforo.
 
-### Semáforo y recompensas
+### Semáforo de rendimiento
 
 Al cerrar una etapa se compara el tiempo real contra el estimado por el admin:
 
@@ -74,13 +74,26 @@ Al cerrar una etapa se compara el tiempo real contra el estimado por el admin:
 | 🟡 Amarillo | dentro de ± t del estimado |
 | 🔴 Rojo | real > estimado × (1 + t) — más lento de lo esperado |
 
-Solo el verde genera bono, calculado como:
+Es solo un indicador de tiempos: no genera plata. La tolerancia (`semaforo_tolerancia`) se edita en **Configuración**.
+
+### Recompensa del equipo
+
+Todo el taller es un único equipo y la recompensa se calcula por día, sobre el resultado conjunto (nunca por empleado). En **Producción diaria** el admin carga las horas de cada empleado y la producción del día; en **Recompensas** se ve el desglose.
 
 ```
-bono = máx(bono_mínimo, (minutos_ahorrados / 60) × valor_hora × factor_ahorro)
+horas totales     = Σ horas trabajadas por cada empleado
+objetivo (hs)     = el que fija el admin, o por defecto las horas totales
+                    (16 hs ÷ silla de 4 hs = 4 sillas = 16 hs)
+horas producidas  = Σ (unidades × horas-hombre del producto)
+excedente (hs)    = horas producidas − objetivo
+recompensa        = excedente × valor hora-hombre × % de premio   (0 si no se supera el objetivo)
 ```
 
-Los cuatro parámetros (`recompensa_valor_hora`, `recompensa_factor_ahorro`, `recompensa_bono_minimo`, `semaforo_tolerancia`), más el interruptor `recompensa_activa`, viven en la tabla `configuracion` y se editan desde **Recompensas** o **Configuración** sin tocar código.
+- El tiempo estándar de cada producto es su campo **horas-hombre** (Productos).
+- Objetivo del día, valor hora-hombre y % de premio (por defecto 100%) solo los cambia un `admin` o `super_admin`; la API lo valida.
+- El objetivo se guarda en el día (`jornadas_equipo`), el valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`) y cada registro de producción copia las horas-hombre del producto: los cambios posteriores no recalculan días pasados.
+- La lógica está en funciones puras en `server/recompensa-equipo.js`. Tests: `npm test`.
+- Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto (migración `database/migracion_018_recompensa_equipo.sql`).
 
 ### Panel y estadísticas
 
@@ -103,7 +116,8 @@ Los cuatro parámetros (`recompensa_valor_hora`, `recompensa_factor_ahorro`, `re
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
 | Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id` (solo informativo: no asigna empleados) |
 | Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (única vía para asignar empleados a etapas), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
-| Recompensas | `GET|POST /api/recompensas`, `GET /api/recompensas/ranking`, `DELETE /api/recompensas/:id` |
+| Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `PUT /api/recompensas/equipo/dia/:fecha/objetivo`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
+| Producción | `GET /api/produccion/objetivos`, `GET|POST /api/produccion/registros`, `GET|PUT /api/produccion/horas` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
 | Manual | `GET /api/manual/pdf` (PDF del manual, requiere sesión) |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

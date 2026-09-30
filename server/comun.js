@@ -78,10 +78,6 @@ export function validarEmail(valor) {
 // CONFIGURACIÓN
 // ---------------------------------------------------------------------
 export const configuracionPorDefecto = {
-  recompensa_activa: 'true',
-  recompensa_valor_hora: '2500',
-  recompensa_factor_ahorro: '0.5',
-  recompensa_bono_minimo: '0',
   semaforo_tolerancia: '0.1',
   moneda: 'ARS',
   negocio_nombre: 'Un atelier',
@@ -101,7 +97,7 @@ export const configuracionPorDefecto = {
 }
 
 // Claves de configuración seguras para exponer en la web pública. El
-// resto (parámetros de recompensas, semáforo, etc.) es información
+// resto (semáforo, costeo, etc.) es información
 // interna del taller y nunca debe salir por /api/publico.
 export const clavesConfiguracionPublica = [
   'negocio_nombre', 'negocio_rubro', 'negocio_eslogan', 'negocio_descripcion', 'negocio_whatsapp',
@@ -136,43 +132,22 @@ export async function leerConfiguracion(cliente = pool) {
 }
 
 // ---------------------------------------------------------------------
-// SEMÁFORO Y RECOMPENSAS
-// El semáforo compara el tiempo real contra el estimado por el admin.
-// Verde si terminó antes de (1 - tolerancia), amarillo dentro del margen,
-// rojo si se pasó. El bono se paga solo en verde y es proporcional al
-// tiempo ahorrado, con la tarifa y el factor definidos en configuración.
+// SEMÁFORO DE RENDIMIENTO
+// Compara el tiempo real contra el estimado por el admin. Verde si terminó
+// antes de (1 - tolerancia), amarillo dentro del margen, rojo si se pasó.
+// Es solo un indicador: ya no genera plata. La recompensa es por equipo
+// (ver server/recompensa-equipo.js).
 // ---------------------------------------------------------------------
 export function calcularSemaforo(minutosEstimados, minutosReales, config = configuracionPorDefecto) {
   const estimado = Number(minutosEstimados)
   const real = Number(minutosReales)
   const base = { minutos_estimados: estimado || null, minutos_reales: Number.isFinite(real) ? real : null }
-  if (!estimado || !Number.isFinite(real) || real <= 0) return { ...base, semaforo: null, minutos_ahorrados: 0, monto: 0, puntos: 0, ratio: null }
+  if (!estimado || !Number.isFinite(real) || real <= 0) return { ...base, semaforo: null, minutos_ahorrados: 0, ratio: null }
 
   const tolerancia = Math.max(0, Number(config.semaforo_tolerancia) || 0)
   const ratio = real / estimado
   const semaforo = ratio <= 1 - tolerancia ? 'VERDE' : ratio <= 1 + tolerancia ? 'AMARILLO' : 'ROJO'
-  const ahorrados = Math.max(0, estimado - real)
-
-  const activa = String(config.recompensa_activa) === 'true'
-  const valorHora = Number(config.recompensa_valor_hora) || 0
-  const factor = Math.min(1, Math.max(0, Number(config.recompensa_factor_ahorro) || 0))
-  const bonoMinimo = Number(config.recompensa_bono_minimo) || 0
-  const monto = semaforo === 'VERDE' && activa ? decimal(Math.max(bonoMinimo, (ahorrados / 60) * valorHora * factor)) : 0
-
-  return { ...base, semaforo, minutos_ahorrados: ahorrados, monto, puntos: semaforo === 'VERDE' ? ahorrados : 0, ratio }
-}
-
-// Registra la recompensa automática de una etapa. La clave única parcial
-// sobre pedido_etapa_id / tarea_etapa_id evita duplicados si se reabre.
-export async function registrarRecompensa(cliente, { usuarioId, pedidoId = null, pedidoEtapaId = null, tareaEtapaId = null, motivo, resultado }) {
-  if (!usuarioId || resultado.semaforo !== 'VERDE' || resultado.monto <= 0) return null
-  const { rows } = await cliente.query(
-    `INSERT INTO recompensas (usuario_id, pedido_id, pedido_etapa_id, tarea_etapa_id, puntos, monto, motivo, semaforo, minutos_estimados, minutos_reales, minutos_ahorrados, automatica)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'VERDE', $8, $9, $10, TRUE)
-     ON CONFLICT DO NOTHING RETURNING id, monto, puntos`,
-    [usuarioId, pedidoId, pedidoEtapaId, tareaEtapaId, resultado.puntos, resultado.monto, motivo, resultado.minutos_estimados, resultado.minutos_reales, resultado.minutos_ahorrados]
-  )
-  return rows[0] || null
+  return { ...base, semaforo, minutos_ahorrados: Math.max(0, estimado - real), ratio }
 }
 
 // Recalcula el estado de un pedido según el avance de sus etapas.

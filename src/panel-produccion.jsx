@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { api, duracion, fecha, porcentaje, useData } from './api.js'
-import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, Stat, useAviso } from './ui.jsx'
-
-const hoy = () => new Date().toISOString().slice(0, 10)
+import { api, dinero, duracion, fecha, porcentaje, useData } from './api.js'
+import { Actions, Badge, CampoNumero, Empty, Heading, Modal, Progress, Semaforo, Stat, useAviso } from './ui.jsx'
+import { fechaDia, horas, hoyLocal as hoy } from './panel-recompensas.jsx'
 
 const textoEstadoPedido = { PENDIENTE: 'pendiente', EN_PRODUCCION: 'en producción', PAUSADO: 'pausado', TERMINADO: 'terminado', CANCELADO: 'cancelado' }
 
@@ -54,8 +53,19 @@ export default function PanelProduccion() {
     try {
       const resultado = await api.post('/produccion/registros', registro, registros.token)
       await recargar()
-      mostrar(resultado.cumplido ? `¡Objetivo cumplido para ${resultado.producto}!` : `Producción registrada. No llegó al objetivo de ${resultado.producto}.`, resultado.cumplido ? 'ok' : 'error')
-    } catch (error) { mostrar(error.message, 'error') }
+      mostrar(resultado.objetivo_cantidad === null || resultado.cumplido
+        ? `Producción de ${resultado.producto} registrada.`
+        : `Producción de ${resultado.producto} registrada. No llegó a su objetivo de ${resultado.objetivo_cantidad}.`)
+      return true
+    } catch (error) { mostrar(error.message, 'error'); return false }
+  }
+
+  const guardarHoras = async (fecha, planilla) => {
+    try {
+      await api.put('/produccion/horas', { fecha, horas: planilla }, registros.token)
+      mostrar('Horas del equipo guardadas.')
+      return true
+    } catch (error) { mostrar(error.message, 'error'); return false }
   }
 
   const objetivosProducto = objetivos.data.filter(objetivo => objetivo.tipo !== 'pedido')
@@ -166,17 +176,13 @@ export default function PanelProduccion() {
       )}
 
       <section className="section-heading">
-        <div><h2>Registrar producción de hoy</h2><p>Cargá lo producido por cada producto con objetivo activo.</p></div>
+        <div><h2>Planilla del día</h2><p>Horas trabajadas por cada empleado y producción del día. Con esto se calcula la recompensa del equipo.</p></div>
       </section>
 
-      {objetivosActivos.length ? (
-        <RegistroDiario objetivos={objetivosActivos} save={registrarProduccion} />
-      ) : (
-        <p className="notice">Cargá al menos un objetivo diario de producto activo para poder registrar producción.</p>
-      )}
+      <PlanillaDiaria objetivos={objetivosActivos} productos={productos.data} guardarHoras={guardarHoras} registrar={registrarProduccion} />
 
       <section className="section-heading">
-        <div><h2>Historial de cumplimiento</h2><p>Qué días se cumplió el objetivo y cuáles no.</p></div>
+        <div><h2>Historial de producción</h2><p>Lo producido por día y, si el producto tiene objetivo propio, si se cumplió.</p></div>
         <div className="actions">
           <label className="rango">Desde<input type="date" value={rango.desde} onChange={event => setRango({ ...rango, desde: event.target.value })} /></label>
           <label className="rango">Hasta<input type="date" value={rango.hasta} onChange={event => setRango({ ...rango, hasta: event.target.value })} /></label>
@@ -194,8 +200,10 @@ export default function PanelProduccion() {
               <span>{fecha(registro.fecha)}</span>
               <b>{registro.producto}</b>
               <span>{registro.cantidad_producida}</span>
-              <span>{registro.objetivo_cantidad}</span>
-              <span className={registro.cumplido ? 'positivo' : 'negativo'}>{registro.cumplido ? '✅ Cumplido' : '❌ No cumplido'}</span>
+              <span>{registro.objetivo_cantidad ?? '—'}</span>
+              {registro.objetivo_cantidad === null
+                ? <span className="muted">Sin objetivo propio</span>
+                : <span className={registro.cumplido ? 'positivo' : 'negativo'}>{registro.cumplido ? '✅ Cumplido' : '❌ No cumplido'}</span>}
             </div>
           ))}
         </section>
@@ -303,49 +311,111 @@ function ObjetivoModal({ objetivo, productos, pedidos, close, save }) {
 }
 
 // ---------------------------------------------------------------------
-// REGISTRO DE PRODUCCIÓN DEL DÍA
-// Una fila por producto con objetivo activo; se guarda producto por
-// producto para no perder lo cargado si uno de los campos falla.
+// PLANILLA DEL DÍA
+// Una fecha para todo: las horas de cada empleado (se guardan juntas) y
+// la producción, producto por producto (para no perder lo cargado si uno
+// falla). Se puede registrar cualquier producto activo: el objetivo por
+// producto es opcional. Abajo, el resumen de la recompensa del equipo.
 // ---------------------------------------------------------------------
-function RegistroDiario({ objetivos, save }) {
+function PlanillaDiaria({ objetivos, productos, guardarHoras, registrar }) {
   const [fechaSeleccionada, setFechaSeleccionada] = useState(hoy())
+  const empleados = useData(`/produccion/horas?fecha=${fechaSeleccionada}`)
+  const jornada = useData(`/recompensas/equipo/dia/${fechaSeleccionada}`, null)
+  const [horasEmpleado, setHorasEmpleado] = useState({})
   const [cantidades, setCantidades] = useState({})
+  const [otroProducto, setOtroProducto] = useState('')
   const [guardando, setGuardando] = useState(null)
 
-  useEffect(() => { setCantidades({}) }, [fechaSeleccionada])
+  useEffect(() => { setCantidades({}); setOtroProducto('') }, [fechaSeleccionada])
+  useEffect(() => { setHorasEmpleado(Object.fromEntries(empleados.data.map(fila => [fila.usuario_id, fila.horas || '']))) }, [empleados.data])
 
-  const guardar = async objetivo => {
-    const cantidad = cantidades[objetivo.producto_id]
+  const objetivoPorProducto = Object.fromEntries(objetivos.map(objetivo => [String(objetivo.producto_id), objetivo.cantidad_objetivo]))
+  const filas = [
+    ...objetivos.map(objetivo => ({ id: objetivo.producto_id, nombre: objetivo.producto })),
+    ...productos.filter(producto => String(producto.id) === otroProducto).map(producto => ({ id: producto.id, nombre: producto.nombre }))
+  ]
+  const disponibles = productos.filter(producto => !objetivoPorProducto[String(producto.id)])
+  const horasProducto = Object.fromEntries(productos.map(producto => [String(producto.id), Number(producto.horas_hombre) || 0]))
+  const totalHoras = Object.values(horasEmpleado).reduce((total, valor) => total + (Number(valor) || 0), 0)
+
+  const enviarHoras = async () => {
+    setGuardando('horas')
+    const planilla = empleados.data.map(fila => ({ usuario_id: fila.usuario_id, horas: Number(horasEmpleado[fila.usuario_id]) || 0 }))
+    if (await guardarHoras(fechaSeleccionada, planilla)) await Promise.all([empleados.load(), jornada.load()])
+    setGuardando(null)
+  }
+
+  const enviarProduccion = async fila => {
+    const cantidad = cantidades[fila.id]
     if (cantidad === undefined || cantidad === '') return
-    setGuardando(objetivo.producto_id)
-    try { await save({ producto_id: objetivo.producto_id, fecha: fechaSeleccionada, cantidad_producida: Number(cantidad) }) }
-    finally { setGuardando(null) }
+    setGuardando(fila.id)
+    if (await registrar({ producto_id: fila.id, fecha: fechaSeleccionada, cantidad_producida: Number(cantidad) })) await jornada.load()
+    setGuardando(null)
   }
 
   return (
     <section className="stage-edit">
-      <label className="rango">Fecha a registrar<input type="date" max={hoy()} value={fechaSeleccionada} onChange={event => setFechaSeleccionada(event.target.value)} /></label>
+      <label className="rango">Fecha<input type="date" max={hoy()} value={fechaSeleccionada} onChange={event => event.target.value && setFechaSeleccionada(event.target.value)} /></label>
 
+      <div className="card-title">Horas trabajadas</div>
+      {empleados.loading ? <p>Cargando empleados...</p> : empleados.error ? <p className="form-error">{empleados.error}</p> : empleados.data.length ? (
+        <>
+          <div className="stage-grid-head registro-grid-head">
+            <small>Empleado</small><small /><small>Horas</small><small />
+          </div>
+          {empleados.data.map(fila => (
+            <div className="stage-grid-row registro-grid-row" key={fila.usuario_id}>
+              <small>{fila.nombre}</small>
+              <span />
+              <CampoNumero min="0" max="24" step="0.5" value={horasEmpleado[fila.usuario_id] ?? ''} onChange={valor => setHorasEmpleado({ ...horasEmpleado, [fila.usuario_id]: valor })} placeholder="0" />
+              <span />
+            </div>
+          ))}
+          <p className="form-note">
+            Total del equipo: <b>{horas(totalHoras)}</b>{' '}
+            <button type="button" className="add-stage" disabled={guardando === 'horas'} onClick={enviarHoras}>{guardando === 'horas' ? 'Guardando...' : 'Guardar horas'}</button>
+          </p>
+        </>
+      ) : <p className="notice">No hay empleados activos. Dalos de alta en Usuarios.</p>}
+
+      <div className="card-title">Producción</div>
       <div className="stage-grid-head registro-grid-head">
-        <small>Producto</small><small>Objetivo</small><small>Producido</small><small />
+        <small>Producto</small><small>Objetivo propio</small><small>Producido</small><small />
       </div>
 
-      {objetivos.map(objetivo => (
-        <div className="stage-grid-row registro-grid-row" key={objetivo.id}>
-          <small>{objetivo.producto}</small>
-          <span>{objetivo.cantidad_objetivo}</span>
+      {filas.map(fila => (
+        <div className="stage-grid-row registro-grid-row" key={fila.id}>
+          <small>{fila.nombre} · {horasProducto[String(fila.id)] ? horas(horasProducto[String(fila.id)]) : 'sin tiempo estándar'}</small>
+          <span>{objetivoPorProducto[String(fila.id)] ?? '—'}</span>
           <input
             min="0"
             type="number"
-            value={cantidades[objetivo.producto_id] ?? ''}
-            onChange={event => setCantidades({ ...cantidades, [objetivo.producto_id]: event.target.value })}
+            value={cantidades[fila.id] ?? ''}
+            onChange={event => setCantidades({ ...cantidades, [fila.id]: event.target.value })}
             placeholder="0"
           />
-          <button type="button" className="add-stage" disabled={guardando === objetivo.producto_id} onClick={() => guardar(objetivo)}>
-            {guardando === objetivo.producto_id ? 'Guardando...' : 'Registrar'}
+          <button type="button" className="add-stage" disabled={guardando === fila.id} onClick={() => enviarProduccion(fila)}>
+            {guardando === fila.id ? 'Guardando...' : 'Registrar'}
           </button>
         </div>
       ))}
+
+      {disponibles.length > 0 && (
+        <label>Otro producto
+          <select value={otroProducto} onChange={event => setOtroProducto(event.target.value)}>
+            <option value="">Elegir un producto sin objetivo propio</option>
+            {disponibles.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
+          </select>
+        </label>
+      )}
+
+      {jornada.data && (
+        <p className="notice">
+          {fechaDia(fechaSeleccionada)}: horas totales {horas(jornada.data.horas_totales)} · objetivo {horas(jornada.data.objetivo_horas)} ·
+          producido {horas(jornada.data.horas_producidas)} · excedente {horas(jornada.data.excedente_horas)} ·
+          <b> recompensa del equipo {dinero(jornada.data.recompensa)}</b>
+        </p>
+      )}
     </section>
   )
 }
