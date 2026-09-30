@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Migración 010
+-- Un atelier - Migración 010
 -- 1) Se elimina la sección Materiales (tablas materiales y
 --    producto_materiales). Ninguna pantalla ni endpoint las usa ya.
 --    ATENCIÓN: borra los materiales cargados y su vínculo con productos.

@@ -11,8 +11,8 @@ export default function Footer() {
       <div className="contenedor">
         <div className="footer-grid">
           <div>
-            <p className="footer-brand">{config.negocio_nombre}</p>
-            <p>{config.negocio_descripcion}</p>
+            {config.negocio_nombre && <p className="footer-brand">{config.negocio_nombre}</p>}
+            {config.negocio_descripcion && <p>{config.negocio_descripcion}</p>}
             {(config.negocio_instagram || config.negocio_facebook) && (
               <div className="redes-public">
                 {config.negocio_instagram && <a href={config.negocio_instagram} target="_blank" rel="noopener noreferrer">Instagram</a>}
@@ -48,7 +48,7 @@ export default function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <span>© {anio} {config.negocio_nombre}. Todos los derechos reservados.</span>
+          <span>© {anio}{config.negocio_nombre ? ` ${config.negocio_nombre}` : ''}. Todos los derechos reservados.</span>
           <span>Hierro forjado, diseño y oficio.</span>
         </div>
       </div>

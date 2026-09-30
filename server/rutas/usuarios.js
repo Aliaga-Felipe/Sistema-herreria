@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import { pool } from '../db.js'
-import { asyncRoute, auth, fallo, rolLiteral } from '../comun.js'
+import { asyncRoute, auth, fallo, rolLiteral, validarEmail } from '../comun.js'
+import { validarContrasenaNueva } from '../seguridad.js'
 
 const router = Router()
 const seleccion = 'id, nombre, email, telefono, LOWER(rol::text) AS rol, activo, creado_en'
@@ -34,7 +35,9 @@ router.get('/empleados', auth(), asyncRoute(async (_, res) => {
 // usar "admin" y "super_admin"; "empleado" no tiene acceso a esta ruta.
 router.post('/', auth(['admin', 'super_admin']), asyncRoute(async (req, res) => {
   const { nombre, email, contrasena, rol = 'empleado' } = req.body
-  if (!nombre?.trim() || !email?.trim() || !contrasena || contrasena.length < 8) throw fallo('Completá nombre, correo y una contraseña de al menos 8 caracteres.')
+  if (typeof nombre !== 'string' || !nombre.trim() || nombre.length > 120 || typeof email !== 'string' || !email.trim()) throw fallo('Completá nombre, correo y una contraseña de al menos 8 caracteres.')
+  if (!validarEmail(email)) throw fallo('El correo no es válido.')
+  validarContrasenaNueva(contrasena)
   if (!['admin', 'empleado'].includes(rol)) throw fallo('Rol inválido.')
   // Un "admin" común solo puede crear cuentas de empleado: no puede
   // asignar el rol "admin" al crear (misma regla que en PATCH /:id/rol).
@@ -48,6 +51,7 @@ router.post('/', auth(['admin', 'super_admin']), asyncRoute(async (req, res) => 
 
 router.patch('/:id', auth(['super_admin']), asyncRoute(async (req, res) => {
   const { nombre, email, telefono } = req.body
+  if (email?.trim() && !validarEmail(email)) throw fallo('El correo no es válido.')
   const { rows } = await pool.query(`UPDATE usuarios SET
       nombre = COALESCE(NULLIF($1, ''), nombre),
       email = COALESCE(LOWER(NULLIF($2, '')), email),
@@ -70,6 +74,8 @@ router.patch('/:id/rol', auth(['admin', 'super_admin']), asyncRoute(async (req, 
   // A una cuenta "super_admin" no se le toca el rol si quien lo pide es un
   // "admin" común. Un "super_admin" sí puede (tiene permiso total).
   if (req.user.rol !== 'super_admin' && objetivo.rows[0].rol === 'super_admin') throw fallo('El rol de una cuenta super_admin no se cambia desde acá.', 403)
+  // Un "admin" común sólo gestiona empleados: no puede degradar a otro admin.
+  if (req.user.rol === 'admin' && objetivo.rows[0].rol !== 'empleado') throw fallo('El rol de una cuenta de administrador no se cambia desde acá.', 403)
 
   const { rows } = await pool.query(`UPDATE usuarios SET rol = ${rolLiteral('$1')}, actualizado_en = NOW()
     WHERE id = $2 RETURNING ${seleccion}`, [rol, req.params.id])
@@ -122,7 +128,7 @@ router.delete('/:id', auth(['admin', 'super_admin']), asyncRoute(async (req, res
 // cuenta; un "admin" común solo puede restablecer la de un empleado.
 router.patch('/:id/contrasena', auth(['admin', 'super_admin']), asyncRoute(async (req, res) => {
   const { contrasena } = req.body
-  if (!contrasena || contrasena.length < 8) throw fallo('La contraseña debe tener al menos 8 caracteres.')
+  validarContrasenaNueva(contrasena)
 
   if (req.user.rol === 'admin') {
     const objetivo = await pool.query('SELECT LOWER(rol::text) AS rol FROM usuarios WHERE id = $1', [req.params.id])

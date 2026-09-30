@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Catálogo público
+-- Un atelier - Catálogo público
 -- Delta idempotente para bases que ya tenían el esquema anterior. Agrega
 -- categorías, galería de imágenes, slugs amigables para URL, el
 -- indicador de producto destacado y los datos públicos del negocio
@@ -70,7 +70,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_producto_imagenes_principal
 -- datos que consume la web pública (nombre, WhatsApp, redes, dirección).
 -- ---------------------------------------------------------------------
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
-  ('negocio_nombre', 'El Atelier', 'Nombre de la herrería mostrado en la web pública.'),
+  ('negocio_nombre', 'Un atelier', 'Nombre de la herrería mostrado en la web pública.'),
   ('negocio_eslogan', 'Diseño que perdura', 'Frase corta mostrada en el hero de la web pública.'),
   ('negocio_descripcion', 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.', 'Descripción breve usada en la portada y en las meta etiquetas SEO.'),
   ('negocio_whatsapp', '5491100000000', 'Número de WhatsApp (con código de país, sin signos) para el botón de consulta. Ejemplo Argentina: 5491122334455.'),

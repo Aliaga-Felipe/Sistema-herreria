@@ -42,12 +42,13 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
 
   const metricas = await calcularMetricas()
 
-  // Productos vendidos = productos desactivados o eliminados (los más
-  // recientes primero). Un producto activo nunca aparece acá.
-  const vendidos = await filas(`SELECT id, nombre, chapita_id, eliminado, vendido_en,
+  // Productos vendidos (los más recientes primero), incluidos los que se
+  // borraron después: vienen del historial. Ni los activos ni los
+  // desactivados aparecen acá.
+  const vendidos = await filas(`SELECT producto_id AS id, nombre, chapita_id, eliminado, vendido_en,
       precio_vendido::float8 AS precio, costo_vendido::float8 AS costo
-    FROM productos WHERE NOT activo
-    ORDER BY vendido_en DESC, id DESC LIMIT 5`)
+    FROM ventas_productos_registradas
+    ORDER BY vendido_en DESC, producto_id DESC LIMIT 5`)
 
   const empleadosPendientes = await filas(`SELECT u.id, u.nombre,
       COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA')::int AS pendientes,
@@ -112,22 +113,23 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
     WHERE estado = 'COMPLETADA' AND ${enRango('completado_en')}`, parametros)
 
   // Ventas reales del período, una fila por evento: cada producto
-  // vendido (desactivado/eliminado) y cada item de un pedido cobrado.
-  const ventasReales = `SELECT pr.id AS producto_id, 1 AS unidades, pr.precio_vendido AS facturado, pr.costo_vendido AS costo,
+  // vendido (estado VENDIDO, o borrado después de venderse) y cada item de
+  // un pedido cobrado. Los productos DESACTIVADOS no son ventas.
+  const ventasReales = `SELECT pr.producto_id, pr.nombre, 1 AS unidades, pr.precio_vendido AS facturado, pr.costo_vendido AS costo,
         pr.vendido_en AS fecha
-      FROM productos pr WHERE NOT pr.activo AND ${enRango('pr.vendido_en')}
+      FROM ventas_productos_registradas pr WHERE ${enRango('pr.vendido_en')}
     UNION ALL
-    SELECT i.producto_id, i.cantidad, i.cantidad * i.precio_unitario,
+    SELECT i.producto_id, ip.nombre, i.cantidad, i.cantidad * i.precio_unitario,
         i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario), COALESCE(p.terminado_en, p.actualizado_en)
-      FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id
+      FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id JOIN productos ip ON ip.id = i.producto_id
       WHERE p.estado = 'TERMINADO' AND ${enRango('COALESCE(p.terminado_en, p.actualizado_en)')}`
 
-  const porProducto = await filas(`SELECT pr.id, pr.nombre, pr.precio_venta::float8 AS precio_venta,
+  const porProducto = await filas(`SELECT v.producto_id AS id, MAX(v.nombre) AS nombre, MAX(pr.precio_venta)::float8 AS precio_venta,
       SUM(v.unidades)::int AS unidades,
       COALESCE(SUM(v.facturado), 0)::float8 AS facturado,
       COALESCE(SUM(v.costo), 0)::float8 AS costo_estimado
-    FROM (${ventasReales}) v JOIN productos pr ON pr.id = v.producto_id
-    GROUP BY pr.id ORDER BY facturado DESC, pr.nombre`, parametros)
+    FROM (${ventasReales}) v LEFT JOIN productos pr ON pr.id = v.producto_id
+    GROUP BY v.producto_id ORDER BY facturado DESC, MAX(v.nombre)`, parametros)
 
   // Facturación cobrada por mes (ventas de productos + pedidos cobrados).
   const mensual = await filas(`SELECT to_char(date_trunc('month', v.fecha), 'YYYY-MM') AS periodo,

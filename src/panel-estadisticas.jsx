@@ -69,7 +69,7 @@ export default function PanelEstadisticas() {
 
       <section className="stats-grid monthly-stats">
         <Stat label="Ingresos en curso" value={dinero(enCurso.ingresos, moneda)} hint={`${pedidos.abiertos} pedidos abiertos · faltan ${dinero(enCurso.gastos_pendientes, moneda)} de costo`} />
-        <Stat label="Stock disponible" value={dinero(proyectado.ingresos_stock, moneda)} hint={`${productos.activos} productos activos · costo ${dinero(proyectado.gastos_stock, moneda)}`} tone={productos.activos_sin_precio ? 'danger' : ''} />
+        <Stat label="Stock disponible" value={dinero(proyectado.ingresos_stock, moneda)} hint={`${productos.activos} productos activos · costo ${dinero(proyectado.gastos_stock, moneda)}${productos.desactivados ? ` · ${productos.desactivados} desactivados (no cuentan)` : ''}`} tone={productos.activos_sin_precio ? 'danger' : ''} />
         <Stat label="Gastos proyectados" value={dinero(proyectado.gastos, moneda)} hint={`Ingresos proyectados ${dinero(proyectado.ingresos, moneda)}`} />
         <Stat
           label="Ganancia proyectada"

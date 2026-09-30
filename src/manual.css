@@ -1,0 +1,47 @@
+/* Sección "Manual de usuario" del panel. Usa las variables del tema si
+   existen y valores propios como respaldo. */
+.manual { max-width: 1100px; }
+.manual-buscador { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; }
+.manual-buscador input { flex: 1; min-width: 0; }
+.manual-buscador input { background: #12100f; border: 1px solid #3d3733; border-radius: 10px; color: var(--text, inherit); padding: 11px 13px; font: inherit; }
+.manual-buscador input::placeholder { color: inherit; opacity: .55; }
+.manual-buscador input:focus-visible { outline: 2px solid #b06a3b; outline-offset: 1px; }
+.manual-buscador small { opacity: .7; white-space: nowrap; }
+
+.manual-cuerpo { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 28px; align-items: start; }
+.manual-indice { position: sticky; top: 12px; max-height: calc(100vh - 40px); overflow: auto; padding: 14px 14px 10px; border: 1px solid rgba(128,128,128,.28); border-radius: 12px; font-size: .9rem; }
+.manual-indice ol { margin: 10px 0 0; padding-left: 20px; }
+.manual-indice li { margin: 0 0 6px; }
+.manual-indice button { background: none; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; opacity: .85; }
+.manual-indice button:hover, .manual-indice button:focus-visible { opacity: 1; text-decoration: underline; }
+
+.manual-capitulo { padding: 4px 0 26px; margin: 0 0 22px; border-bottom: 1px solid rgba(128,128,128,.25); scroll-margin-top: 16px; }
+.manual-capitulo:last-child { border-bottom: 0; }
+.manual-capitulo h2 { margin: 0 0 12px; font-size: 1.35rem; }
+.manual-capitulo h3 { margin: 20px 0 6px; font-size: 1.05rem; }
+.manual-capitulo p, .manual-capitulo li { line-height: 1.6; }
+.manual-capitulo ul, .manual-capitulo ol { padding-left: 22px; margin: 8px 0 12px; }
+.manual-capitulo li { margin: 0 0 6px; }
+
+.manual-nota, .manual-aviso { margin: 14px 0; padding: 12px 14px; border-radius: 10px; border-left: 4px solid; line-height: 1.55; }
+.manual-nota b, .manual-aviso b { display: block; margin-bottom: 2px; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+.manual-nota { border-color: #4f8f6a; background: rgba(79,143,106,.12); }
+.manual-aviso { border-color: #c0872b; background: rgba(192,135,43,.14); }
+
+.manual-tabla-caja { overflow-x: auto; margin: 12px 0; }
+.manual-tabla { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.manual-tabla th, .manual-tabla td { padding: 9px 11px; text-align: left; vertical-align: top; border: 1px solid rgba(128,128,128,.3); }
+.manual-tabla th { background: rgba(128,128,128,.14); font-weight: 700; }
+
+.manual-captura { margin: 14px 0 18px; }
+.manual-captura img { display: block; max-width: 100%; height: auto; border: 1px solid rgba(128,128,128,.3); border-radius: 8px; }
+.manual-captura figcaption { margin-top: 6px; font-size: .82rem; opacity: .7; }
+
+@media (max-width: 900px) {
+  .manual-cuerpo { grid-template-columns: 1fr; gap: 16px; }
+  .manual-indice { position: static; max-height: none; }
+}
+@media (max-width: 560px) {
+  .manual-buscador { flex-direction: column; align-items: stretch; gap: 6px; }
+  .manual-capitulo h2 { font-size: 1.2rem; }
+}

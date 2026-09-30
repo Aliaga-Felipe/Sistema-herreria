@@ -1,4 +1,4 @@
-# El Atelier — Hub de producción
+# Un atelier — Hub de producción
 
 Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC, catálogo de productos con etapas de fabricación, pedidos multiproducto, semáforo de rendimiento, recompensa diaria por equipo y estadísticas de gestión.
 
@@ -16,6 +16,9 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 - `database/migracion_003_detalle_tareas.sql` es el delta que agrega fecha de inicio, fecha de entrega y prioridad a la bandeja de tareas (`vista_tareas_empleado`), usados por el modal de detalle del panel **Tareas**. Si ya ejecutaste `schema.sql` con esta versión no hace falta correrla aparte.
 - `database/migracion_013_integracion_whatsapp_catalogo.sql` agrega las columnas de sincronización con el catálogo de WhatsApp Business (ver [`INTEGRACION_WHATSAPP.md`](INTEGRACION_WHATSAPP.md)). Como siempre, `schema.sql` ya incluye este mismo cambio.
 - `database/migracion_015_ventas_productos.sql` agrega el registro de ventas de productos que usan el Panel de control y Estadísticas: un producto **activo** está disponible y entra en la proyección; al **desactivarlo o eliminarlo** pasa a contarse como **vendido** ("Eliminar" ahora es un borrado lógico para no perder la venta). Los productos que ya estaban desactivados se toman como vendidos. El cálculo de todas las métricas está en `server/metricas.js`. Como siempre, `schema.sql` ya incluye este cambio: alcanza con `node server/scripts/aplicar-schema.js`.
+- `database/migracion_019_estados_producto.sql`: los productos pasan a tener tres estados —**Activo**, **Vendido** (botón “Producto vendido”, conserva fecha y precio) y **Desactivado** (no se ve en la web y no cuenta como stock ni como venta)—. **Eliminar** ahora borra el producto de verdad y deja libre su ID de producto; si estaba vendido, su venta pasa a `historial_ventas_productos` y las estadísticas la conservan. Un producto con pedidos asociados no se puede eliminar (se desactiva). Los productos que estaban desactivados pasan a *Desactivado*. Incluida en `schema.sql`.
+- `database/migracion_020_dos_pasos.sql`: tabla `codigos_acceso` de la **verificación en dos pasos**. Al iniciar sesión se envía un código de 6 dígitos por email (vence a los 10 minutos, un solo uso, 5 intentos, se guarda sólo su hash). **Requiere el SMTP configurado** (`SMTP_*` en `.env`); `DOS_PASOS_OBLIGATORIO=false` la apaga como salida de emergencia. Incluida en `schema.sql`.
+- `database/migracion_021_textos_portada.sql`: reemplaza el eslogan y la descripción de la portada de la web pública por los textos nuevos (“Un galpón de objetos con historia” y su bajada) y corrige el rubro si quedó como “Herreria e diseño”. Solo toca los valores que todavía son los textos anteriores: si se personalizaron desde Configuración, no se modifican. Se aplica con `node server/scripts/aplicar-schema.js` (ya está incluida en `schema.sql`).
 - `database/migracion_016_tareas_por_pedido.sql`: las tareas de producción se definen al crear cada pedido (una lista propia por producto del pedido, en `pedido_etapas`) y los productos ya no tienen tareas; el pedido toma el precio de venta del producto (el formulario ya no pide precio ni arma presupuesto). La vieja tabla `etapas_producto` se conserva sólo como sugerencia de tareas. Incluida en `schema.sql`.
 - `database/migracion_017_precio_opcional_y_categorias.sql`: el **precio de venta pasa a ser opcional** (columna `precio_venta` admite NULL; sin precio, la web pública muestra "Consultar precio", el panel "Sin precio" y el producto no se envía al catálogo de WhatsApp, que exige un precio) y publicar en la web ya no exige precio. Además, las **categorías creadas desde el panel** (sección Categorías) se conservan: el esquema ya no borra las que no sean Mesas, Mesitas ratoneras o Fogoneros. No modifica datos existentes. Incluida en `schema.sql`.
 - `database/prueba-humo.mjs` recorre el flujo completo contra la API y borra al final todo lo que creó:
@@ -97,6 +100,12 @@ recompensa        = excedente × valor hora-hombre × % de premio   (0 si no se 
 - **Panel de control**: pedidos activos y atrasados, etapas pendientes y sin asignar, ganancia estimada, semáforo del taller, productos más vendidos, empleados con tareas pendientes y accesos directos para crear productos, pedidos y usuarios.
 - **Estadísticas**: apartado propio y filtrable por fechas, con ingresos cobrados y en curso, gastos de producción y recompensas, ganancia neta y proyectada, facturación por mes, rentabilidad por producto y rendimiento de cada empleado (tareas completadas, tiempos promedio y conteo de semáforos).
 
+### Manual de usuario
+
+- Dentro del panel: sección **Manual de usuario** (admin, super admin y empleado; cada rol ve solo los capítulos que le corresponden), con índice, buscador y botón **Descargar PDF**.
+- Todo el texto vive en un único archivo, `src/manual-contenido.js`. Para corregir o ampliar el manual se edita ahí.
+- El PDF (`server/manual/manual-de-usuario.pdf`) se genera desde ese mismo archivo y lo entrega `GET /api/manual/pdf` solo a usuarios con sesión iniciada. Después de cambiar el contenido, regeneralo con `npm run manual:pdf` (usa Playwright; la primera vez puede hacer falta `npx playwright install chromium`) y recompilá con `npm run build`.
+
 ## API
 
 | Recurso | Rutas |
@@ -110,4 +119,5 @@ recompensa        = excedente × valor hora-hombre × % de premio   (0 si no se 
 | Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `PUT /api/recompensas/equipo/dia/:fecha/objetivo`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
 | Producción | `GET /api/produccion/objetivos`, `GET|POST /api/produccion/registros`, `GET|PUT /api/produccion/horas` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
+| Manual | `GET /api/manual/pdf` (PDF del manual, requiere sesión) |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

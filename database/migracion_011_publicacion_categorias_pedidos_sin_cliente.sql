@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Migración 011
+-- Un atelier - Migración 011
 -- 1) "Publicar en la web" (productos.publicado): un producto sólo se ve en
 --    la web pública si está marcado (y activo). Los productos que ya
 --    existían conservan su visibilidad actual; los nuevos nacen sin

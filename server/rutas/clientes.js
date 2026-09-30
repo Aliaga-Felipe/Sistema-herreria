@@ -7,7 +7,8 @@ const seleccion = 'id, nombre, telefono, email, direccion, notas, creado_en'
 
 // Los clientes los usan sólo los presupuestos: los pedidos ya no tienen
 // cliente (pedidos.cliente_id se eliminó), así que ya no se cuentan pedidos.
-router.get('/', auth(), asyncRoute(async (_, res) => {
+// Sólo administración: son datos personales de clientes (un empleado no los necesita).
+router.get('/', auth(['admin']), asyncRoute(async (_, res) => {
   const { rows } = await pool.query(`SELECT c.id, c.nombre, c.telefono, c.email, c.direccion, c.notas, c.creado_en
     FROM clientes c ORDER BY c.nombre`)
   res.json(rows)

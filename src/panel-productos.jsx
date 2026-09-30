@@ -70,6 +70,24 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   const configuracion = useData('/configuracion/valores', {})
   const { mostrar, nodo } = useAviso()
   const [editando, setEditando] = useState(null)
+  // Filtro del listado (uno solo a la vez): todos, por estado (ACTIVO /
+  // VENDIDO / DESACTIVADO) o por publicación (en la web / en WhatsApp).
+  // Por defecto se muestran solo los productos activos.
+  const [filtro, setFiltro] = useState('ACTIVO')
+  const FILTROS = [
+    ['TODOS', 'Todos', () => true],
+    ['ACTIVO', 'Activos', producto => producto.estado === 'ACTIVO'],
+    ['VENDIDO', 'Vendidos', producto => producto.estado === 'VENDIDO'],
+    ['DESACTIVADO', 'Desactivados', producto => producto.estado === 'DESACTIVADO'],
+    ['WEB', 'En la web', producto => Boolean(producto.publicado)],
+    ['WHATSAPP', 'En WhatsApp', producto => producto.whatsapp_sync_estado === 'SINCRONIZADO'],
+    ['AMBOS', 'Cargado en ambos', producto => Boolean(producto.publicado) && producto.whatsapp_sync_estado === 'SINCRONIZADO']
+  ]
+  const filtroActual = FILTROS.find(([valor]) => valor === filtro) || FILTROS[0]
+  const visibles = (productos.data || []).filter(filtroActual[2])
+  // Cartel "Último ID cargado": la chapita del producto creado más recientemente
+  // (cualquier estado), para saber por dónde sigue la numeración.
+  const ultimoCargado = (productos.data || []).reduce((ultimo, producto) => (!ultimo || Number(producto.id) > Number(ultimo.id) ? producto : ultimo), null)
 
   // Abre el formulario de producto nuevo con un ID de chapita ya generado
   // (editable a mano).
@@ -98,7 +116,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
   }
 
   const eliminar = async producto => {
-    if (!window.confirm(`¿Eliminar "${producto.nombre}"? Deja de verse en el panel y en la web, y se contabiliza como vendido en las estadísticas.`)) return
+    if (!window.confirm(`¿Eliminar "${producto.nombre}" definitivamente? Se borra del sistema junto con sus fotos y materiales, y su ID de producto queda libre para reutilizarse.${producto.estado === 'VENDIDO' ? ' Su venta se conserva en el historial y en las estadísticas.' : ''} Esta acción no se puede deshacer.`)) return
     try {
       const respuesta = await api.del(`/productos/${producto.id}`, productos.token)
       await productos.load()
@@ -106,12 +124,29 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
     } catch (error) { mostrar(error.message, 'error') }
   }
 
-  const alternarActivo = async producto => {
+  // Cambia el estado del producto (ver "ESTADOS DE PRODUCTO" en schema.sql):
+  // desactivar NO es vender; reactivar un producto vendido anula su venta.
+  const cambiarEstado = async (producto, estado) => {
     try {
-      await api.patch(`/productos/${producto.id}/activo`, { activo: !producto.activo }, productos.token)
+      const respuesta = await api.patch(`/productos/${producto.id}/estado`, { estado }, productos.token)
       await productos.load()
-      mostrar(producto.activo ? 'Producto desactivado: se contabiliza como vendido.' : 'Producto reactivado: vuelve a estar disponible y se anuló su venta.')
+      mostrar(respuesta.mensaje || 'Estado actualizado.')
     } catch (error) { mostrar(error.message, 'error') }
+  }
+
+  // Botón "Producto vendido": registra la venta (POST /productos/:id/vender).
+  const marcarVendido = async producto => {
+    if (!window.confirm(`¿Marcar "${producto.nombre}" como vendido? Se registra la venta al precio actual (${precioVenta(producto.precio_venta)}), deja de verse en la web y cuenta como venta en las estadísticas.`)) return
+    try {
+      const respuesta = await api.post(`/productos/${producto.id}/vender`, {}, productos.token)
+      await productos.load()
+      mostrar(respuesta.mensaje)
+    } catch (error) { mostrar(error.message, 'error') }
+  }
+
+  const reactivar = producto => {
+    if (producto.estado === 'VENDIDO' && !window.confirm(`"${producto.nombre}" figura como vendido. Si lo reactivás se anula esa venta y vuelve a estar disponible. ¿Continuar?`)) return
+    cambiarEstado(producto, 'ACTIVO')
   }
 
   // Reintenta la sincronización con el catálogo de WhatsApp (ver
@@ -135,10 +170,29 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
       {nodo}
 
+      {!productos.loading && !productos.error && productos.data.length > 0 && (
+        <div className="ultimo-id" role="status">
+          Último ID cargado: <b>{ultimoCargado?.chapita_id || '—'}</b>
+        </div>
+      )}
+
+      {!productos.loading && !productos.error && productos.data.length > 0 && (
+        <div className="filtro-estado" role="group" aria-label="Filtrar productos">
+          {FILTROS.map(([valor, etiqueta, coincide]) => (
+            <button key={valor} type="button" className={filtro === valor ? 'activo' : ''} aria-pressed={filtro === valor} onClick={() => setFiltro(valor)}>
+              {etiqueta} ({productos.data.filter(coincide).length})
+            </button>
+          ))}
+        </div>
+      )}
+
       {productos.loading ? <p>Cargando productos...</p> : productos.error ? <p className="form-error">{productos.error}</p> : productos.data.length ? (
+        visibles.length === 0 ? (
+          <p className="muted">No hay productos con este filtro. Probá con otro filtro o con “Todos”.</p>
+        ) : (
         <section className="product-grid">
-          {productos.data.map(producto => (
-            <article className={`product-card ${producto.activo ? '' : 'inactivo'}`} key={producto.id}>
+          {visibles.map(producto => (
+            <article className={`product-card ${producto.estado === 'ACTIVO' ? '' : 'inactivo'}`} key={producto.id}>
               {producto.imagenes?.[0]?.url
                 ? <img src={producto.imagenes[0].url} alt={producto.nombre} className="product-thumb-img" />
                 : <div className="product-symbol">▱</div>}
@@ -146,8 +200,9 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
               <div className="product-info">
                 <h3>
                   {producto.nombre} {producto.destacado && <span title="Destacado en la web">★</span>}
-                  {/* Desactivado = vendido (mismo criterio que Panel de control y Estadísticas). */}
-                  {!producto.activo && <span className="badge-inactivo" title={`Vendido a ${precioVenta(producto.precio_vendido)}`}>Vendido {fecha(producto.vendido_en)}</span>}
+                  {/* Vendido y Desactivado son cosas distintas: sólo lo vendido cuenta como venta. */}
+                  {producto.estado === 'VENDIDO' && <span className="badge-vendido" title={`Vendido a ${precioVenta(producto.precio_vendido)}`}>Vendido {fecha(producto.vendido_en)}</span>}
+                  {producto.estado === 'DESACTIVADO' && <span className="badge-inactivo" title="Desactivado: no se ve en la web y no cuenta como venta">Desactivado</span>}
                   {producto.publicado
                     ? <span className="badge-publicado" title="Visible en la web pública">En la web</span>
                     : <span className="badge-inactivo" title="Oculto en la web pública: sólo se ve en el panel">No publicado</span>}
@@ -158,7 +213,6 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
                   {producto.chapita_id ? ` · ID ${producto.chapita_id}` : ''}
                   {producto.medidas ? ` · ${producto.medidas}` : ''}
                 </p>
-                <p>{producto.descripcion || 'Sin descripción.'}</p>
                 {producto.whatsapp_sync_estado === 'ERROR' && producto.whatsapp_sync_error && (
                   <p className="form-error" style={{ fontSize: 11, margin: '2px 0' }}>WhatsApp: {producto.whatsapp_sync_error}</p>
                 )}
@@ -182,7 +236,10 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
               <div className="card-buttons">
                 <button onClick={() => editarProducto(producto)}>Editar</button>
-                <button className={producto.activo ? '' : 'activar-resaltado'} title={producto.activo ? 'Lo saca de la venta y lo cuenta como vendido' : 'Vuelve a estar disponible y anula la venta'} onClick={() => alternarActivo(producto)}>{producto.activo ? 'Desactivar (vendido)' : 'Reactivar'}</button>
+                {producto.estado !== 'VENDIDO' && <button className="btn-vendido" title="Registra la venta: deja de verse en la web y cuenta en las estadísticas" onClick={() => marcarVendido(producto)}>Producto vendido</button>}
+                {producto.estado === 'ACTIVO'
+                  ? <button title="Sigue en el panel, pero no se ve en la web y no cuenta como venta" onClick={() => cambiarEstado(producto, 'DESACTIVADO')}>Desactivar</button>
+                  : <button className="activar-resaltado" title={producto.estado === 'VENDIDO' ? 'Anula la venta y vuelve a estar disponible' : 'Vuelve a estar disponible'} onClick={() => reactivar(producto)}>Reactivar</button>}
                 {producto.publicado && (
                   <button onClick={() => reintentarWhatsapp(producto)}>
                     {producto.whatsapp_sync_estado === 'ERROR' ? 'Reintentar WhatsApp' : 'Sincronizar WhatsApp'}
@@ -193,6 +250,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
             </article>
           ))}
         </section>
+        )
       ) : (
         <Empty title="No hay productos cargados" text="Creá el primer producto con su precio y sus costos." action={nuevoProducto} label="Crear producto" />
       )}

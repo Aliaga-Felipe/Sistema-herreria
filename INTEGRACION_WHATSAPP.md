@@ -19,9 +19,17 @@ Platform). No usa WhatsApp Web, scraping ni librerías no oficiales.
 4. El catálogo **conectado** a esa cuenta de WhatsApp Business (WhatsApp
    Manager → Catálogo → Conectar).
 
-Si el cliente ya usa el catálogo de WhatsApp manualmente (según lo que nos
-dijeron, sí lo tiene), los puntos 3 y 4 ya deberían estar hechos. Igual
-conviene confirmarlos antes de seguir.
+**Ojo con el catálogo que el cliente ya tenía cargado a mano desde la app
+WhatsApp Business del celular:** Meta lo guarda como un catálogo llamado
+"WhatsApp Product Catalog", que aparece en la configuración del portfolio
+y se puede asignar, pero **no se abre en Commerce Manager** (bucle de
+redirecciones) **ni se puede modificar por la API** (responde "Object with
+ID ... does not exist, cannot be loaded due to missing permissions, or
+does not support this operation", código 100, aunque token y permisos
+estén bien). No sirve para esta integración: hay que crear un catálogo
+nuevo en Commerce Manager (tipo Comercio electrónico) y conectarlo al
+WhatsApp del cliente. Conviene conectarlo recién cuando los productos ya
+estén cargados en el sistema, porque reemplaza al catálogo cargado a mano.
 
 > **Si no tenemos alguno de estos datos confirmados, no lo inventamos.** El
 > código queda preparado para funcionar en cuanto se completen las
@@ -38,9 +46,14 @@ conviene confirmarlos antes de seguir.
 3. Asociar la app a la misma **Business Manager** que tiene el catálogo y el
    WABA del cliente.
 4. Crear un **usuario del sistema** (System User) dentro de la Business
-   Manager (Configuración del negocio → Usuarios → Usuarios del sistema):
+   Manager. **Esto no está en developers.facebook.com**, sino en
+   [business.facebook.com/settings/system-users](https://business.facebook.com/settings/system-users)
+   (Configuración del negocio → Usuarios → Usuarios del sistema), con el
+   portfolio del cliente seleccionado y siendo administrador de él:
    - Asignarle el catálogo con permiso de **administración total**
      (`catalog_management`).
+   - Asignarle también **la app** con control total (Asignar activos →
+     Apps); sin esto no deja generar el token para esa app.
    - Generar un **token de acceso** para ese usuario del sistema, con el
      permiso `catalog_management` (y `whatsapp_business_management` si más
      adelante se agrega envío de mensajes). Un token de usuario del
@@ -164,6 +177,7 @@ PUBLIC_BASE_URL=https://tu-dominio-real.com
 | Error con "OAuthException" o mención a un token inválido/expirado | El `META_ACCESS_TOKEN` venció o se revocó | Generar un token nuevo del usuario del sistema (paso 2) y actualizar `.env` |
 | Error mencionando permisos insuficientes | El usuario del sistema no tiene `catalog_management` sobre ese catálogo | Revisar la asignación de activos en Business Manager |
 | Error mencionando el catálogo o un id inexistente | `META_CATALOG_ID` mal copiado, o no pertenece a esa Business Manager | Volver a copiarlo desde Commerce Manager |
+| "Object with ID ... does not exist ... or does not support this operation" (código 100) con ID, token y permisos correctos | El catálogo es el "WhatsApp Product Catalog" creado desde la app del celular, que la API no permite modificar | Usar un catálogo creado en Commerce Manager (ver sección 1) |
 | Error de red / tiempo de espera agotado | Problema temporal de conexión con Meta, o límite de llamadas por hora superado (Meta limita 100 llamadas por catálogo por hora) | Usar "Reintentar WhatsApp" más tarde |
 | El producto se guardó pero no se ve en la web | No tiene que ver con esta integración: revisar que esté "Publicar en la web" y activo | Ver la sección Productos del panel |
 

@@ -1,10 +1,36 @@
 /* =====================================================================
-   EL ATELIER — WEB PÚBLICA
+   UN ATELIER — WEB PÚBLICA
    Catálogo de diseño inspirado en la estética editorial de las grandes
    marcas de mobiliario (grandes imágenes, mucho espacio, tipografía
    elegante), con la identidad de la herrería: paleta oscura y cálida,
    maderas y hierro forjado.
    ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   TIPOGRAFÍA DEL SÍMBOLO "@"
+   El glifo "@" de Stardos Stencil está mal armado (se sale hacia la izquierda
+   y pisa la letra anterior, por eso "contacto@unatelier.com" se veía cortado).
+   Solución tipográfica: la familia "Arroba" contiene ÚNICAMENTE el carácter @
+   (U+0040), tomado de Old Standard TT (licencia SIL OFL), y va primera en las
+   pilas de fuentes. Como el rango Unicode es solo U+0040, el navegador usa
+   esta fuente para el "@" real y Stardos Stencil para todo el resto del texto
+   (también en placeholders, enlaces mailto y el pie de página). Va incrustada
+   (base64, menos de 2 KB): no hace falta ninguna descarga extra.
+   --------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Arroba';
+  font-style: normal;
+  font-weight: 400;
+  unicode-range: U+0040;
+  src: url(data:font/woff2;base64,d09GMgABAAAAAAL0AA0AAAAABSQAAAKjAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGyAcMAZgADQRCAqBbIF0ATYCJAMICwYABCAFg0IHIBtDBFGUDMYQgJ8HNpHhCj4iSfqcpkIpnKZDopDnvOmqT75aHT0dQw/Df+Lh/9f+t8+dmS/mSbSbIaaJZN3ajyQWjfaodJIn8dDoGuEd2eV8IG5E3wtJHkAVqrM7lilZqujiEux/gNqu6+6gP33fvm+nEksDKmsJBkHmiSQSZB3d5LNIfmigkSZygK1Bkq0FmNHEs7f0OZGAOWBMtwke7gqG5tIirQI1+gTBrW/WY2AjhzIAAjUmJTLXvOdxZSjFEHSjq6UQpAd0nmgxqSDtpArsiYk4LzWaAQWICWjm4PUKNpxZVpx+ucFbdhgCBMTbdI4h5kjEchtzgYmFISCHyJfLHIk+ECBEGTTSQQk5Eo4CNwG4D6TVln+/Rdf3+9qRr7fufrmpGX4X1FH6YDdccYteYOO5r/1g7clHcPdp7ny/Nzwj1Qx/uXEX95LaCd/TVbi7J5Y53HqG9AO2ix98UBtx9RxhW8rt2Nu9ypXM0ZqXOzNTFdyG2siq1GLbn1EJpUX5RSEmq4dnEmP9+mYtd7fbMoju/kynhVwXIMlm1g0Nb9EIk8y2LR67fmpqP4dEzPm0ZkeWh+8fFLjXeGEl7pFXHB40eXlrMy3bFwIQyHj85vFoc87/a2Nu/gSff7Q+gC93Zsf/9f9XCPN6oFICwU84xbTC+OcrcOjJFO8tS5cMh6SkxhOFAACZQKXTzEVuC+yQszBgmCUNSiyz7Jjlpn2yQk+M/U0rjMeiMjJyBkoCPHxqSKpkKVIgGD4OpIkYG9JGrZ0UWzslNqSZkowQRyc1pISGGp+MkgoSrZ2EiJKBhoiMVjEeiXYCYok6yUjEzFHFYFpx8GiItVNKkyiZr/I046rAltel2QGzSOgzbwkhJ+C8qCQgI4XcYKipvjmyKx/mAQAA) format('woff2');
+}
+@font-face {
+  font-family: 'Arroba';
+  font-style: normal;
+  font-weight: 700;
+  unicode-range: U+0040;
+  src: url(data:font/woff2;base64,d09GMgABAAAAAALEAA0AAAAABQwAAAJyAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGyAcMAZgADQRCAqBbIF1ATYCJAMICwYABCAFgyoHIBssBAAehXHDHY0YyhIHSjDkf1nEwz/36n0vcx4PSXZtbFqTagUJB8s6lkG/D78//HMfBpoVZBTT0tzwoQj2P0Bw7f+9pZvBpUOeyN+o6KT/BphAt0hGJwYy6uLAoowDwXTncYWcqb7p/FIBmuQoIDsefmHgwgCFgABNegzQnPfEHqpL8qDwklxWAAU+tV7ObGofLOSWigLs5g+La5iEHEAdAAIAOHp2T8MUnDjlXyK+0XtEBhBA/OU1JmiQoATGaASMMZRAGYOARcEUF0BI+lt6gASUQYIz8ArLC3It/HJ/T5ofHnh77+6wub3l6blRkFgKexLDMx84kOZV5I0aQtNyDVy4AY3E03N7i43pJbrSfLz/jrwLNjYeh435H6/zGgrPnifO52Wlbq5lZOdOxkeMxVuYVWYEe6lbmRjZuBrrGHs62jkq1n1oidDXljYKZ1Zyvcx8hGSq+bQtvWXzzOK8u1o9I4I7owOmM9K8+3qDkowiVb5/+Zmp7i6+Os0V8JJM01SLEVX4KeF0L1JuoZguAECAErxNuewnCtr94CrRn+D9g2gr8FFen/J/7P+ZLWISQXCiAAFfkbATDLLUAwLuzPhefMkMeghIe+AxBhYBAJQQUBODRsrcgC1QM0JBD6NwWWI0G1uMoeULY8mEiC8HtdCDq0JFqpXIlilLGSUmjBgHKgnr0vRrAuVJoyRUmWQF0iQrkUZJkBKFcqRL1aOz8vwLZilUopQSLcny5SpRrVyuQhWcZMqXLFseA6kK5dOekwhD56KQk5syYIRLtoJkcJfGVl9v1iJ9dYcZkZK7COnvL2QrVEDJ1O6TMhroijEBAAAA) format('woff2');
+}
 
 :root {
   --negro: #1a1a1a;
@@ -24,8 +50,8 @@
   --borde-claro: rgba(243, 237, 227, 0.16);
   --borde-oscuro: rgba(26, 26, 26, 0.12);
 
-  --fuente-display: 'Stardos Stencil', 'Georgia', serif;
-  --fuente-texto: 'Stardos Stencil', 'Segoe UI', sans-serif;
+  --fuente-display: 'Arroba', 'Stardos Stencil', 'Georgia', serif;
+  --fuente-texto: 'Arroba', 'Stardos Stencil', 'Segoe UI', sans-serif;
   --fuente-mono: 'Cutive Mono', 'Courier New', monospace;
   --fuente-historia: 'Courier Prime', 'Cutive Mono', 'Courier New', monospace;
 
@@ -340,8 +366,28 @@
   height: 100%;
   object-fit: cover;
   z-index: 0;
+  pointer-events: none; /* sin controles ni interacción: sólo fondo */
+}
+/* Ningún control nativo (play, pausa, barra, volumen), ni en iOS ni en Chrome. */
+.hero-video::-webkit-media-controls,
+.hero-video::-webkit-media-controls-panel,
+.hero-video::-webkit-media-controls-play-button,
+.hero-video::-webkit-media-controls-start-playback-button,
+.hero-video::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+  -webkit-appearance: none;
+  opacity: 0;
 }
 .hero-inner { position: relative; z-index: 2; padding-bottom: 72px; padding-top: calc(var(--header-alto) + 40px); }
+.hero-inner .hero-marca {
+  font-family: var(--fuente-display);
+  font-size: clamp(1.35rem, 1.05rem + 1.5vw, 2.15rem);
+  letter-spacing: clamp(0.1em, 0.05em + 0.5vw, 0.2em);
+  line-height: 1.1;
+  margin: 0 0 18px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .hero-inner h1 {
   font-size: clamp(2.6rem, 8vw, 5.4rem);
   line-height: 1.02;
@@ -398,7 +444,12 @@
 }
 
 .destacados-titulo {
-  font-size: clamp(2rem, 5.4vw, 3.4rem);
+  /* El título es ahora una frase completa: se reduce el tamaño (antes 3.4rem)
+     para que quede en 2-3 líneas en escritorio y en pocas líneas en celular. */
+  font-size: clamp(1.45rem, 3.6vw, 2.5rem);
+  max-width: min(100%, 28ch);
+  margin-left: auto;
+  margin-right: auto;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   line-height: 1.08;
@@ -409,7 +460,7 @@
    a otra línea. El espacio real entre palabras mide lo mismo que el viejo
    espaciador (0.3em) para no cambiar el aspecto en escritorio. */
 .destacados-palabra { display: inline-block; white-space: nowrap; }
-.destacados-titulo { max-width: 100%; }
+/* (el ancho máximo del título está arriba: max-width: min(100%, 28ch)) */
 /* Mientras las letras entran desde los costados, la sección contiene ese
    recorrido (clip, no crea barra de scroll): nunca ensancha la página. */
 .seccion-destacados { overflow-x: clip; }
@@ -812,6 +863,7 @@
 @media (min-width: 900px) { .split-editorial { grid-template-columns: 1fr 1fr; gap: 72px; } }
 .split-editorial img { border-radius: var(--radio); aspect-ratio: 4/5; object-fit: cover; width: 100%; }
 .split-editorial .texto p { line-height: 1.8; opacity: 0.82; margin: 18px 0 26px; font-size: 1rem; }
+.split-editorial .texto p + p { margin-top: -6px; }
 
 .materiales-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 48px; }
 @media (min-width: 760px) { .materiales-grid { grid-template-columns: repeat(4, 1fr); } }
@@ -978,3 +1030,4 @@
    --------------------------------------------------------------------- */
 .skeleton { background: linear-gradient(100deg, rgba(243,237,227,0.05) 30%, rgba(243,237,227,0.12) 50%, rgba(243,237,227,0.05) 70%); background-size: 200% 100%; animation: brillo 1.6s ease-in-out infinite; border-radius: var(--radio); }
 @keyframes brillo { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.form-publico .campo-trampa { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; }

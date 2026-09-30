@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Catálogo público (parte 3)
+-- Un atelier - Catálogo público (parte 3)
 -- Delta idempotente: el texto corto que acompaña al nombre del negocio
 -- ("Herrería de diseño") pasa a ser editable desde Configuración en vez
 -- de estar fijo en el código del encabezado y la portada.
