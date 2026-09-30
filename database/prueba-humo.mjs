@@ -172,34 +172,59 @@ try {
   ok('no se generan recompensas individuales', bonosIndividuales === 0, String(bonosIndividuales))
 
   // --- recompensa del equipo --------------------------------------------
-  // Fecha lejana para no tocar días reales: 2 personas × 8 hs = 16 hs,
-  // silla de 4 hs → objetivo sugerido 16 hs (4 sillas); se producen 5.
+  // Fecha lejana para no tocar días reales. El objetivo del equipo sale de
+  // los objetivos diarios por producto (Producción diaria). Si la base ya
+  // tiene objetivos propios, se suman: por eso se mide contra "base".
   const dia = '2001-01-01'
+  const base = (await llamar('/recompensas/equipo/dia/2001-01-02', {}, token)).objetivo_horas
   const silla = await llamar('/productos', { method: 'POST', cuerpo: { nombre: `Silla ${marca}`, descripcion: 'Silla de prueba', horas_hombre: 4 } }, token)
   creados.productos.push(silla.id)
 
-  let horasProhibidas = false
-  try { await llamar('/produccion/horas', { method: 'PUT', cuerpo: { fecha: dia, horas: [{ usuario_id: empleado.id, horas: 8 }] } }, tokenEmpleado) } catch (error) { horasProhibidas = error.message.includes('403') }
-  ok('el empleado no puede cargar horas', horasProhibidas)
+  let objetivoProhibido = false
+  try { await llamar(`/produccion/objetivos/${silla.id}`, { method: 'PUT', cuerpo: { cantidad_objetivo: 1 } }, tokenEmpleado) } catch (error) { objetivoProhibido = error.message.includes('403') }
+  ok('el empleado no puede cambiar el objetivo diario', objetivoProhibido)
 
-  const conHoras = await llamar('/produccion/horas', { method: 'PUT', cuerpo: { fecha: dia, horas: [{ usuario_id: empleado.id, horas: 8 }, { usuario_id: admin.id, horas: 8 }] } }, token)
-  ok('horas totales del equipo', conHoras.horas_totales === 16 && conHoras.objetivo_horas === 16, JSON.stringify({ totales: conHoras.horas_totales, objetivo: conHoras.objetivo_horas }))
+  // Objetivo diario de 3 sillas de 4 hs = 12 hs más para el equipo.
+  await llamar(`/produccion/objetivos/${silla.id}`, { method: 'PUT', cuerpo: { cantidad_objetivo: 3 } }, token)
 
-  await llamar('/produccion/registros', { method: 'POST', cuerpo: { producto_id: silla.id, fecha: dia, cantidad_producida: 5 } }, tokenEmpleado)
+  // No alcanza: 2 sillas = 8 hs contra un objetivo de (base + 12) hs.
+  await llamar('/produccion/registros', { method: 'POST', cuerpo: { producto_id: silla.id, fecha: dia, cantidad_producida: 2 } }, tokenEmpleado)
+  const incompleta = await llamar(`/recompensas/equipo/dia/${dia}`, {}, tokenEmpleado)
+  ok('el objetivo sale del objetivo diario de producción', incompleta.objetivo_horas === base + 12, JSON.stringify({ base, objetivo: incompleta.objetivo_horas }))
+  ok('sin completar la producción propuesta no hay recompensa', incompleta.horas_producidas === 8 && !incompleta.cumplido && incompleta.recompensa === 0,
+    JSON.stringify({ producidas: incompleta.horas_producidas, recompensa: incompleta.recompensa }))
+
+  // Se completa: las sillas necesarias para cubrir todo el objetivo del día.
+  const necesarias = Math.ceil((base + 12) / 4)
+  await llamar('/produccion/registros', { method: 'POST', cuerpo: { producto_id: silla.id, fecha: dia, cantidad_producida: necesarias } }, tokenEmpleado)
   const jornada = await llamar(`/recompensas/equipo/dia/${dia}`, {}, tokenEmpleado)
   const valorHora = jornada.valor_hora
-  ok('5 sillas: excedente de 4 hs', jornada.horas_producidas === 20 && jornada.excedente_horas === 4, JSON.stringify({ producidas: jornada.horas_producidas, excedente: jornada.excedente_horas }))
-  ok('recompensa = excedente × valor hora × % premio', jornada.recompensa === Math.round(4 * valorHora * (jornada.porcentaje_premio / 100) * 100) / 100, `$${jornada.recompensa}`)
+  ok('al completar la producción propuesta el objetivo queda cumplido', jornada.cumplido && jornada.horas_producidas === necesarias * 4,
+    JSON.stringify({ producidas: jornada.horas_producidas, objetivo: jornada.objetivo_horas }))
+  ok('recompensa = horas-hombre del objetivo × valor hora × % premio',
+    jornada.recompensa === Math.round((base + 12) * valorHora * (jornada.porcentaje_premio / 100) * 100) / 100, `$${jornada.recompensa}`)
 
-  let objetivoProhibido = false
-  try { await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { objetivo_horas: 4 } }, tokenEmpleado) } catch (error) { objetivoProhibido = error.message.includes('403') }
-  ok('el empleado no puede cambiar el objetivo', objetivoProhibido)
+  // Producir de más no aumenta la recompensa.
+  await llamar('/produccion/registros', { method: 'POST', cuerpo: { producto_id: silla.id, fecha: dia, cantidad_producida: necesarias + 3 } }, tokenEmpleado)
+  const deMas = await llamar(`/recompensas/equipo/dia/${dia}`, {}, tokenEmpleado)
+  ok('producir de más paga lo mismo', deMas.recompensa === jornada.recompensa, `$${deMas.recompensa}`)
 
-  const conObjetivo = await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { objetivo_horas: 20 } }, token)
-  ok('el objetivo del admin reemplaza al sugerido', conObjetivo.objetivo_manual && conObjetivo.objetivo_horas === 20 && conObjetivo.recompensa === 0)
-  const guardada = (await pool.query('SELECT objetivo_horas::float8 AS objetivo, recompensa::float8 AS recompensa FROM jornadas_equipo WHERE fecha = $1', [dia])).rows[0]
-  ok('el objetivo queda guardado en el día', guardada.objetivo === 20 && guardada.recompensa === 0)
-  await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { automatico: true } }, token)
+  let horasViejas = null
+  try { await llamar('/produccion/horas', { method: 'PUT', cuerpo: { fecha: dia, horas: [{ usuario_id: empleado.id, horas: 8 }] } }, token) } catch (error) { horasViejas = error.message }
+  ok('ya no existe la carga de horas por empleado', /404/.test(horasViejas || ''), horasViejas)
+
+  // Cambiar el objetivo después no reescribe un día pasado ya calculado.
+  await llamar(`/produccion/objetivos/${silla.id}`, { method: 'PUT', cuerpo: { cantidad_objetivo: 10 } }, token)
+  const cerrado = await llamar(`/recompensas/equipo/dia/${dia}`, {}, token)
+  ok('editar el objetivo no cambia días pasados', cerrado.objetivo_horas === base + 12 && cerrado.recompensa === jornada.recompensa && cerrado.objetivo_congelado,
+    JSON.stringify({ objetivo: cerrado.objetivo_horas, recompensa: cerrado.recompensa }))
+  const guardada = (await pool.query('SELECT objetivo_horas::float8 AS objetivo, objetivo_detalle FROM jornadas_equipo WHERE fecha = $1', [dia])).rows[0]
+  ok('el objetivo queda guardado en el día con su detalle', guardada.objetivo === base + 12
+    && guardada.objetivo_detalle.some(fila => String(fila.producto_id) === String(silla.id) && fila.cantidad === 3))
+
+  let rutaVieja = null
+  try { await llamar(`/recompensas/equipo/dia/${dia}/objetivo`, { method: 'PUT', cuerpo: { objetivo_horas: 1 } }, token) } catch (error) { rutaVieja = error.message }
+  ok('el objetivo ya no se fija desde Recompensas', /404/.test(rutaVieja || ''), rutaVieja)
 
   let parametrosProhibidos = false
   try { await llamar('/recompensas/parametros', { method: 'PUT', cuerpo: { valor_hora: 1 } }, tokenEmpleado) } catch (error) { parametrosProhibidos = error.message.includes('403') }

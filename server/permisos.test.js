@@ -21,7 +21,7 @@ const llamar = async (metodo, ruta, token, cuerpo = {}) => {
   const respuesta = await fetch(`${base}${ruta}`, {
     method: metodo,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(cuerpo)
+    body: metodo === 'GET' ? undefined : JSON.stringify(cuerpo)
   })
   return { status: respuesta.status, datos: await respuesta.json().catch(() => ({})) }
 }
@@ -43,14 +43,20 @@ after(async () => {
 })
 
 describe('un usuario que no es administrador no puede cambiar los parámetros', () => {
-  it('rechaza cambiar el objetivo del día', async () => {
-    const { status } = await llamar('PUT', '/api/recompensas/equipo/dia/2026-09-30/objetivo', tokenEmpleado, { objetivo_horas: 8 })
+  // El objetivo del equipo sale de los objetivos diarios por producto.
+  it('rechaza crear o cambiar el objetivo diario de producción', async () => {
+    const { status } = await llamar('PUT', '/api/produccion/objetivos/1', tokenEmpleado, { cantidad_objetivo: 8 })
     assert.equal(status, 403)
   })
 
-  it('rechaza volver el objetivo al sugerido', async () => {
-    const { status } = await llamar('PUT', '/api/recompensas/equipo/dia/2026-09-30/objetivo', tokenEmpleado, { automatico: true })
+  it('rechaza eliminar el objetivo diario de producción', async () => {
+    const { status } = await llamar('DELETE', '/api/produccion/objetivos/1', tokenEmpleado)
     assert.equal(status, 403)
+  })
+
+  it('ya no existe la ruta para fijar el objetivo desde Recompensas', async () => {
+    const { status } = await llamar('PUT', '/api/recompensas/equipo/dia/2026-09-30/objetivo', tokenAdmin, { objetivo_horas: 8 })
+    assert.equal(status, 404)
   })
 
   it('rechaza cambiar el valor hora-hombre y el % de premio', async () => {
@@ -65,9 +71,9 @@ describe('un usuario que no es administrador no puede cambiar los parámetros', 
     assert.equal(alta.status, 403)
   })
 
-  it('rechaza cargar horas trabajadas', async () => {
-    const { status } = await llamar('PUT', '/api/produccion/horas', tokenEmpleado, { fecha: '2026-09-30', horas: [{ usuario_id: 1, horas: 8 }] })
-    assert.equal(status, 403)
+  it('ya no existe la carga de horas trabajadas por empleado', async () => {
+    const { status } = await llamar('PUT', '/api/produccion/horas', tokenAdmin, { fecha: '2026-09-30', horas: [{ usuario_id: 1, horas: 8 }] })
+    assert.equal(status, 404)
   })
 
   it('rechaza pedidos sin sesión', async () => {
@@ -78,19 +84,14 @@ describe('un usuario que no es administrador no puede cambiar los parámetros', 
 
 describe('el administrador pasa el control de permisos', () => {
   // Datos inválidos: la ruta los rechaza con 400 (no 403) antes de tocar la base.
-  it('valida el objetivo del día', async () => {
-    const { status, datos } = await llamar('PUT', '/api/recompensas/equipo/dia/2026-09-30/objetivo', tokenAdmin, { objetivo_horas: -5 })
+  it('valida el objetivo diario de producción', async () => {
+    const { status, datos } = await llamar('PUT', '/api/produccion/objetivos/1', tokenAdmin, { cantidad_objetivo: -5 })
     assert.equal(status, 400)
     assert.match(datos.error, /objetivo/i)
   })
 
-  it('valida la fecha', async () => {
-    const { status } = await llamar('PUT', '/api/recompensas/equipo/dia/30-09-2026/objetivo', tokenAdmin, { objetivo_horas: 8 })
-    assert.equal(status, 400)
-  })
-
-  it('valida las horas de la planilla', async () => {
-    const { status } = await llamar('PUT', '/api/produccion/horas', tokenAdmin, { fecha: '2026-09-30', horas: [{ usuario_id: 1, horas: 30 }] })
+  it('valida la fecha del desglose', async () => {
+    const { status } = await llamar('GET', '/api/recompensas/equipo/dia/30-09-2026', tokenAdmin)
     assert.equal(status, 400)
   })
 })

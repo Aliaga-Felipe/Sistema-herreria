@@ -78,20 +78,20 @@ Es solo un indicador de tiempos: no genera plata. La tolerancia (`semaforo_toler
 
 ### Recompensa del equipo
 
-Todo el taller es un único equipo y la recompensa se calcula por día, sobre el resultado conjunto (nunca por empleado). En **Producción diaria** el admin carga las horas de cada empleado y la producción del día; en **Recompensas** se ve el desglose.
+Todo el taller es un único equipo y la recompensa se paga por día, por completar la producción propuesta para la jornada (nunca por empleado). En **Producción diaria** el admin define los objetivos diarios por producto y se carga lo producido; en **Recompensas** se ve el desglose.
 
 ```
-horas totales     = Σ horas trabajadas por cada empleado
-objetivo (hs)     = el que fija el admin, o por defecto las horas totales
-                    (16 hs ÷ silla de 4 hs = 4 sillas = 16 hs)
+objetivo (hs)     = Σ (cantidad objetivo × horas-hombre) de los objetivos diarios
+                    por producto activos (ej. 4 sillas de 4 hs = 16 hs)
 horas producidas  = Σ (unidades × horas-hombre del producto)
-excedente (hs)    = horas producidas − objetivo
-recompensa        = excedente × valor hora-hombre × % de premio   (0 si no se supera el objetivo)
+recompensa        = objetivo × valor hora-hombre × % de premio   si horas producidas >= objetivo
+                    0                                            si no se completa el objetivo
 ```
 
-- El tiempo estándar de cada producto es su campo **horas-hombre** (Productos).
-- Objetivo del día, valor hora-hombre y % de premio (por defecto 100%) solo los cambia un `admin` o `super_admin`; la API lo valida.
-- El objetivo se guarda en el día (`jornadas_equipo`), el valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`) y cada registro de producción copia las horas-hombre del producto: los cambios posteriores no recalculan días pasados.
+- Cada producto vale sus **horas-hombre** (Productos). No se cargan horas trabajadas por empleado.
+- Producir de más no aumenta la recompensa: se paga el objetivo completo.
+- Objetivos diarios, horas-hombre, valor hora-hombre y % de premio (por defecto 100%) solo los cambia un `admin` o `super_admin`; la API lo valida.
+- El objetivo se guarda en el día con su detalle (`jornadas_equipo`): editar un objetivo después no cambia días pasados. El valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`) y cada registro de producción copia las horas-hombre del producto: los cambios posteriores no recalculan días pasados.
 - La lógica está en funciones puras en `server/recompensa-equipo.js`. Tests: `npm test`.
 - Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto (migración `database/migracion_018_recompensa_equipo.sql`).
 
@@ -116,8 +116,8 @@ recompensa        = excedente × valor hora-hombre × % de premio   (0 si no se 
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
 | Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id` (solo informativo: no asigna empleados) |
 | Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (única vía para asignar empleados a etapas), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
-| Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `PUT /api/recompensas/equipo/dia/:fecha/objetivo`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
-| Producción | `GET /api/produccion/objetivos`, `GET|POST /api/produccion/registros`, `GET|PUT /api/produccion/horas` |
+| Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
+| Producción | `GET /api/produccion/objetivos`, `PUT|DELETE /api/produccion/objetivos/:productoId`, `GET|POST /api/produccion/registros` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
 | Manual | `GET /api/manual/pdf` (PDF del manual, requiere sesión) |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

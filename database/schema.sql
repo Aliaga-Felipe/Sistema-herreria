@@ -894,23 +894,7 @@ UPDATE pedido_items i SET precio_unitario = pr.precio_venta
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 1) HORAS TRABAJADAS POR EMPLEADO Y DÍA (las carga el admin)
--- Solo se usan para sumar las horas totales del equipo.
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS horas_trabajadas (
-  id BIGSERIAL PRIMARY KEY,
-  usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  fecha DATE NOT NULL,
-  horas NUMERIC(5,2) NOT NULL CHECK (horas > 0 AND horas <= 24),
-  cargado_por BIGINT REFERENCES usuarios(id) ON DELETE SET NULL,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (usuario_id, fecha)
-);
-CREATE INDEX IF NOT EXISTS idx_horas_trabajadas_fecha ON horas_trabajadas(fecha);
-
--- ---------------------------------------------------------------------
--- 2) VALOR HORA-HOMBRE Y % DE PREMIO CON HISTORIAL
+-- 1) VALOR HORA-HOMBRE Y % DE PREMIO CON HISTORIAL
 -- Cada cambio agrega una fila con su fecha de vigencia; un día usa la
 -- última fila con vigente_desde <= esa fecha, así que cambiar el valor
 -- no recalcula días anteriores. Arranca con el valor hora que ya estaba
@@ -934,17 +918,20 @@ SELECT DATE '2000-01-01',
 WHERE NOT EXISTS (SELECT 1 FROM parametros_recompensa_historial);
 
 -- ---------------------------------------------------------------------
--- 3) JORNADAS DEL EQUIPO (una fila por día)
--- Guarda el objetivo vigente del día (el sugerido o el que fijó el admin)
--- y una copia del cálculo, para que modificaciones posteriores no cambien
--- días ya cerrados.
+-- 2) JORNADAS DEL EQUIPO (una fila por día)
+-- El objetivo del día sale de los objetivos diarios por producto
+-- (objetivos_produccion, se cargan en Producción diaria):
+--   objetivo_horas = Σ (cantidad objetivo × horas-hombre del producto).
+-- Si lo producido en el día (en horas-hombre) alcanza el objetivo, el
+-- equipo cobra objetivo_horas × valor hora × % premio; si no, 0.
+-- Se guarda con su detalle (objetivo_detalle) y una copia del cálculo:
+-- un día pasado conserva su objetivo aunque después se editen los
+-- objetivos o las horas-hombre de los productos.
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS jornadas_equipo (
   fecha DATE PRIMARY KEY,
-  horas_totales NUMERIC(8,2) NOT NULL DEFAULT 0,
   objetivo_horas NUMERIC(8,2) NOT NULL DEFAULT 0 CHECK (objetivo_horas >= 0),
-  objetivo_manual BOOLEAN NOT NULL DEFAULT FALSE,
-  objetivo_definido_por BIGINT REFERENCES usuarios(id) ON DELETE SET NULL,
+  objetivo_detalle JSONB NOT NULL DEFAULT '[]'::jsonb,
   horas_producidas NUMERIC(10,2) NOT NULL DEFAULT 0,
   excedente_horas NUMERIC(10,2) NOT NULL DEFAULT 0,
   valor_hora NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -952,9 +939,17 @@ CREATE TABLE IF NOT EXISTS jornadas_equipo (
   recompensa NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (recompensa >= 0),
   calculado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Bases que corrieron una versión previa de esta migración (objetivo
+-- fijado a mano desde Recompensas y planilla de horas por empleado):
+-- pasan al objetivo por producto, sin carga de horas trabajadas.
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS objetivo_detalle JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE jornadas_equipo DROP COLUMN IF EXISTS objetivo_manual;
+ALTER TABLE jornadas_equipo DROP COLUMN IF EXISTS objetivo_definido_por;
+ALTER TABLE jornadas_equipo DROP COLUMN IF EXISTS horas_totales;
+DROP TABLE IF EXISTS horas_trabajadas;
 
 -- ---------------------------------------------------------------------
--- 4) PRODUCCIÓN: objetivo por producto opcional + tiempo estándar copiado
+-- 3) PRODUCCIÓN: objetivo por producto opcional + tiempo estándar copiado
 -- Registrar producción ya no exige un objetivo por producto. Cada
 -- registro guarda las horas-hombre del producto al momento de cargarlo,
 -- así que editar el producto después no cambia días pasados.
@@ -965,8 +960,8 @@ UPDATE registros_produccion r SET tiempo_estandar = p.horas_hombre
   FROM productos p WHERE p.id = r.producto_id AND r.tiempo_estandar IS NULL;
 
 -- ---------------------------------------------------------------------
--- 5) PARÁMETROS DEL BONO INDIVIDUAL (ya no se usan)
--- Van después del paso 2, que copia el valor hora al historial.
+-- 4) PARÁMETROS DEL BONO INDIVIDUAL (ya no se usan)
+-- Van después del paso 1, que copia el valor hora al historial.
 -- semaforo_tolerancia se conserva: el semáforo sigue como indicador.
 -- ---------------------------------------------------------------------
 DELETE FROM configuracion WHERE clave IN ('recompensa_activa', 'recompensa_valor_hora', 'recompensa_factor_ahorro', 'recompensa_bono_minimo');

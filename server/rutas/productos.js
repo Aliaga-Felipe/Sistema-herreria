@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { pool } from '../db.js'
 import { asyncRoute, auth, decimal, fallo, leerConfiguracion, slugify } from '../comun.js'
 import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp.js'
+import { refrescarHoy } from '../jornadas.js'
 
 const router = Router()
 
@@ -309,6 +310,9 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
     // de obra y del costo de materiales, así que editar el producto acá no
     // altera la producción en curso.
     await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
+    // Las horas-hombre son el tiempo estándar del producto: si tiene
+    // objetivo diario, cambian el objetivo del equipo de hoy.
+    await refrescarHoy(cliente)
     await cliente.query('COMMIT')
     sincronizarEnSegundoPlano(rows[0].id)
     const actualizado = await pool.query(`${consultaProductos} HAVING p.id = $1`, [rows[0].id])

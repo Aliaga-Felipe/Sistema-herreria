@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, fallo } from '../comun.js'
-import { guardarJornada, validarFechaDia } from '../jornadas.js'
+import { asyncRoute, auth, entero, fallo } from '../comun.js'
+import { guardarJornada, refrescarHoy, validarFechaDia } from '../jornadas.js'
 
 const router = Router()
 
@@ -9,7 +9,7 @@ const router = Router()
 // un producto) y 'pedido' (terminar un pedido puntual, se cumple cuando el
 // pedido pasa a TERMINADO). El avance del pedido se calcula igual que en
 // rutas/pedidos.js (etapas completadas sobre el total).
-const consultaObjetivos = `SELECT o.id, o.tipo, o.producto_id, p.nombre AS producto, o.cantidad_objetivo, o.tipo_recompensa,
+const consultaObjetivos = `SELECT o.id, o.tipo, o.producto_id, p.nombre AS producto, p.horas_hombre::float8 AS horas_hombre, o.cantidad_objetivo, o.tipo_recompensa,
     o.valor_recompensa::float8 AS valor_recompensa, o.descripcion_recompensa, o.activo, o.creado_en, o.actualizado_en,
     o.pedido_id, pe.codigo AS pedido, pe.estado AS pedido_estado, pe.fecha_entrega AS pedido_fecha_entrega,
     COALESCE((SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE e.estado = 'COMPLETADA') / NULLIF(COUNT(*), 0))
@@ -51,8 +51,9 @@ router.delete('/objetivos/pedido/:pedidoId', auth(['admin']), asyncRoute(async (
 }))
 
 // Alta o edición del objetivo de un producto (un objetivo por producto).
-// La recompensa ya no se configura desde la interfaz: las columnas de
-// recompensa conservan lo que tuvieran (o su valor por defecto al crear).
+// Los objetivos activos definen el objetivo del equipo para la recompensa:
+// Σ (cantidad × horas-hombre del producto). Solo el admin los edita. Las
+// columnas viejas de recompensa por objetivo conservan lo que tuvieran.
 router.put('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res) => {
   const { cantidad_objetivo, activo = true } = req.body
   const cantidad = entero(cantidad_objetivo)
@@ -68,6 +69,7 @@ router.put('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res
      RETURNING id`,
     [req.params.productoId, cantidad, Boolean(activo)]
   )
+  await refrescarHoy()
   const creado = await pool.query(`${consultaObjetivos} WHERE o.id = $1`, [rows[0].id])
   res.json(creado.rows[0])
 }))
@@ -75,6 +77,7 @@ router.put('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res
 router.delete('/objetivos/:productoId', auth(['admin']), asyncRoute(async (req, res) => {
   const { rows } = await pool.query('DELETE FROM objetivos_produccion WHERE producto_id = $1 RETURNING id', [req.params.productoId])
   if (!rows[0]) throw fallo('Ese producto no tiene un objetivo cargado.', 404)
+  await refrescarHoy()
   res.json({ mensaje: 'Objetivo eliminado.' })
 }))
 
@@ -146,55 +149,6 @@ router.delete('/registros/:id', auth(['admin']), asyncRoute(async (req, res) => 
     await conexion.query('COMMIT')
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
   res.json({ mensaje: 'Registro eliminado.' })
-}))
-
-// -----------------------------------------------------------------------
-// HORAS TRABAJADAS POR EMPLEADO (planilla diaria, solo el administrador)
-// Solo se usan para sumar las horas totales del equipo en ese día.
-// -----------------------------------------------------------------------
-router.get('/horas', auth(['admin']), asyncRoute(async (req, res) => {
-  const fecha = validarFechaDia(req.query.fecha)
-  if (!fecha) throw fallo('Indicá la fecha con el formato AAAA-MM-DD.')
-  // Empleados activos + cualquiera que ya tenga horas ese día (aunque hoy esté inactivo).
-  const { rows } = await pool.query(
-    `SELECT u.id AS usuario_id, u.nombre, COALESCE(h.horas, 0)::float8 AS horas
-     FROM usuarios u LEFT JOIN horas_trabajadas h ON h.usuario_id = u.id AND h.fecha = $1::date
-     WHERE (LOWER(u.rol::text) = 'empleado' AND u.activo) OR h.id IS NOT NULL
-     ORDER BY u.nombre`, [fecha])
-  res.json(rows)
-}))
-
-// Guarda la planilla completa del día: [{ usuario_id, horas }]. Horas en 0
-// borran la fila de ese empleado.
-router.put('/horas', auth(['admin']), asyncRoute(async (req, res) => {
-  const fecha = validarFechaDia(req.body?.fecha)
-  if (!fecha) throw fallo('Indicá la fecha con el formato AAAA-MM-DD.')
-  const planilla = Array.isArray(req.body?.horas) ? req.body.horas : null
-  if (!planilla) throw fallo('Enviá las horas de cada empleado.')
-  for (const fila of planilla) {
-    const horas = Number(fila.horas || 0)
-    if (!fila.usuario_id) throw fallo('Falta el empleado en una de las filas.')
-    if (!Number.isFinite(horas) || horas < 0 || horas > 24) throw fallo('Las horas trabajadas van de 0 a 24 por empleado.')
-  }
-
-  const conexion = await pool.connect()
-  try {
-    await conexion.query('BEGIN')
-    for (const fila of planilla) {
-      const horas = decimal(fila.horas || 0)
-      if (horas > 0) {
-        await conexion.query(
-          `INSERT INTO horas_trabajadas (usuario_id, fecha, horas, cargado_por) VALUES ($1, $2, $3, $4)
-           ON CONFLICT (usuario_id, fecha) DO UPDATE SET horas = EXCLUDED.horas, cargado_por = EXCLUDED.cargado_por, actualizado_en = NOW()`,
-          [fila.usuario_id, fecha, horas, req.user.id])
-      } else {
-        await conexion.query('DELETE FROM horas_trabajadas WHERE usuario_id = $1 AND fecha = $2', [fila.usuario_id, fecha])
-      }
-    }
-    const jornada = await guardarJornada(conexion, fecha)
-    await conexion.query('COMMIT')
-    res.json(jornada)
-  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
 export default router
