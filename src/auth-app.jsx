@@ -77,7 +77,7 @@ function AuthPage({ title, description, children, foot }) {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <div className="auth-brand">El Atelier <span>HUB DE PRODUCCIÓN</span></div>
+        <div className="auth-brand">Un Atelier <span>HUB DE PRODUCCIÓN</span></div>
         <p className="eyebrow">Acceso al sistema</p>
         <h1>{title}</h1>
         <p className="muted">{description}</p>

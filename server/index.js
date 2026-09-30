@@ -62,4 +62,4 @@ app.use((error, _, res, __) => {
   res.status(error.status || 500).json({ error: error.message || 'Ocurrió un error inesperado.' })
 })
 
-app.listen(port, () => console.log(`API de El Atelier lista en el puerto ${port}`))
+app.listen(port, () => console.log(`API de Un Atelier lista en el puerto ${port}`))

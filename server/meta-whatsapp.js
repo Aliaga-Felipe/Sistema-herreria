@@ -101,7 +101,7 @@ function construirPayload(producto, retailerId, config, configuracionNegocio) {
     // usado para recomendaciones). Ver INTEGRACION_WHATSAPP.md.
     availability: disponible ? 'in stock' : 'discontinued',
     condition: 'new',
-    brand: recortar(configuracionNegocio.negocio_nombre || 'El Atelier', RECORTE_MARCA),
+    brand: recortar(configuracionNegocio.negocio_nombre || 'Un Atelier', RECORTE_MARCA),
     allow_upsert: true
   }
 }

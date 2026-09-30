@@ -59,7 +59,7 @@ export function Modal({ title, subtitle, close, children, ancho, icono }) {
     <div className="modal-back" onMouseDown={event => event.target === event.currentTarget && close()}>
       <section className="modal" style={ancho ? { width: `min(${ancho}, 100%)` } : undefined}>
         <button className="close" onClick={close} type="button">×</button>
-        <p className="eyebrow">El Atelier</p>
+        <p className="eyebrow">Un Atelier</p>
         <h2>{icono && <span className="modal-icon">{icono}</span>}{title}</h2>
         {subtitle && <p className="muted">{subtitle}</p>}
         {children}

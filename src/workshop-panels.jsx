@@ -280,7 +280,7 @@ function ConfiguracionSitioPublico({ onGuardar }) {
 
       <div className="form-grid config-grid">
         <label>Nombre del negocio
-          <input required value={valores.negocio_nombre} onChange={cambiar('negocio_nombre')} placeholder="Ej. El Atelier" />
+          <input required value={valores.negocio_nombre} onChange={cambiar('negocio_nombre')} placeholder="Ej. Un Atelier" />
         </label>
         <label>Rubro (junto al nombre, en el encabezado y la portada)
           <input value={valores.negocio_rubro} onChange={cambiar('negocio_rubro')} placeholder="Ej. Herrería de diseño" />

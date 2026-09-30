@@ -61,7 +61,7 @@ export const configuracionPorDefecto = {
   recompensa_bono_minimo: '0',
   semaforo_tolerancia: '0.1',
   moneda: 'ARS',
-  negocio_nombre: 'El Atelier',
+  negocio_nombre: 'Un Atelier',
   negocio_rubro: 'Herrería de diseño',
   negocio_eslogan: 'Diseño que perdura',
   negocio_descripcion: 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.',

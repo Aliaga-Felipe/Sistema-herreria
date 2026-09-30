@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { publicApi } from './api.js'
 
-const PublicConfigContext = createContext({ nombre: 'El Atelier' })
+const PublicConfigContext = createContext({ nombre: 'Un Atelier' })
 export const usePublicConfig = () => useContext(PublicConfigContext)
 
 // Interruptor único para ocultar el horario de atención en todo el sitio
@@ -12,7 +12,7 @@ export const usePublicConfig = () => useContext(PublicConfigContext)
 export const MOSTRAR_HORARIO = false
 
 const valoresPorDefecto = {
-  negocio_nombre: 'El Atelier',
+  negocio_nombre: 'Un Atelier',
   negocio_rubro: 'Herrería de diseño',
   negocio_eslogan: 'Diseño que perdura',
   negocio_descripcion: 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.',
