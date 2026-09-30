@@ -174,7 +174,7 @@ function ResultadoModal({ resultado, close }) {
         </p>
       </section>
 
-      <p className="form-note">La recompensa es para todo el equipo: se paga cuando la producción del día supera el objetivo.</p>
+      <p className="form-note">La recompensa es para todo el equipo: se paga cuando se completa la producción propuesta para el día.</p>
 
       <div className="form-actions">
         <button type="button" className="primary" onClick={close}>Listo</button>

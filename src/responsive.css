@@ -97,8 +97,8 @@
 
     .app-shell .jornada-head,
     .app-shell .jornada-fila {
-        grid-template-columns: .9fr .8fr .8fr .8fr .8fr 1.2fr .9fr;
-        min-width: 720px;
+        grid-template-columns: .9fr .8fr .8fr 1.1fr 1.2fr .9fr;
+        min-width: 660px;
     }
 
     /* Grillas de formularios dentro de modales: se mantienen en fila

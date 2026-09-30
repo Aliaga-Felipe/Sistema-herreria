@@ -8,8 +8,10 @@ const router = Router()
 // -----------------------------------------------------------------------
 // RECOMPENSA POR EQUIPO
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js).
-// Leer está abierto a cualquier usuario; el objetivo del día, el valor
-// hora-hombre y el % de premio solo los cambia un administrador.
+// Leer está abierto a cualquier usuario; el valor hora-hombre y el % de
+// premio solo los cambia un administrador. El objetivo del día no se
+// carga acá: sale de los objetivos diarios por producto de Producción
+// diaria (ver rutas/produccion.js y server/jornadas.js).
 // -----------------------------------------------------------------------
 const fechaParametro = valor => {
   const fecha = validarFechaDia(valor)
@@ -22,7 +24,7 @@ router.get('/equipo', auth(), asyncRoute(async (req, res) => {
   const desde = validarFechaDia(req.query.desde)
   const hasta = validarFechaDia(req.query.hasta)
   const { rows } = await pool.query(
-    `SELECT fecha::text AS fecha, horas_totales::float8 AS horas_totales, objetivo_horas::float8 AS objetivo_horas, objetivo_manual,
+    `SELECT fecha::text AS fecha, objetivo_horas::float8 AS objetivo_horas, objetivo_detalle,
        horas_producidas::float8 AS horas_producidas, excedente_horas::float8 AS excedente_horas, valor_hora::float8 AS valor_hora,
        porcentaje_premio::float8 AS porcentaje_premio, recompensa::float8 AS recompensa, calculado_en
      FROM jornadas_equipo
@@ -31,26 +33,9 @@ router.get('/equipo', auth(), asyncRoute(async (req, res) => {
   res.json(rows)
 }))
 
-// Desglose de un día: horas totales, objetivo, producido, excedente y recompensa.
+// Desglose de un día: objetivo, producido, si se cumplió y recompensa.
 router.get('/equipo/dia/:fecha', auth(), asyncRoute(async (req, res) => {
   res.json(await obtenerJornada(fechaParametro(req.params.fecha)))
-}))
-
-// Fijar el objetivo del día (en horas estándar) o volver al sugerido
-// ({ automatico: true }). Queda guardado en esa fecha: cambiarlo otro día
-// no toca los anteriores.
-router.put('/equipo/dia/:fecha/objetivo', auth(['admin']), asyncRoute(async (req, res) => {
-  const fecha = fechaParametro(req.params.fecha)
-  const { objetivo_horas: objetivoHoras, automatico = false } = req.body || {}
-  let objetivo = { automatico: true }
-  if (!automatico) {
-    const horas = Number(objetivoHoras)
-    if (objetivoHoras === '' || objetivoHoras === null || objetivoHoras === undefined || !Number.isFinite(horas) || horas < 0) {
-      throw fallo('El objetivo del día debe ser una cantidad de horas mayor o igual a cero.')
-    }
-    objetivo = { horas: decimal(horas), definidoPor: req.user.id }
-  }
-  res.json(await guardarJornada(pool, fecha, objetivo))
 }))
 
 // Valor hora-hombre y % de premio: vigente + historial de cambios.

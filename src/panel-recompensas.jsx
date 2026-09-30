@@ -17,9 +17,11 @@ export const horas = valor => `${Number(valor || 0).toLocaleString('es-AR', { ma
 // ---------------------------------------------------------------------
 // RECOMPENSA DEL EQUIPO
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js):
-//   excedente = horas producidas equivalentes − objetivo del día
-//   recompensa = excedente × valor hora-hombre × % de premio
-// Las horas de cada empleado y la producción se cargan en Producción diaria.
+//   objetivo   = Σ (cantidad objetivo × horas-hombre) de los objetivos
+//                diarios por producto (se definen en Producción diaria)
+//   recompensa = objetivo × valor hora-hombre × % de premio, si lo producido
+//                en el día (en horas-hombre) completa el objetivo; si no, 0
+// La producción y los objetivos se cargan en Producción diaria.
 // ---------------------------------------------------------------------
 export default function PanelRecompensas() {
   const [dia, setDia] = useState(hoyLocal())
@@ -31,48 +33,42 @@ export default function PanelRecompensas() {
 
   return (
     <>
-      <Heading kicker="Trabajo en equipo" title="Recompensa del equipo" text="Un único premio por día para todo el taller, cuando lo producido (en horas-hombre estándar) supera el objetivo del día.">
+      <Heading kicker="Trabajo en equipo" title="Recompensa del equipo" text="Un único premio por día para todo el taller, cuando se completa la producción propuesta para la jornada.">
         <label className="rango">Día<input type="date" max={hoyLocal()} value={dia} onChange={event => event.target.value && setDia(event.target.value)} /></label>
       </Heading>
 
       {nodo}
 
       {jornada.loading && !jornada.data ? <p>Cargando el día...</p> : jornada.error ? <p className="form-error">{jornada.error}</p> : jornada.data && (
-        <>
-          <DesgloseDia jornada={jornada.data} />
-          <ObjetivoDia
-            jornada={jornada.data}
-            token={jornada.token}
-            onGuardar={async texto => { await recargar(); mostrar(texto) }}
-          />
-        </>
+        <DesgloseDia jornada={jornada.data} />
       )}
 
       <ParametrosRecompensa onGuardar={async () => { await recargar(); mostrar('Valor hora y % de premio actualizados. Rigen desde hoy.') }} />
 
       <section className="section-heading">
-        <div><h2>Historial de días</h2><p>Resultado guardado de cada día con horas o producción cargadas. Tocá un día para ver su desglose.</p></div>
+        <div><h2>Historial de días</h2><p>Resultado guardado de cada día con producción cargada. Tocá un día para ver su desglose.</p></div>
       </section>
 
       {historial.loading ? <p>Cargando historial...</p> : historial.data.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head jornada-head">
-            <span>Día</span><span>Horas totales</span><span>Objetivo</span><span>Producido</span><span>Excedente</span><span>Valor hora · premio</span><span>Recompensa</span>
+            <span>Día</span><span>Objetivo</span><span>Producido</span><span>Resultado</span><span>Valor hora · premio</span><span>Recompensa</span>
           </div>
           {historial.data.map(fila => (
             <div className="ranking-fila jornada-fila" key={fila.fecha} role="button" tabIndex={0} onClick={() => setDia(fila.fecha)} onKeyDown={event => event.key === 'Enter' && setDia(fila.fecha)}>
               <b>{fechaDia(fila.fecha)}</b>
-              <span>{horas(fila.horas_totales)}</span>
-              <span>{horas(fila.objetivo_horas)}{fila.objetivo_manual ? ' ✎' : ''}</span>
+              <span>{horas(fila.objetivo_horas)}</span>
               <span>{horas(fila.horas_producidas)}</span>
-              <span className={fila.excedente_horas > 0 ? 'positivo' : fila.excedente_horas < 0 ? 'negativo' : ''}>{horas(fila.excedente_horas)}</span>
+              {fila.objetivo_horas > 0 && fila.horas_producidas >= fila.objetivo_horas
+                ? <span className="positivo">✅ Cumplido</span>
+                : <span className="negativo">{fila.objetivo_horas > 0 ? `Faltaron ${horas(fila.objetivo_horas - fila.horas_producidas)}` : 'Sin objetivo'}</span>}
               <span>{dinero(fila.valor_hora)} · {fila.porcentaje_premio}%</span>
               <b className={fila.recompensa > 0 ? 'positivo' : ''}>{dinero(fila.recompensa)}</b>
             </div>
           ))}
         </section>
       ) : (
-        <Empty title="Todavía no hay días calculados" text="Cargá las horas del equipo y la producción del día en Producción diaria." />
+        <Empty title="Todavía no hay días calculados" text="Cargá los objetivos y la producción del día en Producción diaria." />
       )}
 
       <HistorialIndividual />
@@ -80,19 +76,23 @@ export default function PanelRecompensas() {
   )
 }
 
-// Horas totales, objetivo, producido, excedente y recompensa del día.
+// Objetivo, producido, resultado y recompensa del día. El objetivo sale de
+// los objetivos diarios por producto (Producción diaria).
 function DesgloseDia({ jornada }) {
-  const formula = jornada.supera
-    ? `${horas(jornada.excedente_horas)} × ${dinero(jornada.valor_hora)} × ${jornada.porcentaje_premio}%`
-    : 'No se superó el objetivo'
+  const formula = jornada.cumplido
+    ? `${horas(jornada.objetivo_horas)} × ${dinero(jornada.valor_hora)} × ${jornada.porcentaje_premio}%`
+    : 'No se completó el objetivo'
+  const faltan = jornada.objetivo_horas - jornada.horas_producidas
+  const unidades = valor => (valor === null || valor === undefined ? '—' : Number(valor).toLocaleString('es-AR', { maximumFractionDigits: 2 }))
+  const objetivoPorProducto = Object.fromEntries(jornada.objetivos.map(fila => [String(fila.producto_id), fila.cantidad]))
+  const resumenObjetivo = jornada.objetivos.filter(fila => fila.cantidad > 0).map(fila => `${fila.cantidad} × ${fila.producto}`).join(' + ')
 
   return (
     <>
       <section className="stats-grid dashboard-stats">
-        <Stat label="Horas totales" value={horas(jornada.horas_totales)} hint={`${jornada.empleados.length} ${jornada.empleados.length === 1 ? 'empleado' : 'empleados'}`} />
-        <Stat label="Objetivo" value={horas(jornada.objetivo_horas)} hint={jornada.objetivo_manual ? 'Fijado por el administrador' : 'Sugerido: igual a las horas totales'} />
-        <Stat label="Producido" value={horas(jornada.horas_producidas)} hint="En horas-hombre estándar" />
-        <Stat label="Excedente" value={horas(jornada.excedente_horas)} tone={jornada.excedente_horas < 0 ? 'danger' : ''} hint={jornada.cumplido ? 'Objetivo cumplido' : 'Objetivo no cumplido'} />
+        <Stat label="Objetivo" value={horas(jornada.objetivo_horas)} hint={resumenObjetivo || 'Sin objetivos de producción'} tone={jornada.objetivo_horas ? '' : 'danger'} />
+        <Stat label="Producido" value={horas(jornada.horas_producidas)} hint="En horas-hombre" />
+        <Stat label="Resultado" value={jornada.cumplido ? '✅ Cumplido' : 'No cumplido'} tone={jornada.cumplido ? '' : 'danger'} hint={jornada.cumplido ? 'Se completó la producción propuesta' : jornada.objetivo_horas ? `Faltan ${horas(faltan)}` : 'Sin objetivo cargado'} />
         <Stat label="Recompensa del equipo" value={dinero(jornada.recompensa)} hint={formula} />
       </section>
 
@@ -100,110 +100,55 @@ function DesgloseDia({ jornada }) {
 
       <section className="section-heading">
         <div>
-          <h2>Desglose del {fechaDia(jornada.fecha)}</h2>
+          <h2>Objetivo del {fechaDia(jornada.fecha)}</h2>
           <p>
-            Horas por empleado: {jornada.empleados.length
-              ? jornada.empleados.map(empleado => `${empleado.nombre} ${horas(empleado.horas)}`).join(' · ')
-              : 'sin cargar'} (se cargan en Producción diaria).
+            Sale de los objetivos diarios por producto que se cargan en Producción diaria.
+            {jornada.objetivo_congelado ? ' Es un día cerrado: conserva el objetivo con el que se calculó.' : ''}
           </p>
+        </div>
+      </section>
+
+      {jornada.objetivos.length ? (
+        <section className="ranking-tabla">
+          <div className="ranking-head produccion-head">
+            <span>Producto</span><span>Objetivo diario</span><span>Horas-hombre c/u</span><span>Horas del objetivo</span><span>Valor</span>
+          </div>
+          {jornada.objetivos.map(fila => (
+            <div className="ranking-fila produccion-fila" key={fila.producto_id}>
+              <b>{fila.producto}</b>
+              <span>{fila.cantidad}</span>
+              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
+              <span>{horas(fila.horas_equivalentes)}</span>
+              <span>{dinero(fila.horas_equivalentes * jornada.valor_hora * (jornada.porcentaje_premio / 100))}</span>
+            </div>
+          ))}
+        </section>
+      ) : <p className="notice">No hay objetivos diarios de producción activos. Cargalos en Producción diaria.</p>}
+
+      <section className="section-heading">
+        <div>
+          <h2>Producción del {fechaDia(jornada.fecha)}</h2>
+          <p>Lo producido, pasado a horas-hombre. Se carga en Producción diaria.</p>
         </div>
       </section>
 
       {jornada.produccion.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head produccion-head">
-            <span>Producto</span><span>Unidades</span><span>Tiempo estándar</span><span>Horas equivalentes</span><span>Objetivo en unidades</span>
+            <span>Producto</span><span>Unidades</span><span>Horas-hombre c/u</span><span>Horas producidas</span><span>Objetivo diario</span>
           </div>
           {jornada.produccion.map(fila => (
             <div className="ranking-fila produccion-fila" key={fila.producto_id}>
               <b>{fila.producto}</b>
               <span>{fila.cantidad}</span>
-              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin tiempo estándar'}</span>
+              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
               <span>{horas(fila.horas_equivalentes)}</span>
-              <span>{fila.objetivo_unidades === null ? '—' : fila.objetivo_unidades.toLocaleString('es-AR', { maximumFractionDigits: 2 })}</span>
+              <span>{unidades(objetivoPorProducto[String(fila.producto_id)])}</span>
             </div>
           ))}
         </section>
       ) : <p className="notice">No hay producción registrada este día.</p>}
     </>
-  )
-}
-
-// ---------------------------------------------------------------------
-// OBJETIVO DEL DÍA (solo administradores: la API lo valida)
-// Se guarda en horas estándar. Para pensarlo en unidades ("4 sillas"),
-// se elige un producto de referencia y la cantidad, y se convierte con
-// sus horas-hombre.
-// ---------------------------------------------------------------------
-function ObjetivoDia({ jornada, token, onGuardar }) {
-  const productos = useData('/productos?activos=true')
-  const [objetivo, setObjetivo] = useState('')
-  const [referencia, setReferencia] = useState('')
-  const [unidades, setUnidades] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => { setObjetivo(jornada.objetivo_horas); setUnidades(''); setError('') }, [jornada.fecha, jornada.objetivo_horas])
-
-  const conTiempo = productos.data.filter(producto => Number(producto.horas_hombre) > 0)
-  const productoReferencia = conTiempo.find(producto => String(producto.id) === String(referencia))
-
-  const cambiarUnidades = valor => {
-    setUnidades(valor)
-    if (productoReferencia && valor !== '') setObjetivo(Math.round(Number(valor) * Number(productoReferencia.horas_hombre) * 100) / 100)
-  }
-
-  const enviar = async cuerpo => {
-    setBusy(true); setError('')
-    try {
-      await api.put(`/recompensas/equipo/dia/${jornada.fecha}/objetivo`, cuerpo, token)
-      await onGuardar(cuerpo.automatico ? 'El objetivo volvió al sugerido.' : 'Objetivo del día guardado.')
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
-
-  const guardar = event => {
-    event.preventDefault()
-    if (objetivo === '' || Number(objetivo) < 0) return setError('Indicá el objetivo en horas (0 o más).')
-    enviar({ objetivo_horas: Number(objetivo) })
-  }
-
-  const sugeridoEnUnidades = productoReferencia
-    ? ` (${(jornada.objetivo_sugerido / Number(productoReferencia.horas_hombre)).toLocaleString('es-AR', { maximumFractionDigits: 2 })} × ${productoReferencia.nombre})`
-    : ''
-
-  return (
-    <form className="config-card" onSubmit={guardar}>
-      <div className="card-title">Objetivo del {fechaDia(jornada.fecha)}</div>
-      <p className="muted">
-        Sugerido: {horas(jornada.objetivo_sugerido)}{sugeridoEnUnidades}, igual a las horas trabajadas por el equipo.
-        {jornada.objetivo_manual ? ' Hoy rige un objetivo fijado a mano.' : ' Hoy rige el sugerido.'} El objetivo queda guardado en este día.
-      </p>
-
-      <div className="form-grid config-grid">
-        <label>Producto de referencia (opcional)
-          <select value={referencia} onChange={event => { setReferencia(event.target.value); setUnidades('') }}>
-            <option value="">Cargar directo en horas</option>
-            {conTiempo.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre} ({horas(producto.horas_hombre)})</option>)}
-          </select>
-        </label>
-
-        {productoReferencia && (
-          <label>Unidades de {productoReferencia.nombre}
-            <CampoNumero min="0" step="1" value={unidades} onChange={cambiarUnidades} placeholder="Ej. 4" />
-          </label>
-        )}
-
-        <label>Objetivo en horas estándar
-          <CampoNumero min="0" step="0.5" value={objetivo} onChange={valor => { setObjetivo(valor); setUnidades('') }} />
-        </label>
-      </div>
-
-      {error && <p className="form-error">{error}</p>}
-      <div className="form-actions">
-        {jornada.objetivo_manual && <button type="button" className="secondary" disabled={busy} onClick={() => enviar({ automatico: true })}>Usar el sugerido</button>}
-        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Fijar objetivo'}</button>
-      </div>
-    </form>
   )
 }
 
@@ -231,14 +176,14 @@ function ParametrosRecompensa({ onGuardar }) {
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
-  const ejemplo = 4 * (Number(valores.valor_hora) || 0) * ((Number(valores.porcentaje_premio) || 0) / 100)
+  const ejemplo = 16 * (Number(valores.valor_hora) || 0) * ((Number(valores.porcentaje_premio) || 0) / 100)
 
   return (
     <form className="config-card" onSubmit={guardar}>
       <div className="card-title">Cómo se calcula la recompensa</div>
       <p className="muted">
-        Cada producto vale sus horas-hombre (tiempo estándar, se edita en Productos). Si lo producido en el día supera el objetivo,
-        el equipo cobra: excedente en horas × valor de la hora-hombre × % de premio. Si no lo supera, la recompensa es 0.
+        Cada producto vale sus horas-hombre (se editan en Productos). Si lo producido en el día completa el objetivo de Producción diaria,
+        el equipo cobra: horas-hombre del objetivo × valor de la hora-hombre × % de premio. Si no lo completa, la recompensa es 0.
       </p>
 
       <div className="form-grid config-grid">
@@ -250,7 +195,7 @@ function ParametrosRecompensa({ onGuardar }) {
         </label>
       </div>
 
-      <p className="form-note">Ejemplo: superar el objetivo por 4 hs paga <b>{dinero(ejemplo)}</b> al equipo.</p>
+      <p className="form-note">Ejemplo: completar un objetivo de 16 hs-hombre (4 sillas de 4 hs) paga <b>{dinero(ejemplo)}</b> al equipo.</p>
 
       {parametros.data?.historial?.length > 1 && (
         <details>
