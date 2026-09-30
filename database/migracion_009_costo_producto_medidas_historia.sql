@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Rediseño de costeo de productos y pedidos
+-- Un atelier - Rediseño de costeo de productos y pedidos
 --
 -- 1) Nuevos campos de producto: medidas, costo del producto (reemplaza al
 --    costo por etapa como número de referencia cargado a mano) e historia

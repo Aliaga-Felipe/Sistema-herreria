@@ -56,7 +56,7 @@ export const urlWhatsapp = (numero, mensaje) =>
 // pero no reemplaza un prerender real para buscadores).
 export function useMeta(titulo, descripcion, subtituloSitio) {
   if (typeof document === 'undefined') return
-  document.title = titulo ? `${titulo} · Un Atelier` : `Un Atelier — ${subtituloSitio || 'Herrería de diseño'}`
+  document.title = titulo ? `${titulo} · Un atelier` : `Un atelier — ${subtituloSitio || 'Herrería de diseño'}`
 
   const establecer = (atributo, nombre, valor) => {
     if (!valor) return

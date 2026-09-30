@@ -8,7 +8,7 @@ import ParallaxReveal from './components/ParallaxReveal.jsx'
 
 export default function Nosotros() {
   const config = usePublicConfig()
-  useMeta('Nosotros', `Conocé el taller de ${config.negocio_nombre}: oficio de herrería, diseño propio y fabricación artesanal.`)
+  useMeta('Nosotros', `Conocé el taller${config.negocio_nombre ? ' de ' + config.negocio_nombre : ''}: oficio de herrería, diseño propio y fabricación artesanal.`)
 
   return (
     <div>
@@ -40,7 +40,7 @@ export default function Nosotros() {
               <p className="eyebrow-public">Taller y diseño</p>
               <h2>Hierro, fuego y paciencia</h2>
               <p>
-                {config.negocio_nombre} nació del oficio de la herrería tradicional y la mirada de un estudio de
+                {config.negocio_nombre || 'Nuestro taller'} nació del oficio de la herrería tradicional y la mirada de un estudio de
                 diseño: cada mueble se piensa primero en el papel y se fabrica después, pieza por pieza, en nuestro
                 propio taller. No trabajamos en serie: cada encargo se ajusta al espacio, al uso y al gusto de quien
                 lo va a tener en su casa.

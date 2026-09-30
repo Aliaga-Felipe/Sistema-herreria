@@ -8,6 +8,7 @@ import './production.css'
 import { SessionContext, api, iniciales, useSession } from './api.js'
 import WorkshopPanels, { seccionesPara } from './workshop-panels.jsx'
 import MisTareas from './mis-tareas.jsx'
+import PanelManual from './panel-manual.jsx'
 // La web pública vive en /web-publica, fuera de /src, para no mezclarse
 // con los archivos del sistema interno (paneles, auth, etc.).
 import PublicLayout from '../web-publica/PublicLayout.jsx'
@@ -77,7 +78,7 @@ function AuthPage({ title, description, children, foot }) {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <div className="auth-brand">Un Atelier <span>HUB DE PRODUCCIÓN</span></div>
+        <div className="auth-brand">Un atelier <span>HUB DE PRODUCCIÓN</span></div>
         <p className="eyebrow">Acceso al sistema</p>
         <h1>{title}</h1>
         <p className="muted">{description}</p>
@@ -94,22 +95,81 @@ function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [busy, setBusy] = useState(false)
+  // Verificación en dos pasos: después de correo + contraseña correctos el
+  // backend manda un código por email y devuelve el "desafío". La sesión sólo
+  // se entrega cuando el BACKEND valida ese código (POST /auth/verificar-codigo).
+  const [desafio, setDesafio] = useState(null)
+  const [codigo, setCodigo] = useState('')
+  const [espera, setEspera] = useState(0)
+
+  useEffect(() => {
+    if (espera <= 0) return undefined
+    const temporizador = setTimeout(() => setEspera(segundos => segundos - 1), 1000)
+    return () => clearTimeout(temporizador)
+  }, [espera])
+
+  const entrar = data => {
+    start(data)
+    navigate(esRolAdministrativo(data.usuario.rol) ? '/admin' : '/mis-tareas', { replace: true })
+  }
 
   const submit = async event => {
-    event.preventDefault(); setBusy(true); setError('')
+    event.preventDefault(); setBusy(true); setError(''); setInfo('')
     try {
       const data = await api.post('/auth/iniciar-sesion', { email, contrasena: password })
-      start(data)
-      navigate(esRolAdministrativo(data.usuario.rol) ? '/admin' : '/mis-tareas', { replace: true })
+      if (data.requiere_2fa) {
+        setDesafio(data); setCodigo(''); setPassword(''); setEspera(data.reenvio_en_seg || 60)
+      } else entrar(data)
     } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  const verificar = async event => {
+    event.preventDefault(); setBusy(true); setError(''); setInfo('')
+    try {
+      entrar(await api.post('/auth/verificar-codigo', { desafio_id: desafio.desafio_id, codigo }))
+    } catch (err) { setError(err.message); setCodigo('') } finally { setBusy(false) }
+  }
+
+  const reenviar = async () => {
+    setBusy(true); setError(''); setInfo('')
+    try {
+      const data = await api.post('/auth/reenviar-codigo', { desafio_id: desafio.desafio_id })
+      setInfo(data.mensaje); setEspera(data.reenvio_en_seg || 60); setCodigo('')
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  const volver = () => { setDesafio(null); setCodigo(''); setError(''); setInfo(''); setPassword('') }
+
+  if (desafio) {
+    return (
+      <AuthPage title="Verificá tu identidad" description={`Te enviamos un código de 6 números a ${desafio.email_enmascarado}. Ingresalo para continuar (vence en ${Math.round((desafio.expira_en_seg || 600) / 60)} minutos).`}>
+        <form className="auth-form" onSubmit={verificar}>
+          <label>Código de verificación
+            <input
+              required autoFocus value={codigo} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6}
+              placeholder="000000" className="codigo-2fa"
+              onChange={event => setCodigo(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          {info && <p className="notice">{info}</p>}
+          <button className="primary full" disabled={busy || codigo.length !== 6}>{busy ? 'Verificando...' : 'Verificar e ingresar'}</button>
+          <button type="button" className="full" disabled={busy || espera > 0} onClick={reenviar}>
+            {espera > 0 ? `Reenviar código (${espera} s)` : 'Reenviar código'}
+          </button>
+          <button type="button" className="full" disabled={busy} onClick={volver}>Volver</button>
+        </form>
+      </AuthPage>
+    )
   }
 
   return (
     <AuthPage title="Bienvenido" description="Ingresá con tu cuenta para acceder a tus tareas.">
       <form className="auth-form" onSubmit={submit}>
-        <label>Correo electrónico<input required type="email" value={email} onChange={event => setEmail(event.target.value)} /></label>
-        <label>Contraseña<input required type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+        <label>Correo electrónico<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label>
+        <label>Contraseña<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
         {error && <p className="form-error">{error}</p>}
         <button className="primary full" disabled={busy}>{busy ? 'Ingresando...' : 'Iniciar sesión'}</button>
       </form>
@@ -149,7 +209,7 @@ function Shell({ title, secciones = [], seccionActiva, onSeccion, children }) {
     <div className="app-shell auth-shell">
       <div className={`sidebar-fondo ${menuAbierto ? 'abierto' : ''}`} onClick={cerrarMenu} aria-hidden="true" />
       <aside id="menu-panel" className={`sidebar ${menuAbierto ? 'abierta' : ''}`}>
-        <div className="brand">El Atelier<span>HUB DE PRODUCCIÓN</span></div>
+        <div className="brand">Un atelier<span>HUB DE PRODUCCIÓN</span></div>
 
         <nav>
           {secciones.map(([nombre, icono]) => (
@@ -203,9 +263,10 @@ function Admin() {
 }
 
 function Empleado() {
+  const [section, setSection] = useState('Mis tareas')
   return (
-    <Shell title="Mis tareas" secciones={[['Mis tareas', '▦']]} seccionActiva="Mis tareas" onSeccion={() => {}}>
-      <MisTareas />
+    <Shell title={section} secciones={[['Mis tareas', '▦'], ['Manual de usuario', '?']]} seccionActiva={section} onSeccion={setSection}>
+      {section === 'Manual de usuario' ? <PanelManual /> : <MisTareas />}
     </Shell>
   )
 }

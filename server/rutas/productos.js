@@ -10,7 +10,7 @@ import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp
 
 const router = Router()
 
-const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.destacado, p.publicado, p.slug, p.creado_en,
+const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.estado, p.destacado, p.publicado, p.slug, p.creado_en,
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre, p.chapita_id,
     p.medidas, p.costo_producto::float8 AS costo_producto, p.historia,
     p.whatsapp_sync_estado, p.whatsapp_sync_error, p.whatsapp_sync_actualizado_en,
@@ -24,13 +24,47 @@ const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta:
   WHERE NOT p.eliminado
   GROUP BY p.id, c.nombre, c.slug`
 
-// Estados de un producto (ver "VENTAS DE PRODUCTOS" en schema.sql):
-// - activo = TRUE  -> disponible: entra en la proyección de ventas.
-// - activo = FALSE -> VENDIDO (se desactivó o se eliminó). vendido_en,
-//   precio_vendido y costo_vendido los completa solo el trigger
-//   productos_registrar_venta. Reactivarlo anula la venta.
-// - eliminado      -> vendido y además oculto del panel (borrado lógico:
-//   la fila se conserva para que la venta siga en las estadísticas).
+// Estados de un producto (ver "ESTADOS DE PRODUCTO" en schema.sql):
+// - ACTIVO       -> disponible: se ve en la web (si está publicado) y entra
+//   en el stock / la proyección de las estadísticas.
+// - VENDIDO      -> se vendió. vendido_en, precio_vendido y costo_vendido los
+//   completa solo el trigger productos_registrar_venta. El producto sigue
+//   existiendo (historial). Reactivarlo anula la venta.
+// - DESACTIVADO  -> sigue en el panel pero no se ve en la web y NO cuenta
+//   como stock ni como venta.
+// "Eliminar" borra de verdad la fila (ver DELETE /:id): libera su ID de
+// producto y, si estaba vendido, su venta pasa a historial_ventas_productos.
+export const ESTADOS_PRODUCTO = ['ACTIVO', 'VENDIDO', 'DESACTIVADO']
+
+const idProducto = valor => {
+  if (!/^\d{1,15}$/.test(String(valor))) throw fallo('Producto no encontrado.', 404)
+  return Number(valor)
+}
+
+const columnasEstado = 'id, nombre, estado, activo, vendido_en, precio_vendido::float8 AS precio_vendido'
+
+// Cambia el estado a ACTIVO o DESACTIVADO (reactivar / desactivar). Ninguno de
+// los dos es una venta: si el producto estaba VENDIDO, la venta se anula.
+export async function cambiarEstadoProducto(db, id, estado) {
+  if (!['ACTIVO', 'DESACTIVADO'].includes(estado)) throw fallo('Estado no válido.')
+  const { rows } = await db.query(
+    `UPDATE productos SET estado = $1, actualizado_en = NOW() WHERE id = $2 AND NOT eliminado RETURNING ${columnasEstado}`, [estado, id])
+  return rows[0] || null
+}
+
+// Único punto donde se registra la venta de un producto. Lo usan el botón
+// "Producto vendido" y cualquier operación de venta que se agregue: el UPDATE
+// sólo afecta a un producto que todavía no está VENDIDO, así que registrar dos
+// veces la misma venta no duplica nada. Devuelve null si el producto no
+// existe y { registrada: false } si ya figuraba como vendido.
+export async function registrarVentaProducto(db, id) {
+  const { rows } = await db.query(
+    `UPDATE productos SET estado = 'VENDIDO', actualizado_en = NOW() WHERE id = $1 AND NOT eliminado AND estado <> 'VENDIDO'
+     RETURNING ${columnasEstado}`, [id])
+  if (rows[0]) return { ...rows[0], registrada: true }
+  const actual = await db.query(`SELECT ${columnasEstado} FROM productos WHERE id = $1 AND NOT eliminado`, [id])
+  return actual.rows[0] ? { ...actual.rows[0], registrada: false } : null
+}
 
 // Agrega el desglose de costo calculado a cada fila: mano de obra (horas ×
 // costo de la hora configurable) + costo del producto (número de
@@ -287,32 +321,70 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   } finally { cliente.release() }
 }))
 
+// Compatibilidad con el panel anterior: activo=true -> ACTIVO, false -> DESACTIVADO.
 router.patch('/:id/activo', auth(['admin']), asyncRoute(async (req, res) => {
   const { activo } = req.body
   if (typeof activo !== 'boolean') throw fallo('El campo activo debe ser booleano.')
-  // Desactivar = registrar la venta; reactivar = anularla (ver trigger
-  // productos_registrar_venta). Un producto eliminado no se puede reactivar.
-  const { rows } = await pool.query(`UPDATE productos SET activo = $1, actualizado_en = NOW() WHERE id = $2 AND NOT eliminado
-    RETURNING id, nombre, activo, vendido_en, precio_vendido::float8 AS precio_vendido`, [activo, req.params.id])
-  if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-  sincronizarEnSegundoPlano(rows[0].id)
-  res.json(rows[0])
+  const producto = await cambiarEstadoProducto(pool, idProducto(req.params.id), activo ? 'ACTIVO' : 'DESACTIVADO')
+  if (!producto) throw fallo('Producto no encontrado.', 404)
+  sincronizarEnSegundoPlano(producto.id)
+  res.json(producto)
 }))
 
-// "Eliminar" es un borrado lógico: el producto desaparece del panel, de la
-// web pública y de WhatsApp, pero la fila se conserva porque un producto
-// eliminado cuenta como VENDIDO en las estadísticas (antes el DELETE
-// físico hacía perder esa venta). Si ya estaba desactivado (vendido), se
-// conserva la fecha y el precio de esa venta: no se cuenta dos veces.
+// Cambia el estado: ACTIVO (reactivar), DESACTIVADO o VENDIDO.
+router.patch('/:id/estado', auth(['admin']), asyncRoute(async (req, res) => {
+  const estado = typeof req.body?.estado === 'string' ? req.body.estado.toUpperCase() : ''
+  if (!ESTADOS_PRODUCTO.includes(estado)) throw fallo('El estado debe ser ACTIVO, VENDIDO o DESACTIVADO.')
+  const id = idProducto(req.params.id)
+  if (estado === 'VENDIDO') return vender(id, res)
+  const producto = await cambiarEstadoProducto(pool, id, estado)
+  if (!producto) throw fallo('Producto no encontrado.', 404)
+  sincronizarEnSegundoPlano(producto.id)
+  res.json({ ...producto, mensaje: estado === 'ACTIVO' ? 'Producto activo.' : 'Producto desactivado: sigue en el panel, pero no se ve en la web ni cuenta como venta.' })
+}))
+
+const vender = async (id, res) => {
+  const producto = await registrarVentaProducto(pool, id)
+  if (!producto) throw fallo('Producto no encontrado.', 404)
+  if (!producto.registrada) throw fallo('Este producto ya figura como vendido.', 409)
+  sincronizarEnSegundoPlano(producto.id)
+  res.json({ ...producto, mensaje: 'Producto marcado como vendido.' })
+}
+
+// Botón "Producto vendido".
+router.post('/:id/vender', auth(['admin']), asyncRoute(async (req, res) => vender(idProducto(req.params.id), res)))
+
+// "Eliminar" borra el producto de verdad: sus fotos (y los archivos), materiales,
+// objetivos de producción y registros diarios se van con él (ON DELETE
+// CASCADE) y su ID de producto y su URL quedan libres para reutilizarse. Si
+// estaba VENDIDO, el trigger productos_conservar_venta guarda la venta en
+// historial_ventas_productos antes de borrarlo. Un producto con pedidos
+// asociados NO se puede borrar (se perdería el historial de esos pedidos):
+// hay que desactivarlo.
 router.delete('/:id', auth(['admin']), asyncRoute(async (req, res) => {
-  const { rows } = await pool.query(
-    'UPDATE productos SET eliminado = TRUE, actualizado_en = NOW() WHERE id = $1 AND NOT eliminado RETURNING id',
-    [req.params.id])
-  if (!rows[0]) throw fallo('Producto no encontrado.', 404)
-  // Si ya estaba sincronizado en WhatsApp se marca "discontinued" en Meta
-  // (un error de Meta no impide eliminarlo del sistema).
-  sincronizarEnSegundoPlano(rows[0].id)
-  res.json({ mensaje: 'Producto eliminado: se contabiliza como vendido en las estadísticas.', desactivado: false, vendido: true })
+  const id = idProducto(req.params.id)
+  const previo = await pool.query('SELECT id, nombre, estado, whatsapp_retailer_id FROM productos WHERE id = $1 AND NOT eliminado', [id])
+  if (!previo.rows[0]) throw fallo('Producto no encontrado.', 404)
+  const pedidos = (await pool.query('SELECT COUNT(DISTINCT pedido_id)::int AS total FROM pedido_items WHERE producto_id = $1', [id])).rows[0].total
+  if (pedidos > 0) throw fallo(`No se puede eliminar "${previo.rows[0].nombre}": tiene ${pedidos} pedido${pedidos === 1 ? '' : 's'} asociado${pedidos === 1 ? '' : 's'} y ese historial se conserva. Desactivalo en su lugar.`, 409)
+
+  // Si estaba en el catálogo de WhatsApp se marca como no disponible en Meta
+  // antes de borrarlo (un error de Meta no impide eliminarlo del sistema).
+  if (previo.rows[0].whatsapp_retailer_id) {
+    await pool.query('UPDATE productos SET publicado = FALSE WHERE id = $1', [id])
+    try { await sincronizarProducto(id) } catch (error) { console.error(`[whatsapp] No se pudo dar de baja el producto ${id}:`, error.message) }
+  }
+
+  const imagenes = (await pool.query('SELECT url FROM producto_imagenes WHERE producto_id = $1', [id])).rows
+  try {
+    await pool.query('DELETE FROM productos WHERE id = $1', [id])
+  } catch (error) {
+    if (error.code === '23503') throw fallo('No se puede eliminar el producto: tiene información asociada. Desactivalo en su lugar.', 409)
+    throw error
+  }
+  for (const imagen of imagenes) fs.unlink(path.join(directorioUploads, path.basename(imagen.url)), () => {})
+  const vendido = previo.rows[0].estado === 'VENDIDO'
+  res.json({ mensaje: `Producto eliminado. Su ID de producto quedó libre${vendido ? ' y su venta se conserva en el historial' : ''}.`, vendido_conservado: vendido })
 }))
 
 // -----------------------------------------------------------------------

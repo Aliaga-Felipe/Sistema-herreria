@@ -16,7 +16,7 @@ import CarruselSqueeze from './CarruselSqueeze.jsx'
 // directo al carrusel. No es un loop continuo, es pura animación de
 // scroll (useScroll + useTransform).
 
-const TITULO = 'PRODUCTOS DESTACADOS'
+const TITULO = 'Conocé algunas de las piezas que habitan el galpón.'
 
 // Respeta "reducir movimiento" del sistema operativo: si está activo, el
 // contenido aparece directo, sin las animaciones de traslado/rotación.
@@ -114,10 +114,10 @@ export default function DestacadosAnimados({ productos, moneda }) {
           </React.Fragment>
         ))}
       </h2>
-      <span className="sr-only">Productos destacados</span>
+      <span className="sr-only">{TITULO}</span>
 
       <motion.p className="destacados-subtitulo" style={{ opacity: reducido ? 1 : opacidadSubtitulo, y: reducido ? 0 : ySubtitulo }}>
-        Una muestra de nuestro trabajo: diseño propio, hierro forjado y terminaciones hechas a mano.
+        Objetos que vuelven a vivir y materiales que se convierten en algo nuevo, sin olvidar su origen.
       </motion.p>
 
       <motion.div className="destacados-cta" style={{ opacity: reducido ? 1 : opacidadCta }}>

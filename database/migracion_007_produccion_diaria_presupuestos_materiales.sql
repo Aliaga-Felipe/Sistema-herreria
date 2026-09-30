@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Panel de gestión (delta idempotente)
+-- Un atelier - Panel de gestión (delta idempotente)
 -- Agrega, sin tocar el catálogo público ni lo ya existente:
 --   1) Objetivos de producción diaria por producto + recompensa asociada
 --   2) Registro diario de producción y su cumplimiento (historial)

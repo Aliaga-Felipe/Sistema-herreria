@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { publicApi, useMeta } from './api.js'
 import { MOSTRAR_HORARIO, usePublicConfig } from './PublicContext.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
@@ -13,7 +13,12 @@ export default function Contacto() {
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
-  useMeta('Contacto', `Contactá a ${config.negocio_nombre}: consultas, presupuestos y pedidos a medida.`)
+  // Anti-spam (ver server/rutas/publico.js): "trampa" es un campo oculto que
+  // sólo llenan los bots, y "cargadoEn" mide cuánto tardó la persona en
+  // completar el formulario (los bots envían al instante).
+  const [trampa, setTrampa] = useState('')
+  const cargadoEn = useRef(Date.now())
+  useMeta('Contacto', `Contactá a ${config.negocio_nombre || 'nuestro taller'}: consultas, presupuestos y pedidos a medida.`)
 
   const cambiar = campo => event => setForm({ ...form, [campo]: event.target.value })
 
@@ -40,10 +45,13 @@ export default function Contacto() {
         email: form.email.trim(),
         telefono: form.telefono.trim(),
         asunto: form.asunto.trim(),
-        mensaje: form.mensaje.trim()
+        mensaje: form.mensaje.trim(),
+        sitio_web: trampa,
+        tiempo_carga: Date.now() - cargadoEn.current
       })
       setEnviado(true)
       setForm(formVacio)
+      cargadoEn.current = Date.now()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -102,20 +110,25 @@ export default function Contacto() {
       <Reveal>
         <form className="form-publico" onSubmit={enviar}>
           <p className="nota-form">Completá el formulario y te respondemos por correo a la brevedad.</p>
+          <div className="campo-trampa" aria-hidden="true">
+            <label>No completar este campo
+              <input type="text" name="sitio_web" tabIndex={-1} autoComplete="off" value={trampa} onChange={event => setTrampa(event.target.value)} />
+            </label>
+          </div>
           <label>Nombre
-            <input required value={form.nombre} onChange={cambiar('nombre')} placeholder="Tu nombre" disabled={enviando} />
+            <input required maxLength={100} value={form.nombre} onChange={cambiar('nombre')} placeholder="Tu nombre" disabled={enviando} />
           </label>
           <label>Correo electrónico
-            <input required type="email" value={form.email} onChange={cambiar('email')} placeholder="tu@correo.com" disabled={enviando} />
+            <input required type="email" maxLength={254} value={form.email} onChange={cambiar('email')} placeholder="tu@correo.com" disabled={enviando} />
           </label>
           <label>Teléfono (opcional)
-            <input value={form.telefono} onChange={cambiar('telefono')} placeholder="Tu teléfono" disabled={enviando} />
+            <input maxLength={20} value={form.telefono} onChange={cambiar('telefono')} placeholder="Tu teléfono" disabled={enviando} />
           </label>
           <label>Asunto
-            <input required value={form.asunto} onChange={cambiar('asunto')} placeholder="¿Sobre qué querés consultarnos?" disabled={enviando} />
+            <input required maxLength={150} value={form.asunto} onChange={cambiar('asunto')} placeholder="¿Sobre qué querés consultarnos?" disabled={enviando} />
           </label>
           <label>Mensaje
-            <textarea required value={form.mensaje} onChange={cambiar('mensaje')} placeholder="Contanos qué estás buscando…" disabled={enviando} />
+            <textarea required maxLength={3000} value={form.mensaje} onChange={cambiar('mensaje')} placeholder="Contanos qué estás buscando…" disabled={enviando} />
           </label>
 
           {error && <p className="form-error">{error}</p>}
