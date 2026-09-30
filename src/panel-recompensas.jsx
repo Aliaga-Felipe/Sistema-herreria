@@ -186,7 +186,7 @@ export function ConfiguracionRecompensas({ onGuardar, soloLectura = false }) {
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">
         {soloLectura
-          ? <p className="muted">Solo un super_admin puede modificar estos parámetros.</p>
+          ? <p className="muted">Estos parámetros son de solo lectura.</p>
           : <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar parámetros'}</button>}
       </div>
     </form>

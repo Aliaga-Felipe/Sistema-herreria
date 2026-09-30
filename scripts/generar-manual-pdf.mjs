@@ -14,9 +14,14 @@ import { chromium } from 'playwright'
 const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { manual, MANUAL_VERSION } = await import(pathToFileURL(path.join(raiz, 'src', 'manual-contenido.js')).href)
 
-const ROLES = { super_admin: 'Super administrador', admin: 'Administrador', empleado: 'Empleado' }
+// El rol super_admin es interno y no se nombra en el PDF: los capítulos que
+// son solo para ese rol quedan afuera (se ven únicamente en el panel).
+const capitulos = manual.capitulos.filter(c => c.para.some(rol => rol !== 'super_admin'))
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const inline = t => esc(t).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+
+// Las capturas se incrustan en el PDF (no quedan como archivos sueltos).
+const captura = src => `data:image/png;base64,${fs.readFileSync(path.join(raiz, 'src', 'manual-capturas', src)).toString('base64')}`
 
 const bloque = b => {
   switch (b.t) {
@@ -27,13 +32,13 @@ const bloque = b => {
     case 'nota': return `<aside class="nota"><b>Consejo</b>${inline(b.x)}</aside>`
     case 'aviso': return `<aside class="aviso"><b>Importante</b>${inline(b.x)}</aside>`
     case 'tabla': return `<table><thead><tr>${b.cab.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${b.filas.map(f => `<tr>${f.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+    case 'img': return `<figure><img src="${captura(b.src)}" alt=""><figcaption>${esc(b.pie)}</figcaption></figure>`
     default: return ''
   }
 }
 
-const etiquetaPara = para => para.length === 3 ? 'Todos los usuarios'
-  : para.length === 1 ? `Solo ${ROLES[para[0]].toLowerCase()}`
-  : para.includes('empleado') ? 'Todos los usuarios' : 'Administradores y super administradores'
+const etiquetaPara = para => !para.includes('empleado') ? 'Administradores'
+  : para.includes('admin') ? 'Todos los usuarios' : 'Solo empleados'
 
 const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(manual.titulo)} — ${esc(manual.marca)}</title>
 <style>
@@ -58,7 +63,10 @@ const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>
   p { margin: 0 0 3mm; }
   ul, ol { margin: 1mm 0 4mm; padding-left: 7mm; }
   li { margin: 0 0 1.8mm; }
-  li, tr, aside { break-inside: avoid; }
+  li, tr, aside, figure { break-inside: avoid; }
+  figure { margin: 4mm 0 5mm; text-align: center; }
+  figure img { max-width: 100%; max-height: 120mm; border: 1px solid #cfc6bd; }
+  figcaption { margin-top: 1.5mm; font-size: 8.5pt; color: #8a7f76; }
   table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm; font-size: 9.6pt; }
   th, td { border: 1px solid #cfc6bd; padding: 2.2mm 2.6mm; text-align: left; vertical-align: top; }
   th { background: #efe8e1; }
@@ -73,9 +81,9 @@ const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>
   <p>${esc(manual.subtitulo)}</p>
   <p class="version">Versión ${esc(MANUAL_VERSION)}</p>
 </section>
-<section class="indice"><h2>Contenido</h2><ol>${manual.capitulos.map(c => `<li>${esc(c.titulo)} <small>· ${esc(etiquetaPara(c.para))}</small></li>`).join('')}</ol>
+<section class="indice"><h2>Contenido</h2><ol>${capitulos.map(c => `<li>${esc(c.titulo)} <small>· ${esc(etiquetaPara(c.para))}</small></li>`).join('')}</ol>
 <p style="margin-top:10mm;color:#5a514a">Este manual describe todo el sistema. Cada capítulo indica para quién es: algunas secciones no aparecen según el tipo de cuenta con la que ingreses.</p></section>
-${manual.capitulos.map((c, i) => `<section class="capitulo"><h2>${i + 1}. ${esc(c.titulo)}</h2><p class="para">${esc(etiquetaPara(c.para))}</p>${c.bloques.map(bloque).join('')}</section>`).join('\n')}
+${capitulos.map((c, i) => `<section class="capitulo"><h2>${i + 1}. ${esc(c.titulo)}</h2><p class="para">${esc(etiquetaPara(c.para))}</p>${c.bloques.map(bloque).join('')}</section>`).join('\n')}
 </body></html>`
 
 const salida = path.join(raiz, 'server', 'manual')

@@ -13,9 +13,12 @@
 //   { t: 'nota',  x: 'Consejo útil' }                recuadro de consejo
 //   { t: 'aviso', x: 'Algo importante' }             recuadro de atención
 //   { t: 'tabla', cab: ['A', 'B'], filas: [['a', 'b']] }
+//   { t: 'img',   src: 'archivo.png', pie: 'Epígrafe' } captura de src/manual-capturas/
 // Dentro de un texto, **así** se muestra en negrita.
 //
 // `para` indica quién ve el capítulo: 'super_admin', 'admin' y/o 'empleado'.
+// El rol 'super_admin' es interno: NO se nombra en ningún texto del manual, y
+// los capítulos que son solo para ese rol no se incluyen en el PDF.
 // ---------------------------------------------------------------------
 
 export const MANUAL_VERSION = 'Septiembre 2026'
@@ -35,17 +38,16 @@ export const manual = {
       bloques: [
         { t: 'p', x: 'El sistema de **Un atelier** sirve para organizar el trabajo del taller en un solo lugar: cargar los productos, tomar pedidos, repartir las tareas entre los empleados, registrar lo que se produce y lo que se vende, y mostrar el catálogo en la web pública.' },
         { t: 'p', x: 'Este manual explica cada pantalla con palabras simples. No hace falta saber de informática. Cada capítulo indica al principio qué hace la sección y quién puede usarla.' },
-        { t: 'p', x: 'Hay tres tipos de cuenta, cada una con permisos distintos:' },
+        { t: 'p', x: 'Hay dos tipos de cuenta, cada una con permisos distintos:' },
         {
           t: 'tabla',
           cab: ['Tipo de cuenta', 'Qué puede hacer'],
           filas: [
-            ['Super administrador', 'Todo lo que hace un administrador, más: crear otros administradores, cambiar roles, desactivar cuentas de administradores y entrar a Configuración (datos de la web, mail de consultas, video de portada, costos y reglas de recompensas).'],
-            ['Administrador', 'Gestiona productos, categorías, pedidos, tareas, producción diaria, recompensas y estadísticas. Da de alta empleados y restablece sus contraseñas. No entra a Configuración.'],
+            ['Administrador', 'Gestiona productos, categorías, pedidos, tareas, producción diaria, recompensas y estadísticas. Da de alta empleados y restablece sus contraseñas.'],
             ['Empleado', 'Ve solo sus etapas de trabajo asignadas, las empieza y las marca como terminadas informando el tiempo que le llevó. Consulta sus recompensas.']
           ]
         },
-        { t: 'nota', x: 'En la esquina superior derecha del panel aparece un círculo con una letra: **S** es super administrador, **A** es administrador y **O** es empleado. Sirve para saber con qué tipo de cuenta estás trabajando.' }
+        { t: 'nota', x: 'En la esquina superior derecha del panel aparece un círculo con una letra: **A** es administrador y **O** es empleado. Sirve para saber con qué tipo de cuenta estás trabajando.' }
       ]
     },
     {
@@ -64,6 +66,7 @@ export const manual = {
             'Tocá **“Verificar e ingresar”**. Entrás al panel.'
           ]
         },
+        { t: 'img', src: 'ingreso.png', pie: 'Pantalla de ingreso: correo y contraseña.' },
         { t: 'p', x: 'Cosas importantes sobre el código:' },
         {
           t: 'ul',
@@ -85,7 +88,8 @@ export const manual = {
       titulo: 'Conocer el panel',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Al ingresar como administrador o super administrador ves el **menú lateral** con todas las secciones y, a la derecha, el contenido de la sección elegida. En el celular el menú se abre con el botón de tres rayitas (arriba a la izquierda) y se cierra al elegir una sección.' },
+        { t: 'p', x: 'Al ingresar como administrador ves el **menú lateral** con todas las secciones y, a la derecha, el contenido de la sección elegida. En el celular el menú se abre con el botón de tres rayitas (arriba a la izquierda) y se cierra al elegir una sección.' },
+        { t: 'img', src: 'panel.png', pie: 'El panel: a la izquierda el menú con las secciones y a la derecha el Panel de control.' },
         {
           t: 'tabla',
           cab: ['Sección', 'Para qué sirve'],
@@ -99,7 +103,6 @@ export const manual = {
             ['Estadísticas', 'Ventas, gastos, ganancias y rendimiento del equipo.'],
             ['Recompensas', 'Semáforo de rendimiento y bonos.'],
             ['Usuarios', 'Cuentas de las personas del taller.'],
-            ['Configuración', 'Solo super administrador: datos de la web, mail de consultas, costos y reglas.'],
             ['Manual de usuario', 'Esta guía, con búsqueda y descarga en PDF.']
           ]
         },
@@ -114,6 +117,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'Cada producto es una pieza del catálogo del taller. Acá se define cuánto cuesta fabricarla, a qué precio se vende, cómo se ve y si aparece o no en la web pública.' },
+        { t: 'img', src: 'productos.png', pie: 'Listado de productos con sus filtros por estado y las acciones de cada uno.' },
         { t: 'h', x: 'Crear un producto nuevo' },
         {
           t: 'ol',
@@ -127,6 +131,7 @@ export const manual = {
             'Tocá guardar. Recién con el producto guardado podés **cargarle fotos**.'
           ]
         },
+        { t: 'img', src: 'producto-nuevo.png', pie: 'Formulario “Nuevo producto”.' },
         { t: 'h', x: 'Fotos' },
         {
           t: 'ul',
@@ -136,6 +141,7 @@ export const manual = {
             'Con **“Quitar”** se elimina una foto.'
           ]
         },
+        { t: 'img', src: 'producto-fotos.png', pie: 'Fotos de un producto: la principal está marcada y abajo está la zona para subir más.' },
         { t: 'h', x: 'Costos y márgenes' },
         { t: 'p', x: 'Cada producto calcula solo su costo: **materiales** (precio unitario por cantidad que usa una unidad) más **mano de obra** (horas-hombre por el costo por hora que define el taller). Con el precio de venta se obtiene el **margen**. Esta información es interna: no se muestra en la web.' },
         { t: 'h', x: 'WhatsApp' },
@@ -198,7 +204,8 @@ export const manual = {
             'En **“Categorías existentes”** ves cuántos productos tiene cada una.',
             'Para publicar un producto en la web tiene que tener categoría.'
           ]
-        }
+        },
+        { t: 'img', src: 'categorias.png', pie: 'Sección Categorías.' }
       ]
     },
     {
@@ -207,6 +214,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'Un pedido es un trabajo comprometido. Puede incluir uno o más productos y cada producto tiene sus propias tareas de producción. El avance del pedido se calcula solo a partir de esas tareas.' },
+        { t: 'img', src: 'pedidos.png', pie: 'Listado de pedidos con prioridad, fecha de entrega y cumplimiento.' },
         { t: 'h', x: 'Crear un pedido' },
         {
           t: 'ol',
@@ -219,6 +227,7 @@ export const manual = {
             'Guardá. El sistema arma el presupuesto (materiales, mano de obra, precio y ganancia) con los datos del producto.'
           ]
         },
+        { t: 'img', src: 'pedido-nuevo.png', pie: 'Formulario “Nuevo pedido”.' },
         { t: 'nota', x: 'Los empleados no se asignan al crear el pedido: se asignan después desde **Tareas**.' },
         { t: 'h', x: 'Estados de un pedido' },
         { t: 'p', x: 'Un pedido puede estar **pendiente, en producción, pausado, terminado o cancelado**. Cambia solo a medida que se completan etapas, y también podés modificarlo a mano. El pedido copia el precio y el costo del producto al momento de crearlo: si después editás el producto, los pedidos existentes **no cambian**.' },
@@ -233,6 +242,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'La sección **Tareas** muestra todas las etapas del taller en un solo lugar. Desde acá se decide **quién hace cada etapa**.' },
+        { t: 'img', src: 'tareas.png', pie: 'Tareas de producción agrupadas por producto y pedido.' },
         {
           t: 'ol',
           x: [
@@ -241,6 +251,7 @@ export const manual = {
             'Guardá. La etapa aparece en “Mis tareas” del empleado.'
           ]
         },
+        { t: 'img', src: 'tarea-asignar.png', pie: 'Detalle de una etapa: en “Responsable de esta etapa” se elige al empleado.' },
         {
           t: 'ul',
           x: [
@@ -275,7 +286,8 @@ export const manual = {
             '**Productos en producción**: avance de cada producto de los pedidos abiertos, etapa por etapa.',
             '**Historial de cumplimiento**: qué días se cumplió el objetivo y cuáles no.'
           ]
-        }
+        },
+        { t: 'img', src: 'produccion.png', pie: 'Producción diaria: avance de cada producto, etapa por etapa.' }
       ]
     },
     {
@@ -284,6 +296,7 @@ export const manual = {
       para: ['empleado'],
       bloques: [
         { t: 'p', x: 'Al ingresar como empleado ves **“Mis etapas”**: las etapas de pedidos que el administrador te asignó. Si todavía no hay ninguna, verás el mensaje “No tenés tareas asignadas”.' },
+        { t: 'img', src: 'mis-tareas.png', pie: 'Pantalla “Mis tareas” de un empleado.' },
         {
           t: 'ol',
           x: [
@@ -293,6 +306,7 @@ export const manual = {
             'Confirmá. Se muestra el **resultado** del semáforo.'
           ]
         },
+        { t: 'img', src: 'mis-tareas-terminar.png', pie: 'Al marcar una etapa como terminada se informa el tiempo real.' },
         { t: 'nota', x: 'El tiempo real lo informás vos al terminar la etapa. Cargalo con honestidad: de eso depende el semáforo y el bono. Las etapas cerradas quedan en la lista, en su mismo lugar, con el estado “Completada”.' },
         { t: 'p', x: 'Debajo también ves lo que acumulaste en **recompensas**.' }
       ]
@@ -312,7 +326,7 @@ export const manual = {
             ['🔴 Rojo', 'Tardó más de lo esperado. No genera bono.']
           ]
         },
-        { t: 'p', x: 'El bono del verde es **proporcional al tiempo ahorrado** y se calcula automáticamente con los valores que define el super administrador en Configuración (valor de la hora de taller, factor sobre el ahorro, bono mínimo y tolerancia del semáforo).' },
+        { t: 'p', x: 'El bono del verde es **proporcional al tiempo ahorrado** y se calcula automáticamente con las reglas de recompensas cargadas en el sistema (valor de la hora de taller, factor sobre el ahorro, bono mínimo y tolerancia del semáforo).' },
         { t: 'h', x: 'En la sección Recompensas (administradores)' },
         {
           t: 'ul',
@@ -322,7 +336,8 @@ export const manual = {
             '**“+ Bono manual”**: para reconocer un trabajo fuera del cálculo automático. Elegí al empleado, el monto y escribí el motivo.',
             'Un bono manual se puede eliminar si se cargó por error.'
           ]
-        }
+        },
+        { t: 'img', src: 'recompensas.png', pie: 'Sección Recompensas: totales, reglas del cálculo y rendimiento por empleado.' }
       ]
     },
     {
@@ -331,6 +346,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'Reúne los números del taller para decidir con datos. Se puede filtrar por período.' },
+        { t: 'img', src: 'estadisticas.png', pie: 'Estadísticas: resultados reales, proyección y facturación por mes.' },
         {
           t: 'ul',
           x: [
@@ -350,6 +366,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'Acá se administran las cuentas de las personas del taller. Cada persona ingresa con su propio correo y contraseña. **Nunca compartan una misma cuenta**: cada uno debe tener la suya.' },
+        { t: 'img', src: 'usuarios.png', pie: 'Sección Usuarios.' },
         { t: 'h', x: 'Dar de alta un empleado' },
         {
           t: 'ol',
@@ -359,31 +376,29 @@ export const manual = {
             'Guardá. La cuenta queda activa enseguida. Pasale la contraseña a la persona para su primer ingreso.'
           ]
         },
+        { t: 'img', src: 'usuario-nuevo.png', pie: 'Formulario “Nuevo empleado”.' },
         { t: 'aviso', x: 'Cargá un correo que la persona **pueda abrir**: ahí le llega el código de verificación en cada ingreso.' },
         { t: 'h', x: 'Restablecer una contraseña' },
         { t: 'p', x: 'Si alguien olvidó su contraseña, tocá **“Restablecer contraseña”** en su fila, escribí una nueva (mínimo 8 caracteres) y avisale. Elegí contraseñas difíciles de adivinar: no sirven las repetidas ni las demasiado simples.' },
-        { t: 'h', x: 'Qué puede hacer cada rol acá' },
+        { t: 'h', x: 'Qué puede hacer un administrador acá' },
         {
-          t: 'tabla',
-          cab: ['Acción', 'Administrador', 'Super administrador'],
-          filas: [
-            ['Crear empleados', 'Sí', 'Sí'],
-            ['Crear administradores', 'No', 'Sí'],
-            ['Restablecer contraseña de un empleado', 'Sí', 'Sí'],
-            ['Eliminar la cuenta de un empleado', 'Sí (si no tiene registros asociados)', 'Sí (si no tiene registros asociados)'],
-            ['Cambiar roles y desactivar cuentas de administradores', 'No', 'Sí'],
-            ['Ver cuentas de super administrador', 'No', 'Sí']
+          t: 'ul',
+          x: [
+            'Crear cuentas de empleados.',
+            'Restablecer la contraseña de un empleado.',
+            'Eliminar la cuenta de un empleado, si no tiene registros asociados.'
           ]
         },
+        { t: 'p', x: 'Las cuentas de administrador no se crean ni se modifican desde esta pantalla.' },
         { t: 'p', x: 'Un empleado con historial (tareas, recompensas o registros de producción) no se puede eliminar: el sistema lo avisa para no perder información. Nadie puede desactivarse a sí mismo ni cambiar su propio rol.' }
       ]
     },
     {
       id: 'configuracion',
-      titulo: 'Configuración (solo super administrador)',
+      titulo: 'Configuración',
       para: ['super_admin'],
       bloques: [
-        { t: 'p', x: 'Es la sección de ajustes generales. Los cambios impactan en la web pública y en los cálculos del sistema, por eso solo la ve el super administrador.' },
+        { t: 'p', x: 'Es la sección de ajustes generales. Los cambios impactan en la web pública y en los cálculos del sistema.' },
         { t: 'h', x: 'Datos de la web pública' },
         { t: 'p', x: 'Lo que cargues acá aparece en el catálogo público: portada, pie de página, botón de WhatsApp y página de Contacto.' },
         { t: 'p', x: '**Ningún campo de Configuración es obligatorio**: podés dejar cualquiera en blanco y guardar. Lo que queda vacío simplemente no se muestra en la web (por ejemplo, sin WhatsApp no aparece el botón) y los valores numéricos vacíos cuentan como cero. Si dejás en blanco el mail receptor, las consultas llegan al correo de contacto general.' },
@@ -415,16 +430,19 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'La web pública es la vidriera de **Un atelier**. Los visitantes ven la portada, el catálogo de productos publicados, el detalle de cada pieza (con su historia y su chapita) y la página de Contacto.' },
+        { t: 'img', src: 'web-catalogo.png', pie: 'Catálogo de la web pública.' },
         {
           t: 'ul',
           x: [
             'Solo se muestran los productos **activos** marcados como **“Publicar en la web”**. Al marcar uno como vendido o desactivarlo, deja de verse.',
             'Los productos destacados aparecen en la portada.',
-            'El botón de WhatsApp usa el número cargado en Configuración.'
+            'El botón de WhatsApp usa el número de WhatsApp del taller.'
           ]
         },
+        { t: 'img', src: 'web-producto.png', pie: 'Detalle de un producto en la web pública.' },
         { t: 'h', x: 'Formulario de contacto' },
         { t: 'p', x: 'Los mensajes que envían los visitantes llegan al **mail receptor de consultas**. Para evitar el spam, el formulario tiene protecciones invisibles para las personas:' },
+        { t: 'img', src: 'web-contacto.png', pie: 'Página de Contacto de la web pública.' },
         {
           t: 'ul',
           x: [
@@ -484,7 +502,6 @@ export const manual = {
             ['No puedo eliminar un producto', 'Está dentro de un pedido. Desactivalo en lugar de eliminarlo.'],
             ['Marqué como vendido por error', 'Tocá “Reactivar”: la venta se anula y el producto vuelve a estar disponible.'],
             ['No puedo publicar un producto en la web', 'Faltan datos obligatorios: nombre, ID, descripción técnica, historia o categoría. El aviso te dice cuál.'],
-            ['No veo la sección Configuración', 'Es exclusiva del super administrador.'],
             ['No puedo eliminar a un empleado', 'Tiene tareas, recompensas o registros asociados. Se conserva su historial.'],
             ['Un número de las estadísticas no coincide', 'Recordá que los productos desactivados no cuentan como venta. Recargá la página y revisá el período elegido.']
           ]

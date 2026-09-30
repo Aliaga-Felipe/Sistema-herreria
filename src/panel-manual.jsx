@@ -13,7 +13,12 @@ function Texto({ x }) {
 
 // Texto plano de un bloque, para el buscador.
 const textoPlano = bloque =>
-  [bloque.x, ...(bloque.cab || []), ...(bloque.filas || []).flat()].flat().filter(Boolean).join(' ').replace(/\*\*/g, '')
+  [bloque.x, bloque.pie, ...(bloque.cab || []), ...(bloque.filas || []).flat()].flat().filter(Boolean).join(' ').replace(/\*\*/g, '')
+
+// Capturas de pantalla del manual (src/manual-capturas/): Vite las empaqueta
+// y devuelve la URL final de cada una.
+const capturas = import.meta.glob('./manual-capturas/*.png', { eager: true, query: '?url', import: 'default' })
+const urlCaptura = src => capturas[`./manual-capturas/${src}`]
 
 const normalizar = texto => String(texto).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -33,6 +38,13 @@ export function Bloque({ bloque }) {
             <tbody>{bloque.filas.map((fila, i) => <tr key={i}>{fila.map((celda, j) => <td key={j}><Texto x={celda} /></td>)}</tr>)}</tbody>
           </table>
         </div>
+      )
+    case 'img':
+      return (
+        <figure className="manual-captura">
+          <img src={urlCaptura(bloque.src)} alt={bloque.pie} loading="lazy" />
+          <figcaption>{bloque.pie}</figcaption>
+        </figure>
       )
     default: return null
   }

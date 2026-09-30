@@ -75,7 +75,7 @@ router.patch('/:id/rol', auth(['admin', 'super_admin']), asyncRoute(async (req, 
   // "admin" común. Un "super_admin" sí puede (tiene permiso total).
   if (req.user.rol !== 'super_admin' && objetivo.rows[0].rol === 'super_admin') throw fallo('El rol de una cuenta super_admin no se cambia desde acá.', 403)
   // Un "admin" común sólo gestiona empleados: no puede degradar a otro admin.
-  if (req.user.rol === 'admin' && objetivo.rows[0].rol !== 'empleado') throw fallo('Sólo un super_admin puede cambiar el rol de una cuenta de administrador.', 403)
+  if (req.user.rol === 'admin' && objetivo.rows[0].rol !== 'empleado') throw fallo('El rol de una cuenta de administrador no se cambia desde acá.', 403)
 
   const { rows } = await pool.query(`UPDATE usuarios SET rol = ${rolLiteral('$1')}, actualizado_en = NOW()
     WHERE id = $2 RETURNING ${seleccion}`, [rol, req.params.id])

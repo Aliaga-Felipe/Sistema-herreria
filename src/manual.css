@@ -33,6 +33,10 @@
 .manual-tabla th, .manual-tabla td { padding: 9px 11px; text-align: left; vertical-align: top; border: 1px solid rgba(128,128,128,.3); }
 .manual-tabla th { background: rgba(128,128,128,.14); font-weight: 700; }
 
+.manual-captura { margin: 14px 0 18px; }
+.manual-captura img { display: block; max-width: 100%; height: auto; border: 1px solid rgba(128,128,128,.3); border-radius: 8px; }
+.manual-captura figcaption { margin-top: 6px; font-size: .82rem; opacity: .7; }
+
 @media (max-width: 900px) {
   .manual-cuerpo { grid-template-columns: 1fr; gap: 16px; }
   .manual-indice { position: static; max-height: none; }
