@@ -762,7 +762,10 @@
     font-size: 11px;
 }
 
-.config-card input[type='number'] {
+/* CampoNumero (ui.jsx) es type="text" mientras no tiene el foco: se lo
+   alcanza por inputmode para que no quede con el fondo blanco del navegador. */
+.config-card input[type='number'],
+.config-card input[inputmode='decimal'] {
     background: #12100f;
     border: 1px solid #3d3733;
     color: var(--text);

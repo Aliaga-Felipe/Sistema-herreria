@@ -27,7 +27,10 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
 }))
 
 // Vista compacta usada por el frontend para formatear montos y explicar el semáforo.
-router.get('/valores', auth(), asyncRoute(async (_, res) => res.json(await leerConfiguracion())))
+router.get('/valores', auth(), asyncRoute(async (req, res) => {
+  const valores = await leerConfiguracion()
+  res.json(Object.fromEntries(Object.entries(valores).filter(([clave]) => visibleParaRol(req.user.rol)(clave))))
+}))
 
 // Editar configuración (datos del negocio, semáforo, video del hero):
 // exclusivo de "super_admin", igual que la sección "Usuarios".
