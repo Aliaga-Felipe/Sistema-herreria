@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, clavesConfiguracionPublica, fallo, leerConfiguracion, validarEmail, validarTelefono } from '../comun.js'
 import { enviarConsulta } from '../correo.js'
+import { crearLimitador, limpiarTexto, textoDeConsulta } from '../seguridad.js'
+import crypto from 'crypto'
 
 const router = Router()
 
@@ -38,12 +40,15 @@ router.get('/productos', asyncRoute(async (req, res) => {
   // Filtro por categoría (opcional). Sin categoría elegida se listan todos
   // los productos activos, incluidos los que no tienen categoría. Se
   // combina con la búsqueda (q), el orden y la paginación.
-  if (req.query.categoria) {
-    valores.push(req.query.categoria)
+  const categoria = textoDeConsulta(req.query.categoria).slice(0, 120)
+  const busqueda = textoDeConsulta(req.query.q).trim().slice(0, 100)
+  if (categoria) {
+    valores.push(categoria)
     condiciones.push(`c.slug = $${valores.length}`)
   }
-  if (req.query.q) {
-    valores.push(`%${req.query.q.trim()}%`)
+  if (busqueda) {
+    // Los comodines de LIKE escritos por el visitante se escapan: se busca el texto tal cual.
+    valores.push(`%${busqueda.replace(/[\\%_]/g, '\\$&')}%`)
     condiciones.push(`(p.nombre ILIKE $${valores.length} OR p.descripcion ILIKE $${valores.length})`)
   }
   if (req.query.destacados === 'true') condiciones.push('p.destacado = TRUE')
@@ -125,14 +130,63 @@ router.get('/configuracion', asyncRoute(async (_, res) => {
 // no se configuró un receptor dedicado, se usa negocio_email como
 // respaldo para que el formulario funcione desde el primer momento.
 // -----------------------------------------------------------------------
+// PROTECCIÓN CONTRA SPAM Y ABUSO (el formulario es público y manda mails):
+//  - Límite por IP: 3 consultas ENVIADAS cada 10 minutos y 10 por día (un
+//    error de tipeo al completar el formulario no gasta ese cupo), y un tope
+//    más amplio de 30 solicitudes de cualquier tipo cada 10 minutos.
+//  - Límite global: 60 consultas por hora, para no agotar el correo saliente
+//    aunque el ataque venga de muchas IP.
+//  - Honeypot: el campo oculto "sitio_web" lo llenan los bots y no las personas;
+//    si viene lleno se responde "ok" sin enviar nada (el bot no se entera).
+//  - Tiempo mínimo: una persona tarda más de 2,5 segundos en completar el
+//    formulario; una solicitud directa a la API o un bot, no.
+//  - Validación estricta y limpieza de cada campo (sin HTML, sin saltos de
+//    línea en nombre/asunto: evita inyección de cabeceras del mail).
+//  - Rechazo de mensajes con muchos enlaces y de duplicados (doble clic o
+//    reenvío del mismo texto en la última hora).
+//  Se evaluó un CAPTCHA y por ahora NO hace falta: estas medidas frenan el
+//  abuso sin molestar a quien escribe. Si algún día llega spam, el siguiente
+//  paso sería agregar Cloudflare Turnstile (gratis y casi invisible).
+const limiteContactoSolicitudes = crearLimitador({ ventanaMs: 10 * 60_000, max: 30, mensaje: 'Demasiadas solicitudes. Esperá unos minutos antes de intentar de nuevo.' })
+const limiteContactoCorto = crearLimitador({ ventanaMs: 10 * 60_000, max: 3, mensaje: 'Ya enviaste varias consultas. Esperá unos minutos antes de mandar otra, o escribinos por WhatsApp.' })
+const limiteContactoDia = crearLimitador({ ventanaMs: 24 * 60 * 60_000, max: 10, mensaje: 'Alcanzaste el máximo de consultas por día. Escribinos por WhatsApp.' })
+const limiteContactoGlobal = crearLimitador({ ventanaMs: 60 * 60_000, max: 60, mensaje: 'Estamos recibiendo muchas consultas en este momento. Probá de nuevo más tarde o escribinos por WhatsApp.' })
+const recientes = new Map() // huella de la consulta -> hora del envío (evita duplicados)
+const TIEMPO_MINIMO_MS = 2500
+
 router.post('/contacto', asyncRoute(async (req, res) => {
-  const { nombre, email, telefono = '', asunto, mensaje } = req.body || {}
-  if (!nombre?.trim()) throw fallo('Indicá tu nombre.')
-  if (!asunto?.trim()) throw fallo('Indicá el asunto de tu consulta.')
-  if (!mensaje?.trim()) throw fallo('Escribí tu mensaje.')
-  const emailValidado = validarEmail(email)
+  const cuerpo = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
+  // Honeypot: si un bot llenó el campo trampa, se finge éxito y no se hace nada.
+  if (typeof cuerpo.sitio_web === 'string' && cuerpo.sitio_web.trim()) return res.json({ mensaje: 'Consulta enviada correctamente.' })
+
+  limiteContactoSolicitudes.exigir(req.ip)
+
+  const tiempo = Number(cuerpo.tiempo_carga)
+  if (!Number.isFinite(tiempo)) throw fallo('No pudimos validar el formulario. Recargá la página e intentá de nuevo.')
+  if (tiempo < TIEMPO_MINIMO_MS) throw fallo('Enviaste el formulario demasiado rápido. Revisá tus datos y probá de nuevo.')
+
+  const nombre = limpiarTexto(cuerpo.nombre, { max: 100 })
+  const asunto = limpiarTexto(cuerpo.asunto, { max: 150 })
+  const mensaje = limpiarTexto(cuerpo.mensaje, { max: 3000, multilinea: true })
+  if (nombre.length < 2) throw fallo('Indicá tu nombre.')
+  if (asunto.length < 3) throw fallo('Indicá el asunto de tu consulta.')
+  if (mensaje.length < 10) throw fallo('Escribí tu mensaje (al menos 10 caracteres).')
+  if (typeof cuerpo.email !== 'string' || cuerpo.email.length > 254) throw fallo('Indicá un correo electrónico válido.')
+  const emailValidado = validarEmail(limpiarTexto(cuerpo.email, { max: 254 }))
   if (!emailValidado) throw fallo('Indicá un correo electrónico válido.')
-  const telefonoValidado = validarTelefono(telefono)
+  const telefonoValidado = validarTelefono(limpiarTexto(cuerpo.telefono, { max: 20 }))
+  if ((mensaje.match(/https?:\/\/|www\./gi) || []).length > 2) throw fallo('Tu mensaje tiene demasiados enlaces. Escribinos sin ellos o por WhatsApp.')
+
+  const huella = crypto.createHash('sha256').update(`${emailValidado}|${asunto}|${mensaje}`).digest('hex')
+  const ahora = Date.now()
+  for (const [clave, momento] of recientes) if (ahora - momento > 60 * 60_000) recientes.delete(clave)
+  if (recientes.has(huella)) throw fallo('Ya recibimos esta consulta. Te vamos a responder a la brevedad.', 409)
+
+  // Recién acá, con una consulta válida y no repetida, se cuenta contra los
+  // cupos de envío.
+  limiteContactoCorto.exigir(req.ip)
+  limiteContactoDia.exigir(req.ip)
+  limiteContactoGlobal.exigir('global')
 
   const [receptor, completa] = await Promise.all([
     pool.query("SELECT valor FROM configuracion WHERE clave = 'mail_receptor_consultas'"),
@@ -141,7 +195,13 @@ router.post('/contacto', asyncRoute(async (req, res) => {
   const destino = receptor.rows[0]?.valor?.trim() || completa.negocio_email?.trim() || null
   if (!destino) throw fallo('El taller todavía no configuró un correo para recibir consultas. Probá escribir por WhatsApp mientras tanto.', 503)
 
-  await enviarConsulta({ nombre: nombre.trim(), email: emailValidado, telefono: telefonoValidado, asunto: asunto.trim(), mensaje: mensaje.trim() }, destino)
+  recientes.set(huella, ahora)
+  try {
+    await enviarConsulta({ nombre, email: emailValidado, telefono: telefonoValidado, asunto, mensaje }, destino)
+  } catch (error) {
+    recientes.delete(huella) // si el envío falló, que pueda reintentar
+    throw error
+  }
   res.json({ mensaje: 'Consulta enviada correctamente.' })
 }))
 

@@ -8,6 +8,7 @@ import ParallaxReveal from './components/ParallaxReveal.jsx'
 import TextoParallax from './components/TextoParallax.jsx'
 import { WhatsAppLink } from './components/WhatsAppButton.jsx'
 import DestacadosAnimados from './components/DestacadosAnimados.jsx'
+import VideoFondo from './components/VideoFondo.jsx'
 import MapaUbicacion from './components/MapaUbicacion.jsx'
 import MaterialesGrid from './components/MaterialesGrid.jsx'
 
@@ -25,12 +26,12 @@ export default function Home() {
     <>
       <section className="hero-public">
         {Boolean(config.negocio_hero_video) && (
-          <video className="hero-video" src={config.negocio_hero_video} autoPlay muted loop playsInline />
+          <VideoFondo className="hero-video" src={config.negocio_hero_video} />
         )}
         <div className="contenedor hero-inner">
-          <p className="eyebrow-public">{config.negocio_nombre} · {config.negocio_rubro}</p>
-          <h1>{config.negocio_eslogan || 'Diseño que perdura'}</h1>
-          <p>{config.negocio_descripcion || 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida para transformar espacios.'}</p>
+          {config.negocio_nombre && <p className="eyebrow-public hero-marca">{config.negocio_nombre}</p>}
+          {config.negocio_eslogan && <h1>{config.negocio_eslogan}</h1>}
+          {config.negocio_descripcion && <p>{config.negocio_descripcion}</p>}
           <div className="hero-acciones">
             <Link className="btn-public btn-madera" to="/productos">Explorar colección</Link>
           </div>
@@ -59,12 +60,15 @@ export default function Home() {
             </ParallaxReveal>
             <TextoParallax className="texto">
               <p className="eyebrow-public">Sobre nosotros</p>
-              <h2>Oficio de herrería, mirada de diseño</h2>
+              <h2>Objetos con historia, nuevas formas de habitar</h2>
               <p>
-                Cada pieza que sale del taller pasa por las mismas manos que la diseñan: medimos, cortamos, soldamos y
-                terminamos a fuego con la misma atención que pondríamos en un mueble para nuestra propia casa.
-                Trabajamos con hierro macizo y maderas nobles, pensando cada mueble para que acompañe un espacio
-                durante años, no de temporada.
+                Nuestro atelier nace de una mirada atenta a los objetos y a los materiales que todavía tienen mucho para dar.
+                Recuperamos maderas, hierros y piezas con historia para transformarlos en muebles y objetos con una nueva vida.
+              </p>
+              <p>
+                El diseño y el trabajo artesanal nos permiten encontrar nuevas posibilidades sin borrar las huellas del tiempo.
+                Conservamos texturas, marcas e imperfecciones que hacen única a cada pieza, creando un vínculo entre su pasado
+                y los espacios que hoy habitamos.
               </p>
             </TextoParallax>
           </div>

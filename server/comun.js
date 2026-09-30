@@ -1,21 +1,44 @@
 import jwt from 'jsonwebtoken'
 import { pool } from './db.js'
 
-export const secret = process.env.JWT_SECRET || 'solo_para_desarrollo_cambiar_este_secreto'
+// Secreto con el que se firman las sesiones (JWT). En producción es
+// OBLIGATORIO definirlo en .env: si falta o es uno de los valores de ejemplo,
+// el servidor no arranca (un secreto conocido permitiría falsificar sesiones).
+const SECRETO_DESARROLLO = 'solo_para_desarrollo_cambiar_este_secreto'
+const SECRETOS_DE_EJEMPLO = [SECRETO_DESARROLLO, 'reemplazar_por_un_secreto_largo_y_unico', 'cambiar_este_secreto', 'secret', 'changeme']
+export const enProduccion = process.env.NODE_ENV === 'production'
+if (enProduccion && (!process.env.JWT_SECRET || SECRETOS_DE_EJEMPLO.includes(process.env.JWT_SECRET))) {
+  throw new Error('Falta JWT_SECRET en .env (o es el valor de ejemplo). Generá uno con: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"')
+}
+if (enProduccion && process.env.JWT_SECRET.length < 32) console.warn('[seguridad] JWT_SECRET es corto (menos de 32 caracteres): conviene uno más largo.')
+export const secret = process.env.JWT_SECRET || SECRETO_DESARROLLO
 export const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)
 export const normalizedRole = rol => String(rol).toLowerCase()
 export const sign = user => jwt.sign({ id: user.id, rol: normalizedRole(user.rol), nombre: user.nombre }, secret, { expiresIn: '8h' })
-export const auth = (roles = []) => (req, res, next) => {
+export const auth = (roles = []) => async (req, res, next) => {
+  let user
   try {
-    const user = jwt.verify(req.headers.authorization?.replace('Bearer ', ''), secret)
-    user.rol = normalizedRole(user.rol)
-    // "super_admin" es el nivel máximo de permisos del sistema: supera
-    // cualquier comprobación de rol hecha acá, sin excepción. Esta es la
-    // función centralizada de permisos (todas las rutas pasan por acá), así
-    // que este único bypass alcanza para darle acceso a toda la aplicación.
-    if (roles.length && user.rol !== 'super_admin' && !roles.includes(user.rol)) return res.status(403).json({ error: 'No tenés permisos para esta acción.' })
-    req.user = user; next()
-  } catch { res.status(401).json({ error: 'Sesión no válida o vencida.' }) }
+    const cabecera = req.headers.authorization || ''
+    user = jwt.verify(cabecera.startsWith('Bearer ') ? cabecera.slice(7) : '', secret, { algorithms: ['HS256'] })
+  } catch { return res.status(401).json({ error: 'Sesión no válida o vencida.' }) }
+
+  // El rol y el estado de la cuenta se leen SIEMPRE de la base, no del token:
+  // así una cuenta desactivada o eliminada pierde el acceso de inmediato y un
+  // cambio de rol se aplica al instante (antes valían hasta 8 horas).
+  try {
+    const { rows } = await pool.query('SELECT nombre, LOWER(rol::text) AS rol, activo FROM usuarios WHERE id = $1', [user.id])
+    if (!rows[0]?.activo) return res.status(401).json({ error: 'Sesión no válida o vencida.' })
+    user.rol = normalizedRole(rows[0].rol)
+    user.nombre = rows[0].nombre
+  } catch (error) { return next(error) }
+
+  // "super_admin" es el nivel máximo de permisos del sistema: supera
+  // cualquier comprobación de rol hecha acá, sin excepción. Esta es la
+  // función centralizada de permisos (todas las rutas pasan por acá), así
+  // que este único bypass alcanza para darle acceso a toda la aplicación.
+  if (roles.length && user.rol !== 'super_admin' && !roles.includes(user.rol)) return res.status(403).json({ error: 'No tenés permisos para esta acción.' })
+  req.user = user
+  next()
 }
 
 // Helper compartido: ¿este rol tiene la visión/permisos de nivel
@@ -61,10 +84,10 @@ export const configuracionPorDefecto = {
   recompensa_bono_minimo: '0',
   semaforo_tolerancia: '0.1',
   moneda: 'ARS',
-  negocio_nombre: 'El Atelier',
+  negocio_nombre: 'Un atelier',
   negocio_rubro: 'Herrería de diseño',
-  negocio_eslogan: 'Diseño que perdura',
-  negocio_descripcion: 'Muebles y piezas de herrería artesanal, diseñados y fabricados a medida.',
+  negocio_eslogan: 'Un galpón de objetos con historia',
+  negocio_descripcion: 'Cuidamos lo que el tiempo dejó en cada objeto y construimos con materiales que todavía tienen mucho por contar.',
   negocio_whatsapp: '',
   negocio_email: '',
   negocio_telefono: '',

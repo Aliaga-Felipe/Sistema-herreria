@@ -595,3 +595,8 @@ text{
         margin-top: 9px;
     }
 }
+
+/* Campo del código de verificación en dos pasos: números grandes, centrados. */
+.auth-form input.codigo-2fa { text-align: center; font-size: 1.6rem; letter-spacing: 0.5em; padding-left: 0.5em; }
+.auth-form button.full:not(.primary) { background: transparent; color: #d9c9bb; border: 1px solid #4a3a2d; border-radius: 2px; padding: 10px; }
+.auth-form button.full:not(.primary):disabled { opacity: 0.5; cursor: not-allowed; }

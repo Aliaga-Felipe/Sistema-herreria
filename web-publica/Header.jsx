@@ -48,7 +48,7 @@ export default function Header() {
       <header className={`site-header ${scrolled || abierto ? 'scrolled' : ''}`}>
         <div className="contenedor">
           <NavLink to="/" className="brand-public" onClick={() => setAbierto(false)}>
-            <img src={logoUnAtelier} alt={config.negocio_nombre || 'Un Atelier'} className="logo-header" />
+            <img src={logoUnAtelier} alt={config.negocio_nombre || 'Un atelier'} className="logo-header" />
           </NavLink>
 
           <nav className="nav-public">

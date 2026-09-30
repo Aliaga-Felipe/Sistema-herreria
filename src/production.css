@@ -1268,3 +1268,145 @@
         align-items: stretch;
     }
 }
+
+/* Descripción en el listado de productos: sólo las primeras líneas, con "..."
+   si es más larga. Es sólo visual (la descripción completa está en el
+   formulario de edición y en la base de datos). Funciona igual en pantallas
+   chicas porque el recorte es por líneas, no por caracteres. */
+.product-desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+/* Insignia "Vendido" (verde-dorado: es una venta, no un producto apagado). */
+.badge-vendido {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 6px;
+    border: 1px solid #e5c76b;
+    color: #e5c76b;
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.btn-vendido {
+    border: 1px solid #5a4a3e !important;
+    color: #f0d9c9 !important;
+}
+
+/* Filtro de estado del listado de productos. */
+.filtro-estado {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 14px;
+}
+.filtro-estado button {
+    padding: 6px 10px;
+    font-size: 12px;
+    background: transparent;
+    color: #d9c9bb;
+    border: 1px solid #4a3a2d;
+    border-radius: 2px;
+}
+.filtro-estado button.activo {
+    background: #e5a184;
+    color: #241811;
+    border-color: #e5a184;
+    font-weight: 800;
+}
+
+/* Botones de acción de cada producto (Editar, Producto vendido, Desactivar,
+   Reactivar, WhatsApp, Eliminar): botones reales, con borde, relleno y
+   estados de foco. Solo afecta a la tarjeta de producto. */
+.product-card .card-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    max-width: 320px;
+}
+.product-card .card-buttons button {
+    min-height: 32px;
+    padding: 6px 12px;
+    background: #211d1a;
+    border: 1px solid #5a4a3e;
+    border-radius: 6px;
+    color: #f0d9c9;
+    font: 700 11px Manrope, sans-serif;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s, color .15s;
+}
+.product-card .card-buttons button:hover {
+    background: #332a24;
+    border-color: #d8b09a;
+}
+.product-card .card-buttons button:focus-visible {
+    outline: 2px solid #e5a184;
+    outline-offset: 2px;
+}
+.product-card .card-buttons .btn-vendido:hover,
+.product-card .card-buttons .activar-resaltado:hover {
+    background: #332a24 !important;
+    border-color: #d8b09a !important;
+}
+/* Reactivar se ve igual que el resto de los botones. */
+.product-card .card-buttons .activar-resaltado {
+    background: #211d1a !important;
+    border: 1px solid #5a4a3e !important;
+    color: #f0d9c9 !important;
+    padding: 6px 12px !important;
+    border-radius: 6px;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+}
+.product-card .card-buttons .danger-link {
+    border-color: #8a4a40;
+    color: #f0a99b;
+}
+.product-card .card-buttons .danger-link:hover {
+    background: rgba(229, 137, 120, .16);
+    border-color: #e58978;
+}
+@media (max-width: 767px) {
+    .app-shell .product-card .card-buttons {
+        max-width: none;
+        justify-content: flex-start;
+        gap: 8px;
+    }
+    .app-shell .product-card .card-buttons button {
+        min-height: 40px;
+        padding: 8px 14px;
+        font-size: 12px;
+        text-align: center;
+    }
+}
+
+/* Cartel "Último ID cargado" de la sección Productos. */
+.ultimo-id {
+    display: inline-block;
+    margin: 0 0 12px;
+    padding: 7px 14px;
+    background: #211d1a;
+    border: 1px solid #5a4a3e;
+    border-left: 4px solid #e5a184;
+    border-radius: 6px;
+    color: #d9c9bb;
+    font-size: 13px;
+}
+.ultimo-id b {
+    margin-left: 4px;
+    color: #f0d9c9;
+    font: 800 15px 'DM Mono', monospace;
+}

@@ -130,7 +130,7 @@ export function ConfiguracionRecompensas({ onGuardar, soloLectura = false }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { if (configuracion.data?.recompensa_valor_hora) setValores(configuracion.data) }, [configuracion.data])
+  useEffect(() => { if (configuracion.data && 'recompensa_valor_hora' in configuracion.data) setValores(configuracion.data) }, [configuracion.data])
   if (!valores) return null
 
   const cambiar = clave => event => setValores({ ...valores, [clave]: event.target.type === 'checkbox' ? String(event.target.checked) : event.target.value })

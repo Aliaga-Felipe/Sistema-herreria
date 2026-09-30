@@ -1,5 +1,5 @@
 -- =====================================================================
--- El Atelier - Catálogo público (parte 2)
+-- Un atelier - Catálogo público (parte 2)
 -- Delta idempotente: agrega una foto propia por categoría (en vez de
 -- depender siempre de la foto de algún producto) y un video de fondo
 -- opcional para el hero de la portada.

@@ -71,3 +71,34 @@ export async function enviarConsulta({ nombre, email, telefono, asunto, mensaje 
     throw fallo('No se pudo enviar la consulta. Probá de nuevo en unos minutos o escribinos por WhatsApp.', 502)
   }
 }
+
+// Mail con el código de verificación en dos pasos del inicio de sesión (ver
+// rutas/autenticacion.js). Nunca se registra el código en los logs; si el envío
+// falla, el detalle técnico queda sólo en el servidor y la persona recibe un
+// mensaje genérico (no se puede iniciar sesión sin recibir el código).
+export async function enviarCodigoAcceso(destino, codigo, minutosDeVida) {
+  const transporte = obtenerTransportador()
+  if (!transporte) {
+    throw fallo('No se pueden enviar códigos de verificación: el servidor no tiene configurado el correo saliente (SMTP_HOST, SMTP_USER y SMTP_PASSWORD en .env). Avisale al administrador del sistema.', 503)
+  }
+  try {
+    await transporte.sendMail({
+      from: { name: 'Un atelier', address: process.env.SMTP_USER },
+      to: destino,
+      subject: 'Tu código de verificación de Un atelier',
+      text: [
+        'Tu código para ingresar a Un atelier es:',
+        '',
+        `    ${codigo}`,
+        '',
+        `Vence en ${minutosDeVida} minutos y sirve una sola vez.`,
+        'Si no intentaste ingresar, ignorá este mensaje y avisale al administrador: alguien pudo haber conseguido tu contraseña.',
+        'Nunca compartas este código con nadie.'
+      ].join('\n')
+    })
+  } catch (error) {
+    console.error(`[2fa] No se pudo enviar el código de verificación (${error.code || error.name}).`)
+    throw fallo('No pudimos enviarte el código de verificación. Probá de nuevo en unos minutos.', 503)
+  }
+}
+
