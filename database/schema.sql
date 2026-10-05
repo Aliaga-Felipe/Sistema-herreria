@@ -939,15 +939,6 @@ CREATE TABLE IF NOT EXISTS jornadas_equipo (
   recompensa NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (recompensa >= 0),
   calculado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- Etapas de pedidos asignadas a cada jornada para el premio del equipo.
--- Las horas se fijan al incluir la etapa y quedan congeladas en jornadas_equipo.
-CREATE TABLE IF NOT EXISTS produccion_diaria_etapas (
-  fecha DATE NOT NULL,
-  pedido_etapa_id BIGINT NOT NULL REFERENCES pedido_etapas(id) ON DELETE CASCADE,
-  horas_hombre NUMERIC(8,2) NOT NULL CHECK (horas_hombre > 0),
-  PRIMARY KEY (fecha, pedido_etapa_id)
-);
-CREATE INDEX IF NOT EXISTS idx_produccion_diaria_etapas_etapa ON produccion_diaria_etapas(pedido_etapa_id);
 -- Bases que corrieron una versión previa de esta migración (objetivo
 -- fijado a mano desde Recompensas y planilla de horas por empleado):
 -- pasan al objetivo por producto, sin carga de horas trabajadas.

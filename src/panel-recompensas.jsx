@@ -17,8 +17,10 @@ export const horas = valor => `${Number(valor || 0).toLocaleString('es-AR', { ma
 // ---------------------------------------------------------------------
 // RECOMPENSA DEL EQUIPO
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js):
-//   objetivo   = suma de las horas-hombre asignadas a etapas para hoy
-//   recompensa = objetivo × valor hora-hombre, al completar todas las etapas
+//   objetivo   = Σ (cantidad objetivo × horas-hombre) de los objetivos
+//                diarios por producto (se definen en Producción diaria)
+//   recompensa = objetivo × valor hora-hombre × % de premio, si lo producido
+//                en el día (en horas-hombre) completa el objetivo; si no, 0
 // La producción y los objetivos se cargan en Producción diaria.
 // ---------------------------------------------------------------------
 export default function PanelRecompensas() {
@@ -41,7 +43,7 @@ export default function PanelRecompensas() {
         <DesgloseDia jornada={jornada.data} />
       )}
 
-      <ParametrosRecompensa onGuardar={async () => { await recargar(); mostrar('Valor hora-hombre actualizado. Rige desde hoy.') }} />
+      <ParametrosRecompensa onGuardar={async () => { await recargar(); mostrar('Valor hora y % de premio actualizados. Rigen desde hoy.') }} />
 
       <section className="section-heading">
         <div><h2>Historial de días</h2><p>Resultado guardado de cada día con producción cargada. Tocá un día para ver su desglose.</p></div>
@@ -49,8 +51,8 @@ export default function PanelRecompensas() {
 
       {historial.loading ? <p>Cargando historial...</p> : historial.data.length ? (
         <section className="ranking-tabla">
-            <div className="ranking-head jornada-head">
-            <span>Día</span><span>Objetivo</span><span>Producido</span><span>Resultado</span><span>Valor hora</span><span>Recompensa</span>
+          <div className="ranking-head jornada-head">
+            <span>Día</span><span>Objetivo</span><span>Producido</span><span>Resultado</span><span>Valor hora · premio</span><span>Recompensa</span>
           </div>
           {historial.data.map(fila => (
             <div className="ranking-fila jornada-fila" key={fila.fecha} role="button" tabIndex={0} onClick={() => setDia(fila.fecha)} onKeyDown={event => event.key === 'Enter' && setDia(fila.fecha)}>
@@ -60,7 +62,7 @@ export default function PanelRecompensas() {
               {fila.objetivo_horas > 0 && fila.horas_producidas >= fila.objetivo_horas
                 ? <span className="positivo">✅ Cumplido</span>
                 : <span className="negativo">{fila.objetivo_horas > 0 ? `Faltaron ${horas(fila.objetivo_horas - fila.horas_producidas)}` : 'Sin objetivo'}</span>}
-              <span>{dinero(fila.valor_hora)}</span>
+              <span>{dinero(fila.valor_hora)} · {fila.porcentaje_premio}%</span>
               <b className={fila.recompensa > 0 ? 'positivo' : ''}>{dinero(fila.recompensa)}</b>
             </div>
           ))}
@@ -74,13 +76,16 @@ export default function PanelRecompensas() {
   )
 }
 
-// Objetivo, producido, resultado y recompensa del día, por etapa de pedido.
+// Objetivo, producido, resultado y recompensa del día. El objetivo sale de
+// los objetivos diarios por producto (Producción diaria).
 function DesgloseDia({ jornada }) {
   const formula = jornada.cumplido
-    ? `${horas(jornada.objetivo_horas)} × ${dinero(jornada.valor_hora)} por hora-hombre`
+    ? `${horas(jornada.objetivo_horas)} × ${dinero(jornada.valor_hora)} × ${jornada.porcentaje_premio}%`
     : 'No se completó el objetivo'
   const faltan = jornada.objetivo_horas - jornada.horas_producidas
-  const resumenObjetivo = `${jornada.objetivos.length} etapas de pedidos`
+  const unidades = valor => (valor === null || valor === undefined ? '—' : Number(valor).toLocaleString('es-AR', { maximumFractionDigits: 2 }))
+  const objetivoPorProducto = Object.fromEntries(jornada.objetivos.map(fila => [String(fila.producto_id), fila.cantidad]))
+  const resumenObjetivo = jornada.objetivos.filter(fila => fila.cantidad > 0).map(fila => `${fila.cantidad} × ${fila.producto}`).join(' + ')
 
   return (
     <>
@@ -97,7 +102,7 @@ function DesgloseDia({ jornada }) {
         <div>
           <h2>Objetivo del {fechaDia(jornada.fecha)}</h2>
           <p>
-            Sale de las etapas que el administrador selecciona para la producción diaria.
+            Sale de los objetivos diarios por producto que se cargan en Producción diaria.
             {jornada.objetivo_congelado ? ' Es un día cerrado: conserva el objetivo con el que se calculó.' : ''}
           </p>
         </div>
@@ -106,18 +111,19 @@ function DesgloseDia({ jornada }) {
       {jornada.objetivos.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head produccion-head">
-            <span>Pedido · producto · etapa</span><span>Estado</span><span>Horas-hombre</span><span>Valor al completar</span>
+            <span>Producto</span><span>Objetivo diario</span><span>Horas-hombre c/u</span><span>Horas del objetivo</span><span>Valor</span>
           </div>
           {jornada.objetivos.map(fila => (
-            <div className="ranking-fila produccion-fila" key={fila.etapa_id || fila.producto_id}>
-              <b>{fila.etapa_id ? `${fila.pedido} · ${fila.producto} · ${fila.etapa}` : `${fila.producto} · registro anterior`}</b>
-              <span>{fila.estado === 'COMPLETADA' ? '✅ Completa' : fila.estado === 'HISTÓRICO' ? 'Histórico' : 'Pendiente'}</span>
-              <span>{horas(fila.horas_hombre ?? ((Number(fila.cantidad) || 0) * (Number(fila.tiempo_estandar) || 0)))}</span>
-              <span>{fila.estado === 'HISTÓRICO' ? '—' : dinero((fila.horas_hombre || 0) * jornada.valor_hora)}</span>
+            <div className="ranking-fila produccion-fila" key={fila.producto_id}>
+              <b>{fila.producto}</b>
+              <span>{fila.cantidad}</span>
+              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
+              <span>{horas(fila.horas_equivalentes)}</span>
+              <span>{dinero(fila.horas_equivalentes * jornada.valor_hora * (jornada.porcentaje_premio / 100))}</span>
             </div>
           ))}
         </section>
-      ) : <p className="notice">No hay etapas asignadas a la producción diaria.</p>}
+      ) : <p className="notice">No hay objetivos diarios de producción activos. Cargalos en Producción diaria.</p>}
 
       <section className="section-heading">
         <div>
@@ -129,24 +135,25 @@ function DesgloseDia({ jornada }) {
       {jornada.produccion.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head produccion-head">
-            <span>Pedido · producto · etapa</span><span>Estado</span><span>Horas-hombre</span><span>Horas completadas</span>
+            <span>Producto</span><span>Unidades</span><span>Horas-hombre c/u</span><span>Horas producidas</span><span>Objetivo diario</span>
           </div>
           {jornada.produccion.map(fila => (
-            <div className="ranking-fila produccion-fila" key={fila.etapa_id}>
-              <b>{fila.pedido} · {fila.producto} · {fila.etapa}</b>
-              <span>Completa</span>
-              <span>{horas(fila.horas_hombre)}</span>
+            <div className="ranking-fila produccion-fila" key={fila.producto_id}>
+              <b>{fila.producto}</b>
+              <span>{fila.cantidad}</span>
+              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
               <span>{horas(fila.horas_equivalentes)}</span>
+              <span>{unidades(objetivoPorProducto[String(fila.producto_id)])}</span>
             </div>
           ))}
         </section>
-      ) : <p className="notice">{jornada.objetivos.some(fila => fila.estado === 'HISTÓRICO') ? 'El registro anterior conserva el total de horas y la recompensa, pero no el detalle de etapas completadas.' : 'Todavía no se completó ninguna etapa seleccionada.'}</p>}
+      ) : <p className="notice">No hay producción registrada este día.</p>}
     </>
   )
 }
 
 // ---------------------------------------------------------------------
-// VALOR HORA-HOMBRE (solo administradores)
+// VALOR HORA-HOMBRE Y % DE PREMIO (solo administradores)
 // Cada cambio queda en el historial y rige desde hoy: los días anteriores
 // conservan el valor que tenían.
 // ---------------------------------------------------------------------
@@ -163,29 +170,32 @@ function ParametrosRecompensa({ onGuardar }) {
     event.preventDefault()
     setBusy(true); setError('')
     try {
-      await api.put('/recompensas/parametros', { valor_hora: Number(valores.valor_hora) }, parametros.token)
+      await api.put('/recompensas/parametros', { valor_hora: Number(valores.valor_hora), porcentaje_premio: Number(valores.porcentaje_premio) }, parametros.token)
       await parametros.load()
       await onGuardar?.()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
-  const ejemplo = 16 * (Number(valores.valor_hora) || 0)
+  const ejemplo = 16 * (Number(valores.valor_hora) || 0) * ((Number(valores.porcentaje_premio) || 0) / 100)
 
   return (
     <form className="config-card" onSubmit={guardar}>
       <div className="card-title">Cómo se calcula la recompensa</div>
       <p className="muted">
-        El administrador asigna horas-hombre a las etapas que incluye en Producción diaria. Al completar todas las etapas seleccionadas,
-        el equipo cobra: suma de horas-hombre × valor de la hora-hombre. Si falta alguna, la recompensa es 0.
+        Cada producto vale sus horas-hombre (se editan en Productos). Si lo producido en el día completa el objetivo de Producción diaria,
+        el equipo cobra: horas-hombre del objetivo × valor de la hora-hombre × % de premio. Si no lo completa, la recompensa es 0.
       </p>
 
       <div className="form-grid config-grid">
         <label>Valor de la hora-hombre
           <CampoNumero min="0" step="0.01" value={valores.valor_hora} onChange={valor => setValores({ ...valores, valor_hora: valor })} />
         </label>
+        <label>% de premio (0 a 100)
+          <CampoNumero min="0" max="100" step="1" value={valores.porcentaje_premio} onChange={valor => setValores({ ...valores, porcentaje_premio: valor })} />
+        </label>
       </div>
 
-      <p className="form-note">Ejemplo: completar etapas que suman 16 hs-hombre paga <b>{dinero(ejemplo)}</b> al equipo.</p>
+      <p className="form-note">Ejemplo: completar un objetivo de 16 hs-hombre (4 sillas de 4 hs) paga <b>{dinero(ejemplo)}</b> al equipo.</p>
 
       {parametros.data?.historial?.length > 1 && (
         <details>
@@ -193,7 +203,7 @@ function ParametrosRecompensa({ onGuardar }) {
           <ul className="muted">
             {parametros.data.historial.map(cambio => (
               <li key={cambio.id}>
-                Desde {fechaDia(cambio.vigente_desde)}: {dinero(cambio.valor_hora)} por hora-hombre
+                Desde {fechaDia(cambio.vigente_desde)}: {dinero(cambio.valor_hora)} por hora · {cambio.porcentaje_premio}% de premio
                 {cambio.creado_por ? ` · ${cambio.creado_por}` : ''}
               </li>
             ))}

@@ -2,50 +2,8 @@ import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, auth, entero, fallo } from '../comun.js'
 import { guardarJornada, refrescarHoy, validarFechaDia } from '../jornadas.js'
-import { fechaDeHoy } from '../jornadas.js'
 
 const router = Router()
-
-// Etapas que el admin puede incluir en la producción diaria y sus horas asignadas.
-router.get('/etapas-diarias', auth(), asyncRoute(async (req, res) => {
-  const fecha = validarFechaDia(req.query.fecha) || fechaDeHoy()
-  const { rows } = await pool.query(`SELECT e.id AS etapa_id, e.nombre AS etapa, e.orden, e.estado,
-      p.id AS pedido_id, p.codigo AS pedido, p.estado AS pedido_estado,
-      i.id AS pedido_item_id, i.producto_id, pr.nombre AS producto, i.cantidad,
-      d.horas_hombre::float8 AS horas_hombre
-    FROM pedido_etapas e JOIN pedidos p ON p.id=e.pedido_id JOIN pedido_items i ON i.id=e.pedido_item_id
-    JOIN productos pr ON pr.id=i.producto_id LEFT JOIN produccion_diaria_etapas d ON d.pedido_etapa_id=e.id AND d.fecha=$1::date
-    WHERE p.estado NOT IN ('CANCELADO') ORDER BY p.creado_en DESC, p.codigo, i.id, e.orden`, [fecha])
-  res.json(rows)
-}))
-
-router.put('/etapas-diarias', auth(['admin']), asyncRoute(async (req, res) => {
-  const fecha = validarFechaDia(req.body?.fecha)
-  if (!fecha || fecha !== fechaDeHoy()) throw fallo('La producción diaria solo se puede configurar para hoy.')
-  const etapas = req.body?.etapas
-  if (!Array.isArray(etapas)) throw fallo('Indicá las etapas de producción diaria.')
-  const ids = new Set()
-  for (const etapa of etapas) {
-    const id = String(etapa?.etapa_id || '')
-    const horas = Number(etapa?.horas_hombre)
-    if (!/^\d+$/.test(id) || ids.has(id) || !Number.isFinite(horas) || horas <= 0) throw fallo('Cada etapa debe tener un identificador único y horas-hombre mayores a cero.')
-    ids.add(id)
-  }
-  const conexion = await pool.connect()
-  try {
-    await conexion.query('BEGIN')
-    await conexion.query('DELETE FROM produccion_diaria_etapas WHERE fecha=$1', [fecha])
-    for (const etapa of etapas) {
-      const valida = (await conexion.query(`SELECT e.id FROM pedido_etapas e JOIN pedidos p ON p.id=e.pedido_id
-        WHERE e.id=$1 AND p.estado <> 'CANCELADO'`, [etapa.etapa_id])).rows[0]
-      if (!valida) throw fallo('Una etapa seleccionada ya no está disponible.')
-      await conexion.query('INSERT INTO produccion_diaria_etapas (fecha,pedido_etapa_id,horas_hombre) VALUES ($1,$2,$3)', [fecha, etapa.etapa_id, etapa.horas_hombre])
-    }
-    await guardarJornada(conexion, fecha)
-    await conexion.query('COMMIT')
-  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
-  res.json({ mensaje: 'Producción diaria guardada.', fecha })
-}))
 
 // Dos tipos de objetivo en la misma tabla: 'producto' (cantidad diaria de
 // un producto) y 'pedido' (terminar un pedido puntual, se cumple cuando el
