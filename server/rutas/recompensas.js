@@ -9,9 +9,8 @@ const router = Router()
 // RECOMPENSA POR EQUIPO
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js).
 // Leer está abierto a cualquier usuario; el valor hora-hombre y el % de
-// premio solo los cambia un administrador. El objetivo del día no se
-// carga acá: sale de los objetivos diarios por producto de Producción
-// diaria (ver rutas/produccion.js y server/jornadas.js).
+// premio solo los cambia un administrador. Las etapas de la jornada se
+// eligen en Producción diaria (ver rutas/produccion.js y server/jornadas.js).
 // -----------------------------------------------------------------------
 const fechaParametro = valor => {
   const fecha = validarFechaDia(valor)
@@ -52,18 +51,16 @@ router.get('/parametros', auth(), asyncRoute(async (_, res) => {
 // anteriores siguen usando el valor que tenían.
 router.put('/parametros', auth(['admin']), asyncRoute(async (req, res) => {
   const actual = await parametrosVigentes(pool, hoy())
-  const { valor_hora: valorHora = actual.valor_hora, porcentaje_premio: porcentajePremio = actual.porcentaje_premio } = req.body || {}
+  const { valor_hora: valorHora = actual.valor_hora } = req.body || {}
   const valor = Number(valorHora)
-  const porcentaje = Number(porcentajePremio)
   if (!Number.isFinite(valor) || valor < 0) throw fallo('El valor de la hora-hombre debe ser un número mayor o igual a cero.')
-  if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) throw fallo('El porcentaje de premio va de 0 a 100.')
 
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
     await conexion.query(
       'INSERT INTO parametros_recompensa_historial (vigente_desde, valor_hora, porcentaje_premio, creado_por) VALUES ($1, $2, $3, $4)',
-      [hoy(), decimal(valor), decimal(porcentaje), req.user.id])
+      [hoy(), decimal(valor), 100, req.user.id])
     // Solo se recalcula el día de hoy (si ya tenía datos): es el único que toma el valor nuevo.
     const existe = (await conexion.query('SELECT 1 FROM jornadas_equipo WHERE fecha = $1', [hoy()])).rows[0]
     if (existe) await guardarJornada(conexion, hoy())

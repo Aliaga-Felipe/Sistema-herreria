@@ -360,32 +360,32 @@ export const manual = {
           t: 'tabla',
           cab: ['Dato', 'De dónde sale'],
           filas: [
-            ['Objetivo', 'La suma de los objetivos diarios activos por producto, pasados a horas: cantidad × horas-hombre de cada producto. Se definen en Producción diaria.'],
-            ['Producido', 'Las unidades registradas ese día de cada producto multiplicadas por sus horas-hombre. Cuenta cualquier producto, tenga o no objetivo propio.'],
-            ['Resultado', 'Cumplido si lo producido alcanza o supera el objetivo.'],
-            ['Recompensa', 'Objetivo × valor de la hora-hombre × % de premio, si el día se cumplió. Si no, es $0.']
+            ['Objetivo', 'La suma de las horas-hombre que el administrador asigna a las etapas seleccionadas de pedidos en Producción diaria.'],
+            ['Producido', 'Las horas-hombre asignadas a cada etapa seleccionada que ya se completó.'],
+            ['Resultado', 'Cumplido cuando se completaron todas las etapas seleccionadas.'],
+            ['Recompensa', 'Suma de las horas-hombre asignadas × valor de la hora-hombre. Si falta alguna etapa, es $0.']
           ]
         },
-        { t: 'p', x: '**Ejemplo.** Los objetivos diarios son 4 sillas de 4 horas-hombre (16 hs) y 2 mesitas de 6 horas-hombre (12 hs): el objetivo del equipo es de 28 horas. Si ese día se producen 28 horas o más, con un valor de $2.500 la hora-hombre y 100 % de premio la recompensa es **$70.000**. Si se producen 26, faltaron 2 horas y la recompensa es $0.' },
+        { t: 'p', x: '**Ejemplo.** Si el administrador asigna 16 hs-hombre a las etapas seleccionadas y el valor es $2.500 por hora-hombre, al completar todas las etapas el equipo cobra **$40.000**. Si queda una etapa pendiente, la recompensa es $0.' },
         {
           t: 'ul',
           x: [
-            '**Producir de más no aumenta la recompensa**: se paga siempre el objetivo completo.',
-            'La comparación es por el **total de horas**, no producto por producto: hacer más de un producto compensa haber hecho menos de otro.',
-            'Sin objetivos diarios activos el objetivo es 0 y **no se paga** recompensa.'
+            'Cada etapa se marca como completa desde las tareas del pedido.',
+            'El monto corresponde al total de horas asignadas a las etapas de la jornada.',
+            'Sin etapas seleccionadas no se paga recompensa.'
           ]
         },
-        { t: 'aviso', x: 'Un producto sin horas-hombre cargadas suma 0 horas, tanto en el objetivo como en lo producido (la pantalla lo avisa). Completá ese dato en Productos.' },
+        { t: 'aviso', x: 'Las horas-hombre de la jornada las define el administrador al seleccionar cada etapa en Producción diaria.' },
         { t: 'h', x: 'Ver el resultado de un día' },
-        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran el objetivo, lo producido, el resultado y la recompensa, con la cuenta que la explica. Debajo hay dos tablas: el **objetivo** del día (cada producto con su cantidad, sus horas y cuánto vale) y la **producción** del día pasada a horas.' },
+        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran las horas objetivo, las horas de etapas completadas, el resultado y la recompensa. Debajo aparecen las etapas asignadas y cuánto aporta cada una al monto final.' },
         { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado del día, detalle del objetivo y de la producción.' },
-        { t: 'nota', x: 'El objetivo no se carga en esta pantalla: sale de los objetivos diarios por producto de **Producción diaria**.' },
-        { t: 'h', x: 'Valor de la hora-hombre y % de premio' },
-        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora-hombre del objetivo y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días anteriores conservan los que tenían. Cada cambio queda anotado en un historial.' },
+        { t: 'nota', x: 'El objetivo diario se configura en **Producción diaria**, eligiendo un pedido y las etapas que cuentan para la jornada.' },
+        { t: 'h', x: 'Valor de la hora-hombre' },
+        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** el administrador define cuánto vale cada hora-hombre. El nuevo valor **rige desde hoy**; los días anteriores conservan el que tenían. Cada cambio queda anotado en un historial.' },
         { t: 'h', x: 'Historial de días' },
         { t: 'p', x: 'Lista cada día con producción cargada: objetivo, producido, si se cumplió o cuántas horas faltaron, y la recompensa. Tocá un día para ver su desglose arriba.' },
         { t: 'img', src: 'recompensas-historial.png', pie: 'Parámetros del cálculo e historial de días.' },
-        { t: 'nota', x: 'El día de hoy se vuelve a calcular cada vez que cambia su producción, un objetivo o las horas-hombre de un producto. Los **días anteriores ya cargados conservan el objetivo** con el que se calcularon: editar un objetivo después no los modifica.' },
+        { t: 'nota', x: 'El día de hoy se vuelve a calcular al guardar las etapas seleccionadas, completar una etapa o cambiar el valor de la hora-hombre. Los días anteriores conservan el resultado guardado.' },
         { t: 'p', x: 'Si el taller venía usando los bonos individuales del sistema anterior, al final de la pantalla aparece **“Historial anterior: bonos individuales”**. Es solo de consulta: esos bonos ya no se generan, pero siguen contando como gasto en Estadísticas.' }
       ]
     },

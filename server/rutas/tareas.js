@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { guardarJornada, fechaDeHoy } from '../jornadas.js'
 import { pool } from '../db.js'
 import { asyncRoute, auth, calcularSemaforo, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido } from '../comun.js'
 
@@ -176,6 +177,7 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
       [minutos, resultado.semaforo, observaciones, etapa.id])
 
     const estadoPedido = await sincronizarPedido(conexion, etapa.pedido_id)
+    await guardarJornada(conexion, fechaDeHoy())
     await conexion.query('COMMIT')
     res.json({ id: etapa.id, origen: 'PEDIDO', estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, estado_pedido: estadoPedido })
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
