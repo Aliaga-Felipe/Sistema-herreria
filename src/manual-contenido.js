@@ -99,9 +99,9 @@ export const manual = {
             ['Categorías', 'Grupos para ordenar los productos.'],
             ['Tareas', 'Etapas de producción y asignación de empleados.'],
             ['Pedidos', 'Trabajos comprometidos con sus productos, fechas y avance.'],
-            ['Producción diaria', 'Objetivos, horas trabajadas por el equipo y registro de lo producido cada día.'],
+            ['Producción diaria', 'Objetivos diarios por producto y registro de lo producido cada día.'],
             ['Estadísticas', 'Ventas, gastos, ganancias y rendimiento del equipo.'],
-            ['Recompensas', 'Premio diario del equipo cuando la producción supera el objetivo.'],
+            ['Recompensas', 'Premio diario del equipo cuando se completa la producción propuesta.'],
             ['Usuarios', 'Cuentas de las personas del taller.'],
             ['Manual de usuario', 'Esta guía, con búsqueda y descarga en PDF.']
           ]
@@ -144,7 +144,7 @@ export const manual = {
         { t: 'img', src: 'producto-fotos.png', pie: 'Fotos de un producto: la principal está marcada y abajo está la zona para subir más.' },
         { t: 'h', x: 'Costos y márgenes' },
         { t: 'p', x: 'Cada producto calcula solo su costo: **materiales** (precio unitario por cantidad que usa una unidad) más **mano de obra** (horas-hombre por el costo por hora que define el taller). Con el precio de venta se obtiene el **margen**. Esta información es interna: no se muestra en la web.' },
-        { t: 'nota', x: 'Las **horas-hombre** de un producto son también su **tiempo estándar**: con ese número se mide cuánto produjo el equipo en el día para calcular la recompensa (ver “Recompensa del equipo”). Un producto sin horas-hombre cargadas no suma.' },
+        { t: 'nota', x: 'Las **horas-hombre** de un producto se usan también para la recompensa: con ese número se pasan a horas tanto los objetivos diarios como lo producido (ver “Recompensa del equipo”). Un producto sin horas-hombre cargadas no suma.' },
         { t: 'h', x: 'WhatsApp' },
         { t: 'p', x: 'Cada producto muestra una marca de sincronización con el catálogo de WhatsApp: ✓ sincronizado, ✗ con error (al pasar el mouse se ve el motivo), … sincronizando y — todavía sin sincronizar. Es informativa; el sistema la actualiza solo.' },
         { t: 'h', x: 'Buscar y filtrar' },
@@ -268,33 +268,43 @@ export const manual = {
       titulo: 'Producción diaria y objetivos',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Sirve para seguir el avance de lo que se está fabricando, fijar metas y cargar la **planilla del día**: las horas que trabajó cada empleado y lo que se produjo. Con esa planilla el sistema calcula la recompensa del equipo.' },
+        { t: 'p', x: 'Sirve para seguir el avance de lo que se está fabricando, definir la **producción propuesta por día** y cargar lo que se produjo. Con esos datos el sistema calcula la recompensa del equipo.' },
+        { t: 'p', x: 'Arriba, las tarjetas muestran el **objetivo del equipo** (la producción propuesta, en horas-hombre) y la **recompensa al cumplir** (cuánto cobra el equipo si lo completa).' },
         { t: 'h', x: 'Seguimiento' },
         { t: 'p', x: '**Productos en producción** muestra el avance de cada producto de los pedidos abiertos, etapa por etapa, con su responsable y el resultado del semáforo.' },
-        { t: 'img', src: 'produccion.png', pie: 'Producción diaria: avance de cada producto, etapa por etapa.' },
-        { t: 'h', x: 'Crear un objetivo' },
+        { t: 'img', src: 'produccion.png', pie: 'Producción diaria: objetivo del equipo, recompensa al cumplir y avance de cada producto.' },
+        { t: 'h', x: 'Definir los objetivos' },
         {
           t: 'ol',
           x: [
             'Tocá **“+ Nuevo objetivo”**.',
             'Elegí el tipo: **“Producción diaria de un producto”** (cuántas unidades por día se esperan) o **“Terminar un pedido específico”**.',
-            'Indicá el producto o el pedido y la cantidad esperada. Guardá.'
+            'Indicá el producto y la **cantidad objetivo por día**, o el pedido. El formulario muestra a cuántas horas equivale cada unidad y cuánto suma ese objetivo al del equipo.',
+            'Dejá marcado **“Objetivo activo”** y guardá.'
           ]
         },
-        { t: 'nota', x: 'El objetivo por producto es **opcional e informativo**: sirve para ver en el historial si ese producto llegó a su meta. No es el objetivo que se usa para la recompensa del equipo, que se mide en horas para todo el taller.' },
-        { t: 'h', x: 'Cargar la planilla del día' },
+        { t: 'img', src: 'objetivo-nuevo.png', pie: 'Formulario “Nuevo objetivo”.' },
+        { t: 'p', x: 'Los objetivos **activos por producto** forman el **objetivo del equipo**: cada uno aporta su cantidad multiplicada por las horas-hombre del producto. Por ejemplo, 4 sillas de 4 horas-hombre y 2 mesitas de 6 horas-hombre dan un objetivo de 28 horas.' },
+        {
+          t: 'ul',
+          x: [
+            'Un objetivo de tipo **“Terminar un pedido”** sirve para el seguimiento, pero **no suma** al objetivo del equipo ni a la recompensa.',
+            'Un producto **sin horas-hombre** tampoco suma: la tarjeta del objetivo lo avisa. Cargalas en Productos.',
+            'Con **“Editar”** cambiás la cantidad o lo pausás; con **“Eliminar”** lo quitás.'
+          ]
+        },
+        { t: 'h', x: 'Cargar la producción del día' },
         {
           t: 'ol',
           x: [
-            'En **“Planilla del día”** elegí la **fecha** (por defecto, hoy). Podés elegir un día anterior si te olvidaste de cargarlo.',
-            'En **“Horas trabajadas”** escribí las horas de cada empleado (de 0 a 24) y tocá **“Guardar horas”**. Abajo se ve el total del equipo.',
-            'En **“Producción”** escribí cuántas unidades se hicieron de cada producto y tocá **“Registrar”** en cada fila.',
-            'Si se fabricó un producto que no tiene objetivo propio, elegilo en **“Otro producto”**: se agrega a la lista para registrarlo.'
+            'En **“Producción del día”** elegí la **fecha** (por defecto, hoy). Podés elegir un día anterior si te olvidaste de cargarlo.',
+            'Escribí cuántas unidades se hicieron de cada producto y tocá **“Registrar”** en cada fila.',
+            'Si se fabricó un producto que no tiene objetivo propio, elegilo en **“Otro producto”**: se agrega a la lista y también suma horas producidas.'
           ]
         },
-        { t: 'img', src: 'produccion-planilla.png', pie: 'Planilla del día: horas de cada empleado, producción y, abajo, el resumen con la recompensa del equipo.' },
-        { t: 'p', x: 'Al pie de la planilla aparece el **resumen del día**: horas totales, objetivo, producido, excedente y recompensa del equipo. Se actualiza cada vez que guardás horas o registrás producción.' },
-        { t: 'aviso', x: 'Las horas en 0 borran la carga de ese empleado para ese día. Si volvés a registrar un producto en la misma fecha, la cantidad nueva **reemplaza** a la anterior (no se suma).' },
+        { t: 'img', src: 'produccion-planilla.png', pie: 'Objetivos activos y carga de la producción del día, con el resumen de la recompensa al pie.' },
+        { t: 'p', x: 'Al pie aparece el **resumen del día**: objetivo, producido y si se cumplió (con la recompensa) o cuántas horas faltan. Se actualiza cada vez que registrás producción o cambiás un objetivo.' },
+        { t: 'aviso', x: 'Si volvés a registrar un producto en la misma fecha, la cantidad nueva **reemplaza** a la anterior (no se suma).' },
         { t: 'h', x: 'Historial de producción' },
         { t: 'p', x: 'Lista lo producido por día y por producto. Si el producto tiene objetivo propio, indica si se cumplió; si no, dice “Sin objetivo propio”. Se puede filtrar por fechas.' }
       ]
@@ -317,7 +327,7 @@ export const manual = {
         },
         { t: 'img', src: 'mis-tareas-terminar.png', pie: 'Al marcar una etapa como terminada se informa el tiempo real.' },
         { t: 'nota', x: 'El tiempo real lo informás vos al terminar la etapa. Cargalo con honestidad: de eso depende el semáforo. Las etapas cerradas quedan en la lista, en su mismo lugar, con el estado “Completada”.' },
-        { t: 'p', x: 'El semáforo es un indicador de tiempos y no genera plata. La **recompensa es para todo el equipo**: se paga cuando la producción del día supera el objetivo.' }
+        { t: 'p', x: 'El semáforo es un indicador de tiempos y no genera plata. La **recompensa es para todo el equipo**: se paga cuando se completa la producción propuesta para el día.' }
       ]
     },
     {
@@ -336,7 +346,7 @@ export const manual = {
           ]
         },
         { t: 'p', x: 'El semáforo es **solo un indicador de tiempos**: sirve para ver cómo viene el trabajo y ajustar las estimaciones. **No genera plata** para nadie en particular.' },
-        { t: 'nota', x: 'La recompensa es **una sola por día y para todo el equipo**: se paga cuando lo que produjo el taller en el día supera el objetivo.' }
+        { t: 'nota', x: 'La recompensa es **una sola por día y para todo el equipo**: se paga cuando el taller completa la producción propuesta para el día.' }
       ]
     },
     {
@@ -344,40 +354,38 @@ export const manual = {
       titulo: 'Recompensa del equipo',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Todo el taller trabaja como **un único equipo**. La recompensa es **un solo monto por día**, calculado sobre el resultado conjunto y nunca por empleado. Se paga cuando lo producido en el día, medido en horas-hombre, **supera** el objetivo.' },
+        { t: 'p', x: 'Todo el taller trabaja como **un único equipo**. La recompensa es **un solo monto por día**, nunca por empleado, y se paga por **completar la producción propuesta** para la jornada.' },
         { t: 'h', x: 'Cómo se calcula' },
         {
           t: 'tabla',
           cab: ['Dato', 'De dónde sale'],
           filas: [
-            ['Horas totales', 'La suma de las horas trabajadas por cada empleado ese día (se cargan en Producción diaria).'],
-            ['Objetivo', 'Por defecto es igual a las horas totales. El administrador puede fijar otro para ese día.'],
-            ['Producido', 'Las unidades registradas de cada producto multiplicadas por sus horas-hombre (su tiempo estándar).'],
-            ['Excedente', 'Producido menos objetivo.'],
-            ['Recompensa', 'Excedente × valor de la hora-hombre × % de premio. Si no se supera el objetivo, es $0.']
+            ['Objetivo', 'La suma de los objetivos diarios activos por producto, pasados a horas: cantidad × horas-hombre de cada producto. Se definen en Producción diaria.'],
+            ['Producido', 'Las unidades registradas ese día de cada producto multiplicadas por sus horas-hombre. Cuenta cualquier producto, tenga o no objetivo propio.'],
+            ['Resultado', 'Cumplido si lo producido alcanza o supera el objetivo.'],
+            ['Recompensa', 'Objetivo × valor de la hora-hombre × % de premio, si el día se cumplió. Si no, es $0.']
           ]
         },
-        { t: 'p', x: '**Ejemplo.** Tres empleados trabajan 8 horas cada uno: 24 horas totales y, por lo tanto, 24 horas de objetivo. Ese día se hacen 4 sillas de 4 horas-hombre (16 hs) y 2 mesitas de 6 horas-hombre (12 hs): 28 horas producidas. El excedente es de 4 horas. Con un valor de $2.500 la hora-hombre y 100 % de premio, la recompensa del equipo es **$10.000**.' },
-        { t: 'aviso', x: 'Llegar justo al objetivo lo da por cumplido, pero **no paga**: la recompensa aparece recién cuando se lo supera. Y un producto sin horas-hombre cargadas suma 0 horas (la pantalla lo avisa): completá ese dato en Productos.' },
-        { t: 'h', x: 'Ver el resultado de un día' },
-        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran horas totales, objetivo, producido, excedente y la recompensa, con la cuenta que la explica. Debajo, el **desglose**: las horas de cada empleado y, por producto, las unidades, su tiempo estándar, las horas equivalentes y a cuántas unidades de ese producto equivale el objetivo.' },
-        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado del día, desglose por producto y objetivo del día.' },
-        { t: 'h', x: 'Fijar el objetivo del día' },
+        { t: 'p', x: '**Ejemplo.** Los objetivos diarios son 4 sillas de 4 horas-hombre (16 hs) y 2 mesitas de 6 horas-hombre (12 hs): el objetivo del equipo es de 28 horas. Si ese día se producen 28 horas o más, con un valor de $2.500 la hora-hombre y 100 % de premio la recompensa es **$70.000**. Si se producen 26, faltaron 2 horas y la recompensa es $0.' },
         {
-          t: 'ol',
+          t: 'ul',
           x: [
-            'En la tarjeta **“Objetivo del…”** escribí el objetivo en **horas estándar**.',
-            'Si preferís pensarlo en unidades, elegí un **producto de referencia** y escribí cuántas unidades: el sistema lo convierte a horas.',
-            'Tocá **“Fijar objetivo”**. Queda guardado solo para ese día.',
-            'Para volver al valor por defecto, tocá **“Usar el sugerido”**.'
+            '**Producir de más no aumenta la recompensa**: se paga siempre el objetivo completo.',
+            'La comparación es por el **total de horas**, no producto por producto: hacer más de un producto compensa haber hecho menos de otro.',
+            'Sin objetivos diarios activos el objetivo es 0 y **no se paga** recompensa.'
           ]
         },
+        { t: 'aviso', x: 'Un producto sin horas-hombre cargadas suma 0 horas, tanto en el objetivo como en lo producido (la pantalla lo avisa). Completá ese dato en Productos.' },
+        { t: 'h', x: 'Ver el resultado de un día' },
+        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran el objetivo, lo producido, el resultado y la recompensa, con la cuenta que la explica. Debajo hay dos tablas: el **objetivo** del día (cada producto con su cantidad, sus horas y cuánto vale) y la **producción** del día pasada a horas.' },
+        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado del día, detalle del objetivo y de la producción.' },
+        { t: 'nota', x: 'El objetivo no se carga en esta pantalla: sale de los objetivos diarios por producto de **Producción diaria**.' },
         { t: 'h', x: 'Valor de la hora-hombre y % de premio' },
-        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora de excedente y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días anteriores conservan los que tenían. Cada cambio queda anotado en un historial.' },
+        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora-hombre del objetivo y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días anteriores conservan los que tenían. Cada cambio queda anotado en un historial.' },
         { t: 'h', x: 'Historial de días' },
-        { t: 'p', x: 'Lista cada día con horas o producción cargadas y su resultado. Un lápiz (✎) al lado del objetivo indica que ese día se fijó a mano. Tocá un día para ver su desglose arriba.' },
+        { t: 'p', x: 'Lista cada día con producción cargada: objetivo, producido, si se cumplió o cuántas horas faltaron, y la recompensa. Tocá un día para ver su desglose arriba.' },
         { t: 'img', src: 'recompensas-historial.png', pie: 'Parámetros del cálculo e historial de días.' },
-        { t: 'nota', x: 'El resultado de un día se vuelve a calcular cada vez que cambian sus horas, su producción o su objetivo. Cambiar más adelante el valor de la hora o las horas-hombre de un producto **no** modifica los días ya cargados.' },
+        { t: 'nota', x: 'El día de hoy se vuelve a calcular cada vez que cambia su producción, un objetivo o las horas-hombre de un producto. Los **días anteriores ya cargados conservan el objetivo** con el que se calcularon: editar un objetivo después no los modifica.' },
         { t: 'p', x: 'Si el taller venía usando los bonos individuales del sistema anterior, al final de la pantalla aparece **“Historial anterior: bonos individuales”**. Es solo de consulta: esos bonos ya no se generan, pero siguen contando como gasto en Estadísticas.' }
       ]
     },
@@ -544,8 +552,8 @@ export const manual = {
             ['No puedo eliminar un producto', 'Está dentro de un pedido. Desactivalo en lugar de eliminarlo.'],
             ['Marqué como vendido por error', 'Tocá “Reactivar”: la venta se anula y el producto vuelve a estar disponible.'],
             ['No puedo publicar un producto en la web', 'Faltan datos obligatorios: nombre, ID, descripción técnica, historia o categoría. El aviso te dice cuál.'],
-            ['La recompensa del día da $0', 'Revisá en Producción diaria que estén cargadas las horas del equipo y la producción de ese día, y que los productos tengan horas-hombre. Recordá que solo paga si lo producido supera el objetivo, no si lo iguala.'],
-            ['Un producto no suma horas a la recompensa', 'No tiene horas-hombre cargadas. Completalas en Productos y volvé a registrar su producción de ese día.'],
+            ['La recompensa del día da $0', 'Revisá en Producción diaria que haya objetivos diarios activos por producto, que esté cargada la producción de ese día y que los productos tengan horas-hombre. Solo paga si lo producido alcanza el objetivo.'],
+            ['Un producto no suma horas al objetivo o a lo producido', 'No tiene horas-hombre cargadas. Completalas en Productos y volvé a registrar su producción de ese día.'],
             ['No puedo eliminar a un empleado', 'Tiene tareas, recompensas o registros asociados. Se conserva su historial.'],
             ['Un número de las estadísticas no coincide', 'Recordá que los productos desactivados no cuentan como venta. Recargá la página y revisá el período elegido.']
           ]
@@ -563,11 +571,10 @@ export const manual = {
           filas: [
             ['Chapita / ID de producto', 'Número visible que identifica cada pieza. Se libera si el producto se elimina.'],
             ['Etapa / tarea', 'Cada paso de la fabricación (corte, soldadura, pintura…).'],
-            ['Horas-hombre / tiempo estándar', 'Horas de trabajo de una persona necesarias para fabricar una unidad. Se usa para el costo y para medir lo producido.'],
+            ['Horas-hombre', 'Horas de trabajo de una persona necesarias para fabricar una unidad. Se usan para el costo, para el objetivo del equipo y para medir lo producido.'],
             ['Semáforo', 'Comparación entre el tiempo real y el estimado de una etapa. Es un indicador: no genera plata.'],
-            ['Objetivo del día', 'Horas que el equipo tiene que producir en el día. Por defecto, las horas trabajadas.'],
-            ['Excedente', 'Horas producidas por encima del objetivo del día.'],
-            ['Recompensa del equipo', 'Premio en dinero, uno por día para todo el taller, cuando lo producido supera el objetivo.'],
+            ['Objetivo del equipo', 'Producción propuesta para el día, en horas-hombre: la suma de los objetivos diarios activos por producto.'],
+            ['Recompensa del equipo', 'Premio en dinero, uno por día para todo el taller, cuando se completa el objetivo del equipo.'],
             ['Borrador', 'Producto guardado pero no publicado en la web.'],
             ['Destacado', 'Producto que se muestra en la portada de la web.'],
             ['Real / proyectado', 'Real es lo ya vendido; proyectado es lo que se ganaría si se vendiera todo el stock.']
