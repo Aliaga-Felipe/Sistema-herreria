@@ -31,6 +31,34 @@ router.get('/equipo/dia/:fecha', auth(), asyncRoute(async (req, res) => {
   res.json(await obtenerJornada(fechaParametro(req.params.fecha)))
 }))
 
+// Resumen de lo que cobró el equipo: hoy, el mes en curso y el total. El
+// detalle día por día está en Producción diaria (GET /produccion/jornadas).
+// Solo cuentan los días terminados por el admin.
+router.get('/resumen', auth(), asyncRoute(async (_, res) => {
+  const fecha = hoy()
+  const { rows: [totales] } = await pool.query(
+    `SELECT
+       COALESCE(SUM(recompensa) FILTER (WHERE en_mes), 0)::float8 AS monto_mes,
+       COUNT(*) FILTER (WHERE en_mes AND cumplido)::int AS cumplidos_mes,
+       COUNT(*) FILTER (WHERE en_mes)::int AS terminados_mes,
+       COALESCE(SUM(recompensa), 0)::float8 AS monto_total,
+       COUNT(*) FILTER (WHERE cumplido)::int AS cumplidos_total,
+       COUNT(*)::int AS terminados_total
+     FROM (SELECT recompensa, cumplido,
+             fecha >= date_trunc('month', $1::date) AND fecha < date_trunc('month', $1::date) + INTERVAL '1 month' AS en_mes
+           FROM jornadas_equipo WHERE estado = 'TERMINADA') j`, [fecha])
+  const dia = await obtenerJornada(fecha)
+  res.json({
+    hoy: {
+      fecha, estado: dia.estado, cumplido: dia.cumplido, avance: dia.avance,
+      objetivo_horas: dia.objetivo_horas, horas_completadas: dia.horas_completadas,
+      recompensa: dia.recompensa, recompensa_al_cumplir: dia.recompensa_al_cumplir
+    },
+    mes: { monto: totales.monto_mes, cumplidos: totales.cumplidos_mes, terminados: totales.terminados_mes },
+    total: { monto: totales.monto_total, cumplidos: totales.cumplidos_total, terminados: totales.terminados_total }
+  })
+}))
+
 // Valor hora-hombre y % de premio: vigente + historial de cambios.
 router.get('/parametros', auth(), asyncRoute(async (_, res) => {
   const vigente = await parametrosVigentes(pool, hoy())

@@ -1643,3 +1643,267 @@
 .ranking-tabla + .config-card {
     margin-top: 24px;
 }
+
+/* =========================
+   HISTORIAL DE DÍAS (Producción diaria)
+   Cada fila abre ese día arriba; el día que se está viendo queda marcado.
+*/
+.section-heading.historial-dias {
+    margin-top: 36px;
+}
+
+.jornada-fila:hover,
+.jornada-fila:focus-visible {
+    background: #26211e;
+    outline: none;
+}
+
+.jornada-fila.seleccionada {
+    background: #2a231f;
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* =========================
+   ESTADÍSTICAS: fila de un solo gráfico y gráfico de horas-hombre por día
+   (panel-estadisticas.jsx). Columna = pista (propuesto) con relleno
+   (completado) en el mismo tono; colores validados contra la tarjeta
+   (#1e1c1a): relleno #ffad90, pista #7a5a40.
+*/
+.analytics.una-columna {
+    grid-template-columns: 1fr;
+}
+
+.grafico-subtitulo {
+    font-size: 10px;
+    margin: 4px 0 10px;
+}
+
+.grafico-leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 12px;
+}
+
+.grafico-leyenda span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.grafico-leyenda .clave {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.clave.relleno,
+.grafico-relleno {
+    background: #ffad90;
+}
+
+.clave.pista,
+.grafico-pista {
+    background: #7a5a40;
+}
+
+.grafico-cuerpo {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 6px;
+}
+
+/* El eje y las líneas guía miden lo mismo que el área de las columnas (150px). */
+.grafico-eje {
+    position: relative;
+    height: 150px;
+}
+
+.grafico-eje span {
+    position: absolute;
+    right: 0;
+    transform: translateY(50%);
+    font: 400 9px 'DM Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.grafico-area {
+    position: relative;
+    display: flex;
+    gap: 4px;
+}
+
+.grafico-lineas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 150px;
+    pointer-events: none;
+}
+
+.grafico-lineas i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #35312d;
+}
+
+.grafico-columna {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: default;
+    outline: none;
+}
+
+.grafico-columna:focus-visible .grafico-x {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+.grafico-plot {
+    position: relative;
+    height: 150px;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.grafico-pista {
+    position: relative;
+    width: min(24px, 70%);
+    border-radius: 4px 4px 0 0;
+    transition: filter .15s;
+}
+
+.grafico-pista.encendida {
+    filter: brightness(1.18);
+}
+
+.grafico-relleno {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 4px 4px 0 0;
+}
+
+.grafico-x {
+    margin-top: 6px;
+    font: 400 9px 'DM Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.grafico-tooltip {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -100%);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    background: var(--panel);
+    border: 1px solid #4a423c;
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.grafico-tooltip b {
+    color: var(--text);
+    font-size: 12px;
+}
+
+.grafico-tabla {
+    margin-top: 14px;
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.grafico-tabla summary {
+    cursor: pointer;
+}
+
+.grafico-tabla table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.grafico-tabla th,
+.grafico-tabla td {
+    text-align: left;
+    padding: 5px 6px;
+    border-bottom: 1px solid #35312d;
+    font-variant-numeric: tabular-nums;
+}
+
+.grafico-tabla th {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 8px;
+}
+
+/* En pantallas angostas se muestra la fecha de una columna sí y otra no. */
+@media (max-width: 600px) {
+    .grafico-columna:nth-child(odd) .grafico-x {
+        visibility: hidden;
+    }
+}
+
+/* Las tarjetas de una fila de gráficos nunca son más anchas que su columna
+   (en el celular la tabla de datos se desplaza dentro de su tarjeta). */
+.analytics > * {
+    min-width: 0;
+}
+
+.grafico-tabla {
+    overflow-x: auto;
+}
+
+/* La página se muestra en modo "quirks" (index.html no tiene doctype): ahí las
+   tablas no heredan el tamaño de letra, así que se fija acá. */
+.grafico-tabla table,
+.grafico-tabla td {
+    font-size: 11px;
+    color: var(--text);
+}
+
+.analytics-produccion > .operator-summary {
+    align-self: start;
+}
+
+/* Facturación por mes a todo el ancho: columnas finas (no bloques) y lugar
+   para las etiquetas de los meses dentro de la tarjeta. */
+.analytics.una-columna .bar-wrap {
+    justify-content: center;
+}
+
+.analytics.una-columna .bar-wrap i {
+    max-width: 24px;
+    border-radius: 4px 4px 0 0;
+}
+
+.analytics.una-columna .chart {
+    margin-bottom: 22px;
+}
+
+/* Aire entre una fila de gráficos o una tabla y el título que sigue. */
+.analytics + .section-heading,
+.ranking-tabla + .section-heading {
+    margin-top: 30px;
+}

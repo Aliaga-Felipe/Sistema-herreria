@@ -129,15 +129,16 @@ export async function obtenerJornada(fecha, db = pool) {
   }
 }
 
-// Historial de días (los abiertos, calculados en vivo).
-export async function listarJornadas({ desde = null, hasta = null } = {}, db = pool) {
+// Historial de días, del más nuevo al más viejo (los abiertos, calculados
+// en vivo). `limite` null = sin límite (lo usan las estadísticas).
+export async function listarJornadas({ desde = null, hasta = null, limite = 366 } = {}, db = pool) {
   const { rows } = await db.query(
     `SELECT j.fecha::text AS fecha, j.estado, j.cumplido, j.objetivo_horas::float8 AS objetivo_horas,
        j.horas_producidas::float8 AS horas_completadas, j.valor_hora::float8 AS valor_hora,
        j.porcentaje_premio::float8 AS porcentaje_premio, j.recompensa::float8 AS recompensa, j.terminada_en
      FROM jornadas_equipo j
      WHERE ($1::date IS NULL OR j.fecha >= $1::date) AND ($2::date IS NULL OR j.fecha <= $2::date)
-     ORDER BY j.fecha DESC LIMIT 366`, [desde, hasta])
+     ORDER BY j.fecha DESC LIMIT $3`, [desde, hasta, limite])
   return Promise.all(rows.map(async fila => {
     if (fila.estado !== 'ABIERTA') return fila
     const vivo = await obtenerJornada(fila.fecha, db)

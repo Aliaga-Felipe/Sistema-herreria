@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, auth, fallo } from '../comun.js'
-import { agregarEtapas, eliminarJornada, obtenerJornada, quitarEtapa, reabrirJornada, terminarJornada, validarFechaDia } from '../jornadas.js'
+import { agregarEtapas, eliminarJornada, listarJornadas, obtenerJornada, quitarEtapa, reabrirJornada, terminarJornada, validarFechaDia } from '../jornadas.js'
 
 const router = Router()
 
@@ -33,6 +33,12 @@ const enTransaccion = async (res, fecha, operacion) => {
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
   res.json({ ...(await obtenerJornada(fecha)), ...extra })
 }
+
+// Historial de días con producción (los terminados con su resultado
+// guardado, los abiertos calculados en vivo). "desde"/"hasta" opcionales.
+router.get('/jornadas', auth(), asyncRoute(async (req, res) => {
+  res.json(await listarJornadas({ desde: validarFechaDia(req.query.desde), hasta: validarFechaDia(req.query.hasta) }))
+}))
 
 router.get('/jornada/:fecha', auth(), asyncRoute(async (req, res) => {
   res.json(await obtenerJornada(fechaParametro(req.params.fecha)))

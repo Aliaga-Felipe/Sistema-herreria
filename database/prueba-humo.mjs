@@ -198,7 +198,14 @@ try {
   ok('a medio día: avance en horas-hombre y todavía sin recompensa', aMedias.horas_completadas === 2 && aMedias.avance === 25 && !aMedias.cumplido && aMedias.recompensa === 0,
     JSON.stringify({ completadas: aMedias.horas_completadas, avance: aMedias.avance }))
 
+  // El costo de una etapa completada sale de sus horas-hombre: la soldadura
+  // (4 de las 8 hs del producto) suma la mitad del costo de producción.
+  const gastosEtapas = async () => (await llamar('/estadisticas/generales', {}, token)).metricas.real.gastos_etapas_pedidos
+  const gastosAntes = await gastosEtapas()
   await llamar(`/tareas/asignadas/PEDIDO/${soldadura.id}/completar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado)
+  const gastoSoldadura = Math.round((await gastosEtapas()) - gastosAntes)
+  ok('el costo de cada etapa se reparte según sus horas-hombre', gastoSoldadura === Math.round(pedido.items[0].costo_produccion * 4 / 8),
+    `${gastoSoldadura} (esperado ${Math.round(pedido.items[0].costo_produccion * 4 / 8)})`)
   const ultima = await llamar(`/tareas/asignadas/PEDIDO/${pintura.id}/completar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado)
   ok('el pedido se cierra solo al completar todas sus etapas', ultima.estado_pedido === 'TERMINADO', ultima.estado_pedido)
 
@@ -247,8 +254,12 @@ try {
   await llamar(`${rutaDia(cuarto)}/etapas/${otro.etapas[1].id}`, { method: 'DELETE' }, token)
   ok('al quitar la última etapa el día vuelve a estar sin planificar', (await llamar(rutaDia(cuarto), {}, token)).estado === 'SIN_PLANIFICAR')
 
-  const historial = await llamar(`/recompensas/equipo?desde=${dia}&hasta=${cuarto}`, {}, token)
-  ok('el historial lista los días terminados con su resultado', historial.length === 2 && historial.some(fila => fila.fecha === dia && fila.cumplido) && historial.some(fila => fila.fecha === tercero && !fila.cumplido))
+  const historial = await llamar(`/produccion/jornadas?desde=${dia}&hasta=${cuarto}`, {}, token)
+  ok('el historial de días (Producción diaria) lista los días terminados con su resultado', historial.length === 2 && historial[0].fecha === tercero
+    && historial.some(fila => fila.fecha === dia && fila.cumplido) && historial.some(fila => fila.fecha === tercero && !fila.cumplido))
+  const resumenRecompensas = await llamar('/recompensas/resumen', {}, token)
+  ok('el resumen de recompensas suma los días pagados', resumenRecompensas.total.monto >= esperada && resumenRecompensas.total.cumplidos >= 1
+    && ['SIN_PLANIFICAR', 'ABIERTA', 'TERMINADA'].includes(resumenRecompensas.hoy.estado), JSON.stringify(resumenRecompensas.total))
 
   // --- estadísticas -----------------------------------------------------
   // Las métricas de dinero salen de server/metricas.js y son las mismas en
@@ -263,10 +274,14 @@ try {
   ok('ingresos cobrados del pedido terminado', m.real.ingresos_pedidos >= 800000, String(m.real.ingresos_pedidos))
   ok('gastos de producción de etapas completadas', m.real.gastos_etapas_pedidos > 0, String(m.real.gastos_etapas_pedidos))
   ok('ganancia neta = ingresos - gastos', Math.round(m.real.ganancia) === Math.round(m.real.ingresos - m.real.gastos))
-  ok('rendimiento por empleado en horas-hombre', generales.rendimiento.some(persona => String(persona.id) === String(empleado.id) && persona.completadas === 4 && persona.horas_completadas === 8.5),
+  ok('rendimiento por empleado en horas-hombre (y las de días cumplidos)', generales.rendimiento.some(persona => String(persona.id) === String(empleado.id)
+    && persona.completadas === 4 && persona.horas_completadas === 8.5 && persona.horas_premiadas === 8),
     JSON.stringify(generales.rendimiento.find(persona => String(persona.id) === String(empleado.id))))
   const periodo = (await llamar(`/estadisticas/generales?desde=${dia}&hasta=${cuarto}`, {}, token)).produccion
-  ok('estadísticas de producción diaria del período', periodo.dias === 2 && periodo.cumplidas === 1 && periodo.recompensas === esperada, JSON.stringify(periodo))
+  ok('estadísticas de producción diaria del período', periodo.dias === 2 && periodo.cumplidas === 1 && periodo.recompensas === esperada
+    && periodo.horas_propuestas === 10 && periodo.horas_completadas === 8.5 && periodo.promedio_por_dia === 4.25, JSON.stringify({ ...periodo, serie: undefined }))
+  ok('serie de días para el gráfico, del más viejo al más nuevo', periodo.serie.map(fila => fila.fecha).join() === `${dia},${tercero}`, JSON.stringify(periodo.serie))
+  ok('trabajo pendiente en horas-hombre', periodo.pendiente.horas >= 1.5 && periodo.pendiente.etapas >= 1 && Number.isInteger(periodo.dias_estimados), JSON.stringify(periodo.pendiente))
   ok('rentabilidad por producto', generales.por_producto.some(item => String(item.id) === String(producto.id)))
 
   // --- venta de productos: activo = proyección, vendido = venta ----------

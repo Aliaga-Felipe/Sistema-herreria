@@ -100,6 +100,15 @@ describe('un empleado no puede armar ni cerrar la producción diaria', () => {
     assert.equal(datos.estado, 'SIN_PLANIFICAR')
   })
 
+  it('puede consultar el historial de días y el resumen de recompensas', async () => {
+    const historial = await llamar('GET', '/api/produccion/jornadas?desde=1999-01-01&hasta=1999-01-02', tokenEmpleado)
+    assert.equal(historial.status, 200)
+    assert.deepEqual(historial.datos, [])
+    const resumen = await llamar('GET', '/api/recompensas/resumen', tokenEmpleado)
+    assert.equal(resumen.status, 200)
+    assert.ok('hoy' in resumen.datos && 'mes' in resumen.datos && 'total' in resumen.datos)
+  })
+
   it('rechaza pedidos sin sesión', async () => {
     const { status } = await llamar('PUT', '/api/recompensas/parametros', 'token-invalido', { valor_hora: 1 })
     assert.equal(status, 401)

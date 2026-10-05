@@ -99,9 +99,9 @@ export const manual = {
             ['Categorías', 'Grupos para ordenar los productos.'],
             ['Tareas', 'Todas las etapas de los pedidos con su empleado: reasignar o reabrir una etapa.'],
             ['Pedidos', 'Trabajos comprometidos: productos, horas-hombre, etapas con su empleado, fechas y avance.'],
-            ['Producción diaria', 'Qué se propone terminar cada día, su avance, la verificación y el cierre del día.'],
+            ['Producción diaria', 'Qué se propone terminar cada día, su avance, la verificación, el cierre del día y el historial de días.'],
             ['Estadísticas', 'Ventas, gastos, ganancias y rendimiento del equipo.'],
-            ['Recompensas', 'Premio diario del equipo cuando se completa la producción propuesta.'],
+            ['Recompensas', 'Cuánto cobró el equipo (hoy, en el mes y en total) y el valor de la hora-hombre.'],
             ['Usuarios', 'Cuentas de las personas del taller.'],
             ['Manual de usuario', 'Esta guía, con búsqueda y descarga en PDF.']
           ]
@@ -304,7 +304,7 @@ export const manual = {
       para: GESTION,
       bloques: [
         { t: 'p', x: 'Acá se decide **qué se propone terminar cada día**, se sigue cómo avanza y, al final, se **verifica y se cierra** el día. Con eso el sistema calcula la recompensa del equipo.' },
-        { t: 'p', x: 'Arriba elegís el **Día** (por defecto, hoy; con **“Hoy”** volvés al día actual). Las tarjetas muestran lo **propuesto** y lo **completado** (en horas-hombre), el **estado** del día y la **recompensa** que cobra el equipo si se completa todo.' },
+        { t: 'p', x: 'Arriba elegís el **Día** (por defecto, hoy; con **“Hoy”** volvés al día actual). También podés abrir cualquier día desde el **Historial de días**, al final de la pantalla. Las tarjetas muestran lo **propuesto** y lo **completado** (en horas-hombre), el **estado** del día y la **recompensa** que cobra el equipo si se completa todo.' },
         { t: 'img', src: 'produccion.png', pie: 'Producción del día en curso: lo propuesto, lo completado y cada etapa con su empleado.' },
         { t: 'h', x: 'Proponer el trabajo del día' },
         { t: 'p', x: 'En **“Agregar trabajo”** aparecen los pedidos en curso con sus etapas pendientes. Podés agregar:' },
@@ -334,11 +334,23 @@ export const manual = {
           t: 'ul',
           x: [
             'Si al terminar el día **falta alguna etapa**, el sistema te avisa: podés terminarlo igual, pero ese día **no hay recompensa**. Lo que quedó pendiente se puede proponer otro día.',
-            'Una producción terminada ya no cambia aunque después se editen los pedidos. Si la cerraste por error, usá **“Reabrir producción”**: la recompensa vuelve a $0 hasta que la termines de nuevo.',
+            'Una producción terminada ya no cambia aunque después se editen los pedidos. Si necesitás corregirla, tocá **“Reabrir producción”**, junto al título “Propuesto para el…”: la recompensa vuelve a $0 hasta que la termines de nuevo.',
             'Podés armar la producción de otro día (por ejemplo, la de mañana) eligiendo esa fecha arriba.'
           ]
         },
-        { t: 'aviso', x: 'Las horas-hombre que cuentan son las **estimadas** al crear el pedido, no el tiempo que se tardó. Verificá bien el trabajo antes de terminar el día: es lo que habilita la recompensa.' }
+        { t: 'aviso', x: 'Las horas-hombre que cuentan son las **estimadas** al crear el pedido, no el tiempo que se tardó. Verificá bien el trabajo antes de terminar el día: es lo que habilita la recompensa.' },
+        { t: 'h', x: 'Historial de días: ver o reabrir un día anterior' },
+        { t: 'p', x: 'Al final de la pantalla está el **Historial de días**: cada día con producción propuesta, con lo propuesto, lo completado, el resultado (cumplido, en curso o cuántas horas faltaron), el valor de la hora y la recompensa. El día que estás viendo queda marcado.' },
+        {
+          t: 'ol',
+          x: [
+            'Tocá el día que querés ver. La pantalla sube y muestra **ese día**: sus tarjetas y todas sus etapas, con quién las hizo y cuándo se completaron.',
+            'Si ese día ya está terminado y necesitás cambiarlo (por ejemplo, se cerró por error o falta corregir una etapa), tocá **“Reabrir producción”**, junto al título “Propuesto para el…”.',
+            'Hacé los cambios y volvé a tocar **“Marcar producción diaria terminada”**.'
+          ]
+        },
+        { t: 'img', src: 'produccion-historial.png', pie: 'Historial de días: el día marcado es el que se está viendo arriba.' },
+        { t: 'nota', x: 'Para **ver** un día no hace falta reabrirlo: alcanza con tocarlo en el historial. Los días cargados con el sistema anterior (objetivos por producto) se ven igual, con su detalle por producto, pero no se pueden reabrir.' }
       ]
     },
     {
@@ -389,16 +401,13 @@ export const manual = {
             'Sin trabajo propuesto no hay recompensa.'
           ]
         },
-        { t: 'h', x: 'Ver el resultado de un día' },
-        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran lo propuesto, lo completado, el resultado y la recompensa, con la cuenta que la explica. Debajo está la lista de etapas de ese día con su pedido, producto, empleado, horas y estado.' },
-        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado de un día terminado y sus etapas.' },
-        { t: 'nota', x: 'El trabajo del día no se carga en esta pantalla: se arma y se termina en **Producción diaria**.' },
+        { t: 'h', x: 'Lo que cobró el equipo' },
+        { t: 'p', x: 'Arriba de **Recompensas** hay tres tarjetas: la recompensa de **hoy** (la que está en juego mientras el día está abierto, o la que se pagó si ya se terminó), lo **pagado este mes** y lo **pagado en total**, con cuántos días se cumplieron.' },
+        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: lo que cobró el equipo y cómo se calcula.' },
+        { t: 'nota', x: 'El detalle de cada día (qué se propuso, qué se completó y su resultado) está en el **Historial de días** de **Producción diaria**: el botón **“Ver los días en Producción diaria”** te lleva ahí. El trabajo del día también se arma y se termina en esa pantalla.' },
         { t: 'h', x: 'Valor de la hora-hombre y % de premio' },
         { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora-hombre y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días ya terminados conservan los que tenían. Cada cambio queda anotado en un historial.' },
-        { t: 'h', x: 'Historial de días' },
-        { t: 'p', x: 'Lista cada día con producción propuesta: lo propuesto, lo completado, el resultado (cumplido, en curso o cuántas horas faltaron) y la recompensa. Tocá un día para ver su desglose arriba.' },
-        { t: 'img', src: 'recompensas-historial.png', pie: 'Parámetros del cálculo e historial de días.' },
-        { t: 'nota', x: 'Un día terminado guarda una copia de su resultado: si después se cambia el valor de la hora-hombre o se edita un pedido, ese día no se modifica. Los días cargados con el sistema anterior (objetivos por producto) también se pueden consultar acá.' },
+        { t: 'nota', x: 'Un día terminado guarda una copia de su resultado: si después se cambia el valor de la hora-hombre o se edita un pedido, ese día no se modifica.' },
         { t: 'p', x: 'Si el taller venía usando los bonos individuales del sistema anterior, al final de la pantalla aparece **“Historial anterior: bonos individuales”**. Es solo de consulta: esos bonos ya no se generan, pero siguen contando como gasto en Estadísticas.' }
       ]
     },
@@ -416,10 +425,14 @@ export const manual = {
             '**Proyectado: si se vende todo el stock**: cuánto se ganaría si se vendieran todos los productos activos. Es una estimación, no dinero ya cobrado.',
             '**Facturación por mes**, **rentabilidad por producto** y **margen**.',
             '**Recompensas pagadas**: la recompensa del equipo de cada producción diaria terminada (más los bonos individuales del sistema anterior, si los hubo). Se cuenta como gasto.',
-            '**Producción diaria**: cuántos días terminados se completaron, las horas-hombre propuestas y completadas y las recompensas del período.',
-            '**Rendimiento de empleados**: etapas y horas-hombre que completó cada uno en el período y lo que tiene pendiente.'
+            '**Producción diaria**: días con producción, cuántos de los terminados se cumplieron, horas-hombre propuestas y completadas y el **promedio por día**.',
+            '**Horas-hombre por día**: un gráfico con una columna por día (los últimos 14 del período). La parte clara es lo completado y la oscura lo propuesto; ✓ marca los días cumplidos. Pasando el mouse por una columna se ve su detalle, y con **“Ver los datos como tabla”** se ven los mismos números en una tabla.',
+            '**Trabajo pendiente**: las horas-hombre que faltan completar en los pedidos abiertos y cuántos días de producción llevarían al ritmo del período.',
+            '**Rendimiento de empleados**: horas-hombre que completó cada uno en el período, cuántas fueron parte de días cumplidos (los que pagaron recompensa al equipo) y lo que tiene pendiente.'
           ]
         },
+        { t: 'img', src: 'estadisticas-produccion.png', pie: 'Producción diaria en Estadísticas: días cumplidos, horas-hombre por día y trabajo pendiente.' },
+        { t: 'p', x: 'Los gastos de producción se cuentan al completar cada etapa: el costo de cada producto del pedido se reparte entre sus etapas **según sus horas-hombre** (una etapa de 6 horas pesa el triple que una de 2).' },
         { t: 'p', x: 'Para el conteo de productos, el sistema distingue tres grupos: **activos**, **vendidos** y **desactivados**. Los desactivados no suman a las ventas ni a las ganancias, y los vendidos se mantienen en el historial aunque el producto se elimine.' },
         { t: 'nota', x: 'Si el período elegido no tiene ventas, verás “Sin ventas registradas en el período”. Con el botón **Limpiar** volvés a ver todo.' }
       ]
@@ -563,7 +576,8 @@ export const manual = {
             ['No puedo crear un pedido: dice que las etapas tienen que coincidir', 'La suma de las horas de las etapas tiene que ser igual a las horas-hombre estimadas por unidad. Ajustá las horas de alguna etapa o tocá “Usar X hs como estimación”.'],
             ['Un empleado no ve una etapa en “Mis tareas”', 'Revisá en Tareas a quién está asignada. Si se eliminó la cuenta de un empleado, sus etapas quedan sin asignar.'],
             ['No puedo agregar una etapa a la producción del día', 'Ya está completada, ya está propuesta en otra producción abierta o el pedido está pausado, cancelado o terminado. El mensaje te dice cuál.'],
-            ['La recompensa del día da $0', 'Solo se paga cuando el administrador termina la producción del día con **todas** las etapas propuestas completadas. Revisá en Producción diaria qué etapa falta; si el día ya se cerró, reabrilo.'],
+            ['¿Cómo veo o reabro un día anterior?', 'En **Producción diaria**, tocá el día en el **Historial de días** (al final de la pantalla) o elegí su fecha arriba. Si ya está terminado, el botón **“Reabrir producción”** está junto al título “Propuesto para el…”.'],
+            ['La recompensa del día da $0', 'Solo se paga cuando el administrador termina la producción del día con **todas** las etapas propuestas completadas. Revisá en Producción diaria qué etapa falta; si el día ya se cerró, abrilo desde el historial y reabrilo.'],
             ['Una etapa se marcó como terminada por error', 'El administrador la reabre desde Producción diaria o desde Tareas.'],
             ['No puedo eliminar a un empleado', 'Tiene tareas, recompensas o registros asociados. Se conserva su historial.'],
             ['Un número de las estadísticas no coincide', 'Recordá que los productos desactivados no cuentan como venta. Recargá la página y revisá el período elegido.']

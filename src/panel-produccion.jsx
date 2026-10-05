@@ -14,6 +14,7 @@ import { Badge, Empty, Heading, Progress, Stat, useAviso } from './ui.jsx'
 //      la producción diaria como terminada. Si se completó todo lo
 //      propuesto, el equipo cobra las horas-hombre estimadas como
 //      recompensa (valor hora × % de premio, ver Recompensas).
+// Abajo, el historial de días: tocar uno lo abre arriba con su desglose.
 // ---------------------------------------------------------------------
 
 const textoEstado = jornada => {
@@ -40,10 +41,18 @@ export default function PanelProduccion() {
   const [dia, setDia] = useState(hoy())
   const jornada = useData(`/produccion/jornada/${dia}`, null)
   const pedidos = useData('/pedidos')
+  const historial = useData('/produccion/jornadas')
   const { mostrar, nodo } = useAviso()
   const [ocupado, setOcupado] = useState(false)
 
-  const recargar = () => Promise.all([jornada.load(), pedidos.load()])
+  const recargar = () => Promise.all([jornada.load(), pedidos.load(), historial.load()])
+
+  // Elegir un día del historial lo abre arriba (con su desglose y, si está
+  // terminado, el botón para reabrirlo).
+  const elegirDia = fecha => {
+    setDia(fecha)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   // Corre una acción contra la API, recarga y avisa el resultado.
   const ejecutar = async (accion, mensaje) => {
@@ -109,7 +118,14 @@ export default function PanelProduccion() {
           <section className="stats-grid dashboard-stats">
             <Stat label="Propuesto" value={horas(datos.objetivo_horas)} hint={`${datos.etapas_totales} ${datos.etapas_totales === 1 ? 'etapa' : 'etapas'} de pedidos`} tone={datos.estado === 'SIN_PLANIFICAR' ? 'danger' : ''} />
             <Stat label="Completado" value={horas(datos.horas_completadas)} hint={`${datos.avance}% · ${datos.etapas_completadas} de ${datos.etapas_totales} etapas`} />
-            <Stat label="Estado" value={textoEstado(datos)} hint={datos.estado === 'TERMINADA' ? `Por ${datos.terminada_por || '—'} el ${fecha(datos.terminada_en)}` : datos.cumplido ? 'Todo completado: falta tu verificación' : datos.estado === 'ABIERTA' ? `Faltan ${horas(datos.horas_pendientes)}` : 'Agregá trabajo abajo'} />
+            <Stat
+              label="Estado"
+              value={textoEstado(datos)}
+              hint={datos.modelo === 'productos' ? 'Día del sistema anterior'
+                : datos.estado === 'TERMINADA' ? `Por ${datos.terminada_por || '—'} el ${fecha(datos.terminada_en)}`
+                  : datos.cumplido ? 'Todo completado: falta tu verificación'
+                    : datos.estado === 'ABIERTA' ? `Faltan ${horas(datos.horas_pendientes)}` : 'Agregá trabajo abajo'}
+            />
             <Stat
               label={datos.estado === 'TERMINADA' ? 'Recompensa del equipo' : 'Recompensa al completar'}
               value={dinero(datos.estado === 'TERMINADA' ? datos.recompensa : datos.recompensa_al_cumplir)}
@@ -125,13 +141,16 @@ export default function PanelProduccion() {
             <div>
               <h2>Propuesto para el {fechaDia(dia)}</h2>
               <p>{datos.estado === 'TERMINADA'
-                ? 'Producción terminada: quedó guardada tal como se verificó.'
+                ? 'Producción terminada: quedó guardada tal como se verificó. Si necesitás cambiarla, reabrila.'
                 : 'Cuando los empleados completen sus etapas, revisá el trabajo: si algo no quedó bien, reabrí la etapa. Después marcá la producción como terminada.'}</p>
             </div>
+            {datos.estado === 'TERMINADA' && datos.modelo === 'etapas' && (
+              <button type="button" className="secondary" disabled={ocupado} onClick={reabrirDia}>Reabrir producción</button>
+            )}
           </section>
 
           {datos.modelo === 'productos' ? (
-            <p className="notice">Este día se cargó con el sistema anterior (objetivos por producto). Su detalle se ve en Recompensas.</p>
+            <DesgloseAnterior jornada={datos} />
           ) : datos.etapas.length ? (
             <JornadaPropuesta jornada={datos} editable={abierta} ocupado={ocupado} onQuitar={quitar} onReabrir={reabrirEtapa} />
           ) : (
@@ -144,16 +163,110 @@ export default function PanelProduccion() {
               <button type="button" className="primary" disabled={ocupado} onClick={terminar}>Marcar producción diaria terminada</button>
             </div>
           )}
-          {datos.estado === 'TERMINADA' && datos.modelo === 'etapas' && (
-            <div className="form-actions acciones-jornada">
-              <button type="button" className="secondary" disabled={ocupado} onClick={reabrirDia}>Reabrir producción</button>
-            </div>
-          )}
-
           {abierta && (
             <AgregarTrabajo dia={dia} pedidos={pedidos} ocupado={ocupado} onAgregar={agregar} />
           )}
         </>
+      )}
+
+      <HistorialDias historial={historial} seleccionado={dia} onElegir={elegirDia} />
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------
+// HISTORIAL DE DÍAS
+// Cada día con producción propuesta: los terminados con su resultado y la
+// recompensa que se pagó, los abiertos con cómo vienen. Tocar un día lo
+// abre arriba, con su desglose (y el botón para reabrirlo si ya se terminó).
+// ---------------------------------------------------------------------
+function HistorialDias({ historial, seleccionado, onElegir }) {
+  const [visibles, setVisibles] = useState(20)
+  const resultado = fila => {
+    if (fila.estado === 'ABIERTA') return <span className="muted">{fila.cumplido ? 'Falta verificar' : 'En curso'}</span>
+    if (fila.cumplido) return <span className="positivo">✅ Cumplido</span>
+    return <span className="negativo">{fila.objetivo_horas > 0 ? `Faltaron ${horas(fila.objetivo_horas - fila.horas_completadas)}` : 'Sin objetivo'}</span>
+  }
+
+  return (
+    <>
+      <section className="section-heading historial-dias">
+        <div>
+          <h2>Historial de días</h2>
+          <p>Cada día con producción propuesta. Tocá un día para ver arriba qué se propuso y qué se completó; si ya está terminado, desde ahí lo podés reabrir.</p>
+        </div>
+      </section>
+
+      {historial.loading && !historial.data.length ? <p>Cargando historial...</p> : historial.error ? <p className="form-error">{historial.error}</p> : historial.data.length ? (
+        <>
+          <section className="ranking-tabla">
+            <div className="ranking-head jornada-head">
+              <span>Día</span><span>Propuesto</span><span>Completado</span><span>Resultado</span><span>Valor hora · premio</span><span>Recompensa</span>
+            </div>
+            {historial.data.slice(0, visibles).map(fila => {
+              const elegido = fila.fecha === seleccionado
+              return (
+                <div
+                  className={`ranking-fila jornada-fila${elegido ? ' seleccionada' : ''}`}
+                  key={fila.fecha}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={elegido ? 'date' : undefined}
+                  title="Ver la producción de este día"
+                  onClick={() => onElegir(fila.fecha)}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onElegir(fila.fecha) } }}
+                >
+                  <b>{fechaDia(fila.fecha)}{fila.fecha === hoy() ? ' · hoy' : ''}</b>
+                  <span>{horas(fila.objetivo_horas)}</span>
+                  <span>{horas(fila.horas_completadas)}</span>
+                  {resultado(fila)}
+                  <span>{dinero(fila.valor_hora)} · {fila.porcentaje_premio}%</span>
+                  <b className={fila.recompensa > 0 ? 'positivo' : ''}>{fila.estado === 'ABIERTA' ? '—' : dinero(fila.recompensa)}</b>
+                </div>
+              )
+            })}
+          </section>
+          {historial.data.length > visibles && (
+            <button type="button" className="add-stage" onClick={() => setVisibles(visibles + 20)}>Mostrar más días ({historial.data.length - visibles})</button>
+          )}
+        </>
+      ) : (
+        <p className="notice">Todavía no hay días con producción propuesta.</p>
+      )}
+    </>
+  )
+}
+
+// Día cargado con el sistema anterior: objetivos diarios por producto y
+// unidades producidas (solo consulta, no se puede reabrir).
+function DesgloseAnterior({ jornada }) {
+  return (
+    <>
+      <p className="notice">Este día se cargó con el sistema anterior (objetivos diarios por producto y unidades producidas). Se muestra como se calculó.</p>
+      {jornada.objetivos_anteriores.length ? (
+        <section className="ranking-tabla">
+          <div className="ranking-head produccion-head">
+            <span>Producto</span><span>Objetivo diario</span><span>Horas-hombre c/u</span><span>Horas del objetivo</span><span />
+          </div>
+          {jornada.objetivos_anteriores.map(fila => (
+            <div className="ranking-fila produccion-fila" key={fila.producto_id}>
+              <b>{fila.producto}</b><span>{fila.cantidad}</span><span>{horas(fila.tiempo_estandar)}</span><span>{horas(fila.horas)}</span><span />
+            </div>
+          ))}
+        </section>
+      ) : <p className="notice">Este día no tenía objetivos cargados.</p>}
+
+      {jornada.produccion_anterior.length > 0 && (
+        <section className="ranking-tabla">
+          <div className="ranking-head produccion-head">
+            <span>Producto</span><span>Unidades</span><span>Horas-hombre c/u</span><span>Horas producidas</span><span />
+          </div>
+          {jornada.produccion_anterior.map(fila => (
+            <div className="ranking-fila produccion-fila" key={fila.producto_id}>
+              <b>{fila.producto}</b><span>{fila.cantidad}</span><span>{horas(fila.tiempo_estandar)}</span><span>{horas(fila.horas)}</span><span />
+            </div>
+          ))}
+        </section>
       )}
     </>
   )

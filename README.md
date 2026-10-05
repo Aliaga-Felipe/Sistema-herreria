@@ -78,7 +78,7 @@ En **Mis tareas** el empleado ve sus etapas asignadas, las de la producción de 
 
 ### Recompensa del equipo
 
-Todo el taller es un único equipo y la recompensa se paga por día, por completar la producción propuesta para la jornada (nunca por empleado). En **Producción diaria** el admin la arma y la da por terminada; en **Recompensas** se ve el desglose y el historial.
+Todo el taller es un único equipo y la recompensa se paga por día, por completar la producción propuesta para la jornada (nunca por empleado). En **Producción diaria** el admin la arma, la da por terminada y consulta el **historial de días** (tocar un día lo abre con su desglose y, si ya estaba terminado, desde ahí se reabre); en **Recompensas** se ve cuánto cobró el equipo (hoy, en el mes y en total) y se configuran el valor hora y el % de premio.
 
 ```
 propuesto (hs)    = Σ horas-hombre estimadas de las etapas propuestas para el día
@@ -92,12 +92,12 @@ recompensa        = propuesto × valor hora-hombre × % de premio   si se comple
 - Armar, verificar y cerrar la producción del día, el valor hora-hombre y el % de premio (por defecto 100%) son solo de `admin` o `super_admin`; la API lo valida. El valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`).
 - Una etapa que ya se pagó en un día terminado y cumplido no se puede reabrir (hay que reabrir primero ese día).
 - La lógica está en funciones puras en `server/recompensa-equipo.js` y la lectura/cierre en `server/jornadas.js`. Tests: `npm test` (los de permisos usan la base de `.env`).
-- Los días del modelo anterior (objetivos diarios por producto) quedan como terminados y se ven en Recompensas. Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto.
+- Los días del modelo anterior (objetivos diarios por producto) quedan como terminados y se ven en el historial de Producción diaria. Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto.
 
 ### Panel y estadísticas
 
 - **Panel de control**: pedidos activos y atrasados, etapas y horas-hombre pendientes, ingresos en curso, **producción de hoy** (avance y recompensa), productos vendidos, empleados con tareas pendientes y accesos directos (nuevo pedido, producto, empleado, producción diaria, tareas y recompensas).
-- **Estadísticas**: apartado propio y filtrable por fechas, con ingresos cobrados y en curso, gastos de producción y recompensas, ganancia neta y proyectada, facturación por mes, resumen de las producciones diarias (días completados, horas propuestas y completadas), rentabilidad por producto y rendimiento de cada empleado en etapas y horas-hombre completadas.
+- **Estadísticas**: apartado propio y filtrable por fechas, con ingresos cobrados y en curso, gastos de producción y recompensas, ganancia neta y proyectada, facturación por mes, **producción diaria** (días con producción y cumplidos, horas-hombre propuestas y completadas, promedio por día, gráfico de horas-hombre por día con su tabla, trabajo pendiente y días de producción estimados), rentabilidad por producto y rendimiento de cada empleado (etapas y horas-hombre completadas, horas aportadas a días cumplidos y pendientes). El costo de cada etapa completada se reparte según sus horas-hombre (`server/metricas.js`).
 
 ### Manual de usuario
 
@@ -115,8 +115,8 @@ recompensa        = propuesto × valor hora-hombre × % de premio   si se comple
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
 | Pedidos | `GET|POST /api/pedidos` (cada producto con `horas_hombre` y sus etapas `{ nombre, horas_hombre, responsable_id }`), `GET|PATCH|DELETE /api/pedidos/:id`, `GET /api/pedidos/tareas-sugeridas`, `POST /api/pedidos/:id/items/:itemId/tareas`, `PATCH|DELETE /api/pedidos/:id/tareas/:tareaId` |
 | Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (reasignar), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` (sin informar tiempo), `PATCH /api/tareas/asignadas/PEDIDO/:id/reabrir` (admin) |
-| Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
-| Producción | `GET|DELETE /api/produccion/jornada/:fecha`, `POST /api/produccion/jornada/:fecha/etapas` (`{ pedido_id }`, `{ pedido_item_id }` o `{ etapas }`), `DELETE /api/produccion/jornada/:fecha/etapas/:etapaId`, `POST /api/produccion/jornada/:fecha/terminar`, `POST /api/produccion/jornada/:fecha/reabrir` |
+| Recompensas | `GET /api/recompensas/resumen` (hoy, mes y total), `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
+| Producción | `GET /api/produccion/jornadas` (historial de días), `GET|DELETE /api/produccion/jornada/:fecha`, `POST /api/produccion/jornada/:fecha/etapas` (`{ pedido_id }`, `{ pedido_item_id }` o `{ etapas }`), `DELETE /api/produccion/jornada/:fecha/etapas/:etapaId`, `POST /api/produccion/jornada/:fecha/terminar`, `POST /api/produccion/jornada/:fecha/reabrir` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
 | Manual | `GET /api/manual/pdf` (PDF del manual, requiere sesión) |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

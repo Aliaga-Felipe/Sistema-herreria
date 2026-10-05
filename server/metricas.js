@@ -14,9 +14,9 @@ import { pool } from './db.js'
 //     venta ni stock: no entra en ninguna cuenta de dinero.
 //   * Pedido cobrado: pedido TERMINADO (fecha: terminado_en).
 //   * Gastos de producción: costo de cada etapa de pedido COMPLETADA (el
-//     costo del item del pedido se reparte en partes iguales entre sus
-//     etapas; fecha: completado_en) + costo de las etapas de tareas libres
-//     realizadas + costo de los productos vendidos.
+//     costo del item del pedido se reparte entre sus etapas según sus
+//     horas-hombre; fecha: completado_en) + costo de las etapas de tareas
+//     libres realizadas + costo de los productos vendidos.
 //   * Recompensas: la del equipo por día, solo de las producciones
 //     diarias que el admin marcó como TERMINADAS (jornadas_equipo, fecha:
 //     fecha) + las individuales del sistema anterior (recompensas, fecha:
@@ -44,12 +44,16 @@ export const enRango = columna => `($1::date IS NULL OR ${columna} >= $1::date) 
 
 // Costo de UNA etapa de pedido: el costo de producción del item
 // (cantidad × (materiales + mano de obra), copiado al crear el pedido) se
-// reparte en partes iguales entre las etapas de ese item. Se suma además
+// reparte entre las etapas de ese item en proporción a sus horas-hombre
+// (una soldadura de 6 hs pesa el triple que una pintura de 2 hs). Si las
+// etapas no tienen horas cargadas, se reparte en partes iguales. Así la
+// suma de las etapas siempre da el costo del item. Se suma además
 // costo_estimado, que sólo tiene valor en pedidos viejos (antes el costo
 // se cargaba por etapa y los items quedaban en 0).
 const costoEtapaSql = `COALESCE(pe.costo_estimado, 0)
   + COALESCE(i.cantidad * (i.costo_materiales_unitario + i.costo_mano_obra_unitario)
-      / NULLIF((SELECT COUNT(*) FROM pedido_etapas x WHERE x.pedido_item_id = pe.pedido_item_id), 0), 0)`
+      * COALESCE(pe.horas_hombre / NULLIF((SELECT SUM(x.horas_hombre) FROM pedido_etapas x WHERE x.pedido_item_id = pe.pedido_item_id), 0),
+                 1.0 / NULLIF((SELECT COUNT(*) FROM pedido_etapas x WHERE x.pedido_item_id = pe.pedido_item_id), 0)), 0)`
 
 const numero = valor => Math.round((Number(valor) || 0) * 100) / 100
 

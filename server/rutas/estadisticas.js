@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, auth, leerConfiguracion } from '../comun.js'
 import { calcularMetricas, enRango, validarFecha } from '../metricas.js'
-import { fechaDeHoy, obtenerJornada } from '../jornadas.js'
+import { fechaDeHoy, listarJornadas, obtenerJornada } from '../jornadas.js'
 
 const router = Router()
 const unaFila = async (sql, valores = []) => (await pool.query(sql, valores)).rows[0]
@@ -90,31 +90,54 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   const metricas = await calcularMetricas({ desde, hasta })
 
   // Rendimiento por empleado dentro del rango: etapas y horas-hombre
-  // completadas en el período (por completado_en) + lo que tiene pendiente
-  // hoy. Ya no hay tiempos reales: el empleado no informa cuánto tardó.
+  // completadas en el período (por completado_en), cuántas de esas horas
+  // fueron parte de producciones diarias cumplidas (las que pagaron
+  // recompensa al equipo) y lo que tiene pendiente hoy. Ya no hay tiempos
+  // reales: el empleado no informa cuánto tardó.
   const rendimiento = await filas(`SELECT u.id, u.nombre, u.email, u.activo,
       COUNT(v.id) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})::int AS completadas,
       COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA')::int AS pendientes,
       COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::float8 AS horas_completadas,
-      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes
+      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes,
+      COALESCE((SELECT SUM(pe.horas_hombre) FROM pedido_etapas pe
+          JOIN jornada_etapas je ON je.pedido_etapa_id = pe.id
+          JOIN jornadas_equipo j ON j.fecha = je.fecha AND j.estado = 'TERMINADA' AND j.cumplido
+        WHERE pe.responsable_id = u.id AND ${enRango('j.fecha')}), 0)::float8 AS horas_premiadas
     FROM usuarios u
     LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
     WHERE LOWER(u.rol::text) = 'empleado'
     GROUP BY u.id
     ORDER BY horas_completadas DESC, completadas DESC, u.nombre`, parametros)
 
-  // Producciones diarias del período: cuántas se propusieron, cuántas se
-  // terminaron completas (con recompensa) y cuántas horas-hombre sumaron.
-  const produccion = await unaFila(`SELECT
-      COUNT(*)::int AS dias,
-      COUNT(*) FILTER (WHERE estado = 'TERMINADA')::int AS terminadas,
-      COUNT(*) FILTER (WHERE estado = 'TERMINADA' AND cumplido)::int AS cumplidas,
-      COUNT(*) FILTER (WHERE estado = 'ABIERTA')::int AS abiertas,
-      COALESCE(SUM(objetivo_horas) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS horas_propuestas,
-      COALESCE(SUM(horas_producidas) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS horas_completadas,
-      COALESCE(SUM(recompensa) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS recompensas
-    FROM jornadas_equipo
-    WHERE ${enRango('fecha')}`, parametros)
+  // Producciones diarias del período (los días abiertos se calculan en
+  // vivo, igual que en Producción diaria): cuántas se terminaron, cuántas se
+  // cumplieron, horas propuestas y completadas, recompensas y la serie de
+  // los últimos días para el gráfico. Además, el trabajo que queda pendiente
+  // en los pedidos abiertos (hoy, no depende del rango) y cuántos días de
+  // producción llevaría al ritmo del período.
+  const jornadas = await listarJornadas({ desde, hasta, limite: null })
+  const terminadas = jornadas.filter(dia => dia.estado === 'TERMINADA')
+  const suma = (lista, campo) => Math.round(lista.reduce((total, fila) => total + (Number(fila[campo]) || 0), 0) * 100) / 100
+  const pendiente = await unaFila(`SELECT COUNT(*)::int AS etapas, COALESCE(SUM(pe.horas_hombre), 0)::float8 AS horas
+    FROM pedido_etapas pe JOIN pedidos p ON p.id = pe.pedido_id
+    WHERE pe.estado <> 'COMPLETADA' AND p.estado IN ('PENDIENTE', 'EN_PRODUCCION', 'PAUSADO')`)
+  const horasCompletadas = suma(terminadas, 'horas_completadas')
+  const promedioPorDia = terminadas.length ? Math.round((horasCompletadas / terminadas.length) * 100) / 100 : 0
+  const produccion = {
+    dias: jornadas.length,
+    terminadas: terminadas.length,
+    cumplidas: terminadas.filter(dia => dia.cumplido).length,
+    abiertas: jornadas.length - terminadas.length,
+    horas_propuestas: suma(terminadas, 'objetivo_horas'),
+    horas_completadas: horasCompletadas,
+    recompensas: suma(terminadas, 'recompensa'),
+    promedio_por_dia: promedioPorDia,
+    pendiente,
+    dias_estimados: promedioPorDia > 0 ? Math.ceil(pendiente.horas / promedioPorDia) : null,
+    // Los últimos 14 días con producción, del más viejo al más nuevo.
+    serie: jornadas.slice(0, 14).reverse().map(({ fecha, estado, cumplido, objetivo_horas, horas_completadas, recompensa, recompensa_al_cumplir }) =>
+      ({ fecha, estado, cumplido, objetivo_horas, horas_completadas, recompensa, recompensa_al_cumplir: recompensa_al_cumplir ?? null }))
+  }
 
   // Ventas reales del período, una fila por evento: cada producto
   // vendido (estado VENDIDO, o borrado después de venderse) y cada item de

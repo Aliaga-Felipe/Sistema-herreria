@@ -67,7 +67,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     Categorías: <PanelCategorias />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
-    Recompensas: <PanelRecompensas />,
+    Recompensas: <PanelRecompensas ir={ir} />,
     Estadísticas: <PanelEstadisticas />,
     Usuarios: <PanelUsuarios intencion={intencion} limpiarIntencion={limpiar} rol={rol} />,
     Configuración: <PanelConfiguracion rol={rol} />,
