@@ -1,430 +1,299 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { api, dinero, duracion, fecha, porcentaje, useData } from './api.js'
-import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, Stat, useAviso } from './ui.jsx'
-import { fechaDia, horas, hoyLocal as hoy } from './panel-recompensas.jsx'
+import React, { useEffect, useState } from 'react'
+import { api, dinero, etiquetaPrioridad, fecha, fechaDia, horas, hoyLocal as hoy, sumarHoras, useData } from './api.js'
+import { Badge, Empty, Heading, Progress, Stat, useAviso } from './ui.jsx'
 
-const textoEstadoPedido = { PENDIENTE: 'pendiente', EN_PRODUCCION: 'en producción', PAUSADO: 'pausado', TERMINADO: 'terminado', CANCELADO: 'cancelado' }
+// ---------------------------------------------------------------------
+// PRODUCCIÓN DIARIA
+// La producción de un día es la lista de etapas de pedidos que se propone
+// terminar ese día (ver server/jornadas.js):
+//   1. El admin agrega trabajo: un pedido completo, un producto o etapas
+//      sueltas. Cada etapa ya tiene su empleado y sus horas-hombre (se
+//      definieron al crear el pedido).
+//   2. Los empleados completan sus etapas desde Mis tareas.
+//   3. El admin verifica (puede reabrir una etapa mal terminada) y marca
+//      la producción diaria como terminada. Si se completó todo lo
+//      propuesto, el equipo cobra las horas-hombre estimadas como
+//      recompensa (valor hora × % de premio, ver Recompensas).
+// ---------------------------------------------------------------------
 
-// Resumen legible de los productos de un pedido, para elegirlo como objetivo.
-const resumenPedido = pedido =>
-  `${pedido.codigo} · ${pedido.items.map(item => `${item.cantidad}× ${item.producto}`).join(', ') || 'Sin productos'} · ${textoEstadoPedido[pedido.estado] || pedido.estado}`
+const textoEstado = jornada => {
+  if (jornada.estado === 'SIN_PLANIFICAR') return 'Sin planificar'
+  if (jornada.estado === 'TERMINADA') return jornada.cumplido ? '✅ Terminada' : 'Terminada sin completar'
+  return jornada.cumplido ? 'Lista para verificar' : 'En curso'
+}
+
+// Agrupa una lista plana de etapas por pedido y, dentro, por producto.
+function agruparPorPedido(etapas) {
+  const pedidos = new Map()
+  for (const etapa of etapas) {
+    const clavePedido = String(etapa.pedido_id)
+    if (!pedidos.has(clavePedido)) pedidos.set(clavePedido, { id: etapa.pedido_id, codigo: etapa.pedido, estado: etapa.pedido_estado, productos: new Map() })
+    const productos = pedidos.get(clavePedido).productos
+    const claveProducto = String(etapa.pedido_item_id)
+    if (!productos.has(claveProducto)) productos.set(claveProducto, { id: etapa.pedido_item_id, nombre: etapa.producto, cantidad: etapa.cantidad, etapas: [] })
+    productos.get(claveProducto).etapas.push(etapa)
+  }
+  return [...pedidos.values()].map(pedido => ({ ...pedido, productos: [...pedido.productos.values()] }))
+}
 
 export default function PanelProduccion() {
-  const objetivos = useData('/produccion/objetivos')
-  const productos = useData('/productos?activos=true')
+  const [dia, setDia] = useState(hoy())
+  const jornada = useData(`/produccion/jornada/${dia}`, null)
   const pedidos = useData('/pedidos')
   const { mostrar, nodo } = useAviso()
-  const [editando, setEditando] = useState(null)
-  // Jornada de hoy: valor hora y % de premio vigentes, para mostrar cuánto
-  // cobra el equipo al completar los objetivos.
-  const jornadaHoy = useData(`/recompensas/equipo/dia/${hoy()}`, null)
-  const [refresco, setRefresco] = useState(0)
-  const objetivosCambiaron = () => { jornadaHoy.load(); setRefresco(valor => valor + 1) }
+  const [ocupado, setOcupado] = useState(false)
 
-  const [rango, setRango] = useState({ desde: '', hasta: '' })
-  const consultaRegistros = useMemo(() => {
-    const parametros = new URLSearchParams()
-    if (rango.desde) parametros.set('desde', rango.desde)
-    if (rango.hasta) parametros.set('hasta', rango.hasta)
-    const texto = parametros.toString()
-    return `/produccion/registros${texto ? `?${texto}` : ''}`
-  }, [rango.desde, rango.hasta])
-  const registros = useData(consultaRegistros)
+  const recargar = () => Promise.all([jornada.load(), pedidos.load()])
 
-  const recargar = () => Promise.all([objetivos.load(), registros.load()])
-
-  const rutaObjetivo = objetivo => objetivo.tipo === 'pedido'
-    ? `/produccion/objetivos/pedido/${objetivo.pedido_id}`
-    : `/produccion/objetivos/${objetivo.producto_id}`
-
-  const guardarObjetivo = async objetivo => {
-    await api.put(rutaObjetivo(objetivo), objetivo, objetivos.token)
-    setEditando(null)
-    await objetivos.load()
-    objetivosCambiaron()
-    mostrar('Objetivo guardado.')
-  }
-
-  const eliminarObjetivo = async objetivo => {
-    const nombre = objetivo.tipo === 'pedido' ? `terminar el pedido ${objetivo.pedido}` : `"${objetivo.producto}"`
-    if (!window.confirm(`¿Quitar el objetivo de ${nombre}?`)) return
+  // Corre una acción contra la API, recarga y avisa el resultado.
+  const ejecutar = async (accion, mensaje) => {
+    setOcupado(true)
     try {
-      await api.del(rutaObjetivo(objetivo), objetivos.token)
-      await objetivos.load()
-      objetivosCambiaron()
-      mostrar('Objetivo eliminado.')
-    } catch (error) { mostrar(error.message, 'error') }
-  }
-
-  const registrarProduccion = async registro => {
-    try {
-      const resultado = await api.post('/produccion/registros', registro, registros.token)
+      const resultado = await accion()
       await recargar()
-      mostrar(resultado.objetivo_cantidad === null || resultado.cumplido
-        ? `Producción de ${resultado.producto} registrada.`
-        : `Producción de ${resultado.producto} registrada. No llegó a su objetivo de ${resultado.objetivo_cantidad}.`)
+      mostrar(typeof mensaje === 'function' ? mensaje(resultado) : mensaje)
       return true
-    } catch (error) { mostrar(error.message, 'error'); return false }
+    } catch (error) { mostrar(error.message, 'error'); return false } finally { setOcupado(false) }
   }
 
-  const objetivosProducto = objetivos.data.filter(objetivo => objetivo.tipo !== 'pedido')
-  const objetivosActivos = objetivosProducto.filter(objetivo => objetivo.activo)
-  const productosConObjetivo = new Set(objetivosProducto.map(objetivo => String(objetivo.producto_id)))
-  const productosSinObjetivo = productos.data.filter(producto => !productosConObjetivo.has(String(producto.id)))
+  const agregar = seleccion => ejecutar(
+    () => api.post(`/produccion/jornada/${dia}/etapas`, seleccion, jornada.token),
+    resultado => `${resultado.agregadas === 1 ? 'Se agregó 1 etapa' : `Se agregaron ${resultado.agregadas} etapas`} a la producción del ${fechaDia(dia)}.`
+      + (resultado.omitidas?.length ? ` ${resultado.omitidas.length} no se agregaron (${resultado.omitidas.map(etapa => `${etapa.nombre}: ${etapa.motivo}`).join('; ')}).` : '')
+  )
 
-  // Objetivo del equipo (base de la recompensa): Σ cantidad × horas-hombre
-  // de los objetivos activos. El cálculo que vale es el del servidor
-  // (server/recompensa-equipo.js); esto es solo para mostrarlo acá.
-  const horasObjetivo = objetivo => (Number(objetivo.cantidad_objetivo) || 0) * (Number(objetivo.horas_hombre) || 0)
-  const objetivoEquipo = objetivosActivos.reduce((total, objetivo) => total + horasObjetivo(objetivo), 0)
-  // Lo que paga una cantidad de horas-hombre con el valor y el % vigentes.
-  const valorDe = horasHombre => horasHombre * (jornadaHoy.data?.valor_hora || 0) * ((jornadaHoy.data?.porcentaje_premio ?? 100) / 100)
+  const quitar = etapa => ejecutar(() => api.del(`/produccion/jornada/${dia}/etapas/${etapa.id}`, jornada.token), `"${etapa.nombre}" ya no está en la producción del día.`)
 
-  // Pedidos que se pueden elegir como objetivo: abiertos y sin objetivo propio.
-  const pedidosConObjetivo = new Set(objetivos.data.filter(objetivo => objetivo.tipo === 'pedido').map(objetivo => String(objetivo.pedido_id)))
-  const pedidosDisponibles = pedidos.data.filter(pedido => !['TERMINADO', 'CANCELADO'].includes(pedido.estado) && !pedidosConObjetivo.has(String(pedido.id)))
+  const reabrirEtapa = etapa => {
+    if (!window.confirm(`¿Reabrir "${etapa.nombre}"? Vuelve a pendiente y ${etapa.responsable || 'el empleado'} la va a ver de nuevo en Mis tareas para terminarla.`)) return
+    ejecutar(() => api.patch(`/tareas/asignadas/PEDIDO/${etapa.id}/reabrir`, {}, jornada.token), `"${etapa.nombre}" se reabrió.`)
+  }
 
-  // Un producto por fila de pedido en producción, con sus propias etapas
-  // (mismo armado que la tabla de Pedidos, ver panel-pedidos.jsx).
-  const enProduccion = pedidos.data
-    .filter(pedido => pedido.estado === 'EN_PRODUCCION')
-    .flatMap(pedido => pedido.items.map(item => {
-      const etapasItem = pedido.etapas
-        .filter(etapa => String(etapa.pedido_item_id) === String(item.id))
-        .sort((a, b) => a.orden - b.orden)
-      const completadas = etapasItem.filter(etapa => etapa.estado === 'COMPLETADA').length
-      return { clave: `${pedido.id}-${item.id}`, pedido, item, etapasItem, completadas, avance: porcentaje(completadas, etapasItem.length) }
-    }))
+  const terminar = () => {
+    const datos = jornada.data
+    const faltan = datos.etapas_totales - datos.etapas_completadas
+    const pregunta = datos.cumplido
+      ? `¿Verificaste el trabajo? Se marca la producción del ${fechaDia(dia)} como terminada y el equipo cobra ${dinero(datos.recompensa_al_cumplir)} (${horas(datos.objetivo_horas)}).`
+      : `Faltan ${faltan} ${faltan === 1 ? 'etapa' : 'etapas'} por completar (${horas(datos.horas_pendientes)}). Si la terminás así, no hay recompensa para este día. ¿Continuar?`
+    if (!window.confirm(pregunta)) return
+    ejecutar(() => api.post(`/produccion/jornada/${dia}/terminar`, {}, jornada.token),
+      resultado => (resultado.cumplido ? `Producción terminada. Recompensa del equipo: ${dinero(resultado.recompensa)}.` : 'Producción terminada sin completar: sin recompensa.'))
+  }
+
+  const reabrirDia = () => {
+    if (!window.confirm(`¿Reabrir la producción del ${fechaDia(dia)}? La recompensa vuelve a $0 hasta que la termines de nuevo.`)) return
+    ejecutar(() => api.post(`/produccion/jornada/${dia}/reabrir`, {}, jornada.token), 'Producción reabierta.')
+  }
+
+  const vaciar = () => {
+    if (!window.confirm(`¿Quitar todo el trabajo propuesto para el ${fechaDia(dia)}? Las etapas no se borran de sus pedidos.`)) return
+    ejecutar(() => api.del(`/produccion/jornada/${dia}`, jornada.token), 'Se vació la producción del día.')
+  }
+
+  const datos = jornada.data
+  const abierta = datos?.estado !== 'TERMINADA'
 
   return (
     <>
-      <Heading kicker="Producción diaria" title="Producción y objetivos" text="Seguí cómo avanza cada producto en producción y definí objetivos diarios por producto o la terminación de un pedido.">
-        <button className="primary" onClick={() => setEditando({})}>+ Nuevo objetivo</button>
+      <Heading kicker="Producción diaria" title="Producción del día" text="Proponé qué se termina en el día (un pedido, un producto o etapas sueltas). Los empleados completan sus etapas y vos verificás y das por terminada la producción: si se completó todo, el equipo cobra las horas-hombre estimadas.">
+        <div className="actions">
+          <label className="rango">Día<input type="date" value={dia} onChange={event => event.target.value && setDia(event.target.value)} /></label>
+          {dia !== hoy() && <button className="filter" onClick={() => setDia(hoy())}>Hoy</button>}
+        </div>
       </Heading>
 
       {nodo}
 
-      <section className="stats-grid dashboard-stats">
-        <Stat label="Productos en producción" value={enProduccion.length} />
-        <Stat label="Objetivos" value={objetivos.data.length} hint={`${objetivos.data.filter(o => o.activo).length} activos`} />
-        <Stat label="Objetivo del equipo" value={horas(objetivoEquipo)} hint="Horas-hombre de la producción propuesta por día" tone={objetivoEquipo ? '' : 'danger'} />
-        <Stat label="Recompensa al cumplir" value={dinero(valorDe(objetivoEquipo))} hint="Para todo el equipo, si se completa el objetivo del día" />
-      </section>
+      {jornada.loading && !datos ? <p>Cargando la producción del día...</p> : jornada.error ? <p className="form-error">{jornada.error}</p> : datos && (
+        <>
+          <section className="stats-grid dashboard-stats">
+            <Stat label="Propuesto" value={horas(datos.objetivo_horas)} hint={`${datos.etapas_totales} ${datos.etapas_totales === 1 ? 'etapa' : 'etapas'} de pedidos`} tone={datos.estado === 'SIN_PLANIFICAR' ? 'danger' : ''} />
+            <Stat label="Completado" value={horas(datos.horas_completadas)} hint={`${datos.avance}% · ${datos.etapas_completadas} de ${datos.etapas_totales} etapas`} />
+            <Stat label="Estado" value={textoEstado(datos)} hint={datos.estado === 'TERMINADA' ? `Por ${datos.terminada_por || '—'} el ${fecha(datos.terminada_en)}` : datos.cumplido ? 'Todo completado: falta tu verificación' : datos.estado === 'ABIERTA' ? `Faltan ${horas(datos.horas_pendientes)}` : 'Agregá trabajo abajo'} />
+            <Stat
+              label={datos.estado === 'TERMINADA' ? 'Recompensa del equipo' : 'Recompensa al completar'}
+              value={dinero(datos.estado === 'TERMINADA' ? datos.recompensa : datos.recompensa_al_cumplir)}
+              hint={`${horas(datos.objetivo_horas)} × ${dinero(datos.valor_hora)} × ${datos.porcentaje_premio}%`}
+              tone={datos.estado === 'TERMINADA' && !datos.cumplido ? 'danger' : ''}
+            />
+          </section>
 
-      <section className="section-heading">
-        <div><h2>Productos en producción</h2><p>Avance de cada producto de los pedidos en producción, etapa por etapa.</p></div>
-      </section>
+          {datos.estado === 'ABIERTA' && <div className="jornada-progreso"><Progress value={datos.avance} /></div>}
+          {abierta && datos.estado !== 'SIN_PLANIFICAR' && datos.advertencias.map(texto => <p className="notice" key={texto}>⚠ {texto}</p>)}
 
-      {pedidos.loading ? <p>Cargando producción...</p> : pedidos.error ? <p className="form-error">{pedidos.error}</p> : enProduccion.length ? (
-        <section>
-          {enProduccion.map(fila => (
-            <article className="config-card" key={fila.clave}>
-              <div className="detalle-item-head">
-                <b>{fila.item.cantidad}× {fila.item.producto}</b>
-                <span className="task-status en_progreso">En producción</span>
-              </div>
-              <p className="stage-total">
-                Pedido {fila.pedido.codigo} · Entrega {fecha(fila.pedido.fecha_entrega)} ·
-                <b> Progreso general {fila.avance}%</b> ({fila.completadas} de {fila.etapasItem.length} etapas)
-              </p>
-              <Progress value={fila.avance} />
-
-              <div className="etapas-tabla">
-                {fila.etapasItem.map(etapa => (
-                  <div className="etapa-fila" key={etapa.id}>
-                    <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
-                    <Badge estado={etapa.estado} />
-                    <span className="etapa-tiempo">
-                      {duracion(etapa.minutos_estimados)}
-                      {etapa.minutos_reales ? <b> → {duracion(etapa.minutos_reales)}</b> : null}
-                    </span>
-                    <Semaforo valor={etapa.semaforo} compacto />
-                    <span className="etapa-responsable" title="La asignación se gestiona desde Tareas">{etapa.responsable || 'Sin asignar'}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          ))}
-        </section>
-      ) : (
-        <p className="notice">No hay productos en producción en este momento.</p>
-      )}
-
-      <section className="section-heading">
-        <div>
-          <h2>Objetivos</h2>
-          <p>
-            Cantidad diaria esperada por producto o pedidos que se busca terminar. Los objetivos activos por producto, pasados a
-            horas-hombre, forman el objetivo del equipo ({horas(objetivoEquipo)}): si la producción del día lo completa, el equipo cobra {dinero(valorDe(objetivoEquipo))}.
-          </p>
-        </div>
-      </section>
-
-      {objetivos.loading ? <p>Cargando objetivos...</p> : objetivos.data.length ? (
-        <section className="product-grid">
-          {objetivos.data.map(objetivo => (
-            <article className={`product-card ${objetivo.activo ? '' : 'inactivo'}`} key={objetivo.id}>
-              <div className="product-symbol">{objetivo.tipo === 'pedido' ? '⌁' : '◈'}</div>
-              <div className="product-info">
-                {objetivo.tipo === 'pedido' ? (
-                  <>
-                    <h3>Terminar pedido {objetivo.pedido}</h3>
-                    <p>{objetivo.pedido_estado === 'TERMINADO' ? '✅ Pedido terminado' : `Avance: ${objetivo.pedido_avance}% · ${textoEstadoPedido[objetivo.pedido_estado] || objetivo.pedido_estado}`}</p>
-                    <p>Entrega: {fecha(objetivo.pedido_fecha_entrega)}</p>
-                  </>
-                ) : (
-                  <>
-                    <h3>{objetivo.producto}</h3>
-                    <p>Objetivo: {objetivo.cantidad_objetivo} por día</p>
-                    <p>
-                      {Number(objetivo.horas_hombre)
-                        ? `${horas(horasObjetivo(objetivo))} estándar (${horas(objetivo.horas_hombre)} c/u)`
-                        : '⚠ Sin horas-hombre: no suma al objetivo del equipo'}
-                    </p>
-                  </>
-                )}
-              </div>
-              <div className="card-buttons">
-                <button onClick={() => setEditando(objetivo)}>Editar</button>
-                <button className="danger-link" onClick={() => eliminarObjetivo(objetivo)}>Eliminar</button>
-              </div>
-            </article>
-          ))}
-        </section>
-      ) : (
-        <Empty title="No hay objetivos cargados" text="Definí cuántas unidades de un producto se esperan por día o qué pedido hay que terminar." action={() => setEditando({})} label="Crear objetivo" />
-      )}
-
-      <section className="section-heading">
-        <div><h2>Producción del día</h2><p>Cargá lo producido. Si se completa la producción propuesta, el equipo cobra la recompensa.</p></div>
-      </section>
-
-      <PlanillaDiaria objetivos={objetivosActivos} productos={productos.data} registrar={registrarProduccion} refresco={refresco} />
-
-      <section className="section-heading">
-        <div><h2>Historial de producción</h2><p>Lo producido por día y, si el producto tiene objetivo propio, si se cumplió.</p></div>
-        <div className="actions">
-          <label className="rango">Desde<input type="date" value={rango.desde} onChange={event => setRango({ ...rango, desde: event.target.value })} /></label>
-          <label className="rango">Hasta<input type="date" value={rango.hasta} onChange={event => setRango({ ...rango, hasta: event.target.value })} /></label>
-          {(rango.desde || rango.hasta) && <button className="filter" onClick={() => setRango({ desde: '', hasta: '' })}>Limpiar</button>}
-        </div>
-      </section>
-
-      {registros.loading ? <p>Cargando historial...</p> : registros.data.length ? (
-        <section className="ranking-tabla">
-          <div className="ranking-head produccion-head">
-            <span>Fecha</span><span>Producto</span><span>Producido</span><span>Objetivo</span><span>Resultado</span>
-          </div>
-          {registros.data.map(registro => (
-            <div className="ranking-fila produccion-fila" key={registro.id}>
-              <span>{fecha(registro.fecha)}</span>
-              <b>{registro.producto}</b>
-              <span>{registro.cantidad_producida}</span>
-              <span>{registro.objetivo_cantidad ?? '—'}</span>
-              {registro.objetivo_cantidad === null
-                ? <span className="muted">Sin objetivo propio</span>
-                : <span className={registro.cumplido ? 'positivo' : 'negativo'}>{registro.cumplido ? '✅ Cumplido' : '❌ No cumplido'}</span>}
+          <section className="section-heading">
+            <div>
+              <h2>Propuesto para el {fechaDia(dia)}</h2>
+              <p>{datos.estado === 'TERMINADA'
+                ? 'Producción terminada: quedó guardada tal como se verificó.'
+                : 'Cuando los empleados completen sus etapas, revisá el trabajo: si algo no quedó bien, reabrí la etapa. Después marcá la producción como terminada.'}</p>
             </div>
-          ))}
-        </section>
-      ) : (
-        <Empty title="Todavía no hay producción registrada" text="Registrá la producción del día para empezar a ver el historial." />
-      )}
+          </section>
 
-      {editando && (
-        <ObjetivoModal
-          objetivo={editando}
-          productos={editando.id ? productos.data : productosSinObjetivo}
-          valorDe={valorDe}
-          pedidos={pedidosDisponibles}
-          close={() => setEditando(null)}
-          save={guardarObjetivo}
-        />
+          {datos.modelo === 'productos' ? (
+            <p className="notice">Este día se cargó con el sistema anterior (objetivos por producto). Su detalle se ve en Recompensas.</p>
+          ) : datos.etapas.length ? (
+            <JornadaPropuesta jornada={datos} editable={abierta} ocupado={ocupado} onQuitar={quitar} onReabrir={reabrirEtapa} />
+          ) : (
+            <Empty title="No hay trabajo propuesto para este día" text="Elegí abajo un pedido completo, un producto o etapas sueltas." />
+          )}
+
+          {datos.estado === 'ABIERTA' && (
+            <div className="form-actions acciones-jornada">
+              <button type="button" className="danger-link" disabled={ocupado} onClick={vaciar}>Vaciar el día</button>
+              <button type="button" className="primary" disabled={ocupado} onClick={terminar}>Marcar producción diaria terminada</button>
+            </div>
+          )}
+          {datos.estado === 'TERMINADA' && datos.modelo === 'etapas' && (
+            <div className="form-actions acciones-jornada">
+              <button type="button" className="secondary" disabled={ocupado} onClick={reabrirDia}>Reabrir producción</button>
+            </div>
+          )}
+
+          {abierta && (
+            <AgregarTrabajo dia={dia} pedidos={pedidos} ocupado={ocupado} onAgregar={agregar} />
+          )}
+        </>
       )}
     </>
   )
 }
 
-// ---------------------------------------------------------------------
-// FORMULARIO DE OBJETIVO (alta o edición)
-// Dos tipos: producción diaria de un producto (uno por producto) o
-// terminar un pedido específico (uno por pedido, elegido de los pedidos
-// reales abiertos). En la edición el tipo y el producto/pedido quedan fijos.
-// ---------------------------------------------------------------------
-function ObjetivoModal({ objetivo, productos, pedidos, valorDe, close, save }) {
-  const editar = Boolean(objetivo.id)
-  const [tipo, setTipo] = useState(objetivo.tipo || (!productos.length && pedidos.length ? 'pedido' : 'producto'))
-  const [productoId, setProductoId] = useState(objetivo.producto_id || '')
-  const [pedidoId, setPedidoId] = useState(objetivo.pedido_id || '')
-  const [cantidad, setCantidad] = useState(objetivo.cantidad_objetivo ?? '')
-  const [activo, setActivo] = useState(objetivo.activo ?? true)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const enviar = async event => {
-    event.preventDefault()
-    if (tipo === 'producto' && !productoId) return setError('Elegí un producto.')
-    if (tipo === 'pedido' && !pedidoId) return setError('Elegí el pedido a terminar.')
-    setBusy(true); setError('')
-    try {
-      await save(tipo === 'pedido'
-        ? { tipo, pedido_id: pedidoId, activo }
-        : { tipo, producto_id: productoId, cantidad_objetivo: Number(cantidad), activo })
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
-
-  const sinOpciones = !editar && (tipo === 'producto' ? !productos.length : !pedidos.length)
-
+// Trabajo propuesto para el día, agrupado por pedido y producto.
+function JornadaPropuesta({ jornada, editable, ocupado, onQuitar, onReabrir }) {
   return (
-    <Modal title={editar ? 'Editar objetivo' : 'Nuevo objetivo'} subtitle="Producción diaria de un producto o terminación de un pedido específico." close={close}>
-      <form onSubmit={enviar}>
-        <label>Tipo de objetivo
-          <select disabled={editar} value={tipo} onChange={event => { setTipo(event.target.value); setError('') }}>
-            <option value="producto">Producción diaria de un producto</option>
-            <option value="pedido">Terminar un pedido específico</option>
-          </select>
-        </label>
-
-        {tipo === 'producto' ? (
-          productos.length || editar ? (
-            <>
-              <label>Producto
-                <select required disabled={editar} value={productoId} onChange={event => setProductoId(event.target.value)}>
-                  <option value="">Seleccionar producto</option>
-                  {productos.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
-                </select>
-              </label>
-
-              <label>Cantidad objetivo por día
-                <input required min="1" type="number" value={cantidad} onChange={event => setCantidad(event.target.value)} placeholder="Ej. 2" />
-              </label>
-
-              <ValorObjetivo producto={productos.find(producto => String(producto.id) === String(productoId))} cantidad={cantidad} valorDe={valorDe} />
-            </>
-          ) : (
-            <p className="notice">Todos los productos activos ya tienen un objetivo. Editá uno existente o creá un producto nuevo.</p>
-          )
-        ) : editar ? (
-          <label>Pedido
-            <select disabled value={pedidoId}><option value={pedidoId}>{objetivo.pedido}</option></select>
-          </label>
-        ) : pedidos.length ? (
-          <label>Pedido a terminar
-            <select required value={pedidoId} onChange={event => setPedidoId(event.target.value)}>
-              <option value="">Seleccionar pedido</option>
-              {pedidos.map(pedido => <option key={pedido.id} value={pedido.id}>{resumenPedido(pedido)}</option>)}
-            </select>
-          </label>
-        ) : (
-          <p className="notice">No hay pedidos abiertos sin objetivo. Creá un pedido desde la sección Pedidos.</p>
-        )}
-
-        <label className="config-check">
-          <input type="checkbox" checked={activo} onChange={event => setActivo(event.target.checked)} />
-          Objetivo activo
-        </label>
-
-        {error && <p className="form-error">{error}</p>}
-        {sinOpciones
-          ? <div className="form-actions"><button type="button" className="primary" onClick={close}>Entendido</button></div>
-          : <Actions close={close} label={editar ? 'Guardar cambios' : 'Crear objetivo'} busy={busy} />}
-      </form>
-    </Modal>
-  )
-}
-
-// Cuánto aporta este objetivo al objetivo del equipo (cantidad × horas-hombre
-// del producto) y cuánto vale con el valor hora y el % de premio vigentes.
-function ValorObjetivo({ producto, cantidad, valorDe }) {
-  if (!producto) return null
-  const tiempo = Number(producto.horas_hombre) || 0
-  if (!tiempo) return <p className="form-note">⚠ {producto.nombre} no tiene horas-hombre cargadas: su objetivo no va a sumar al objetivo del equipo. Cargalas en Productos.</p>
-  const total = (Number(cantidad) || 0) * tiempo
-  return (
-    <p className="form-note">
-      Cada unidad equivale a {horas(tiempo)}.{total > 0 && <> Este objetivo suma <b>{horas(total)}</b> al objetivo del equipo ({dinero(valorDe(total))} de recompensa).</>}
-    </p>
-  )
-}
-
-// ---------------------------------------------------------------------
-// PRODUCCIÓN DEL DÍA
-// Se carga producto por producto (para no perder lo cargado si uno falla).
-// Se puede registrar cualquier producto activo, tenga o no objetivo
-// propio: todo suma horas-hombre producidas. Abajo, el resumen de la
-// recompensa del equipo.
-// ---------------------------------------------------------------------
-function PlanillaDiaria({ objetivos, productos, registrar, refresco }) {
-  const [fechaSeleccionada, setFechaSeleccionada] = useState(hoy())
-  const jornada = useData(`/recompensas/equipo/dia/${fechaSeleccionada}`, null)
-  const [cantidades, setCantidades] = useState({})
-  const [otroProducto, setOtroProducto] = useState('')
-  const [guardando, setGuardando] = useState(null)
-
-  useEffect(() => { setCantidades({}); setOtroProducto('') }, [fechaSeleccionada])
-  // Cambió un objetivo: el resumen de la recompensa del día se recalcula.
-  useEffect(() => { if (refresco) jornada.load() }, [refresco])
-
-  const objetivoPorProducto = Object.fromEntries(objetivos.map(objetivo => [String(objetivo.producto_id), objetivo.cantidad_objetivo]))
-  const filas = [
-    ...objetivos.map(objetivo => ({ id: objetivo.producto_id, nombre: objetivo.producto })),
-    ...productos.filter(producto => String(producto.id) === otroProducto).map(producto => ({ id: producto.id, nombre: producto.nombre }))
-  ]
-  const disponibles = productos.filter(producto => !objetivoPorProducto[String(producto.id)])
-  const horasProducto = Object.fromEntries(productos.map(producto => [String(producto.id), Number(producto.horas_hombre) || 0]))
-
-  const enviarProduccion = async fila => {
-    const cantidad = cantidades[fila.id]
-    if (cantidad === undefined || cantidad === '') return
-    setGuardando(fila.id)
-    if (await registrar({ producto_id: fila.id, fecha: fechaSeleccionada, cantidad_producida: Number(cantidad) })) await jornada.load()
-    setGuardando(null)
-  }
-
-  return (
-    <section className="stage-edit">
-      <label className="rango">Fecha<input type="date" max={hoy()} value={fechaSeleccionada} onChange={event => event.target.value && setFechaSeleccionada(event.target.value)} /></label>
-
-      <div className="stage-grid-head registro-grid-head">
-        <small>Producto</small><small>Objetivo propio</small><small>Producido</small><small />
-      </div>
-
-      {filas.map(fila => (
-        <div className="stage-grid-row registro-grid-row" key={fila.id}>
-          <small>{fila.nombre} · {horasProducto[String(fila.id)] ? horas(horasProducto[String(fila.id)]) : 'sin horas-hombre'}</small>
-          <span>{objetivoPorProducto[String(fila.id)] ?? '—'}</span>
-          <input
-            min="0"
-            type="number"
-            value={cantidades[fila.id] ?? ''}
-            onChange={event => setCantidades({ ...cantidades, [fila.id]: event.target.value })}
-            placeholder="0"
-          />
-          <button type="button" className="add-stage" disabled={guardando === fila.id} onClick={() => enviarProduccion(fila)}>
-            {guardando === fila.id ? 'Guardando...' : 'Registrar'}
-          </button>
-        </div>
+    <section>
+      {agruparPorPedido(jornada.etapas).map(pedido => (
+        <article className="config-card" key={pedido.id}>
+          <div className="detalle-item-head">
+            <b>Pedido {pedido.codigo}</b>
+            <span className="muted">{horas(sumarHoras(pedido.productos.flatMap(producto => producto.etapas.map(etapa => etapa.horas_hombre))))}</span>
+          </div>
+          {pedido.productos.map(producto => (
+            <div className="jornada-producto" key={producto.id}>
+              <p className="stage-total"><b>{producto.cantidad}× {producto.nombre}</b></p>
+              <div className="etapas-tabla">
+                {producto.etapas.map(etapa => (
+                  <div className="etapa-fila jornada-etapa-fila" key={etapa.id}>
+                    <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
+                    <Badge estado={etapa.estado} />
+                    <span className="etapa-tiempo">{horas(etapa.horas_hombre)}</span>
+                    <span className={etapa.responsable ? 'etapa-responsable' : 'etapa-responsable negativo'}>{etapa.responsable || 'Sin asignar'}</span>
+                    <span className="muted" title={etapa.observaciones || ''}>
+                      {etapa.completado_en ? `✓ ${new Date(etapa.completado_en).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '—'}
+                      {etapa.observaciones ? ' · 📝' : ''}
+                    </span>
+                    {editable ? (
+                      <span className="jornada-acciones">
+                        {etapa.estado === 'COMPLETADA' && <button type="button" disabled={ocupado} onClick={() => onReabrir(etapa)} title="El trabajo no quedó bien: vuelve a pendiente">Reabrir</button>}
+                        <button type="button" disabled={ocupado} onClick={() => onQuitar(etapa)} title="Sacar esta etapa de la producción del día">Quitar</button>
+                      </span>
+                    ) : <span />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </article>
       ))}
-
-      {disponibles.length > 0 && (
-        <label>Otro producto
-          <select value={otroProducto} onChange={event => setOtroProducto(event.target.value)}>
-            <option value="">Elegir un producto sin objetivo propio</option>
-            {disponibles.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
-          </select>
-        </label>
-      )}
-
-      {jornada.data && (
-        <p className="notice">
-          {fechaDia(fechaSeleccionada)}: objetivo {horas(jornada.data.objetivo_horas)} · producido {horas(jornada.data.horas_producidas)} ·
-          {jornada.data.cumplido
-            ? <b> ✅ objetivo cumplido · recompensa del equipo {dinero(jornada.data.recompensa)}</b>
-            : jornada.data.objetivo_horas
-              ? <b> faltan {horas(-jornada.data.excedente_horas)} para cobrar la recompensa</b>
-              : <b> sin objetivo cargado</b>}
-        </p>
-      )}
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------
+// AGREGAR TRABAJO AL DÍA
+// Pedidos en curso con sus etapas pendientes. Se puede agregar el pedido
+// completo, un producto o marcar etapas sueltas. Las etapas que ya están
+// propuestas en otro día abierto no se pueden elegir (cuentan una sola vez).
+// ---------------------------------------------------------------------
+function AgregarTrabajo({ dia, pedidos, ocupado, onAgregar }) {
+  const [elegidas, setElegidas] = useState(new Set())
+  useEffect(() => { setElegidas(new Set()) }, [dia])
+
+  const enCurso = pedidos.data
+    .filter(pedido => ['PENDIENTE', 'EN_PRODUCCION'].includes(pedido.estado))
+    .filter(pedido => pedido.etapas.some(etapa => etapa.estado !== 'COMPLETADA' && !etapa.jornada))
+    .sort((a, b) => (b.prioridad || 0) - (a.prioridad || 0) || String(a.fecha_entrega || '9999').localeCompare(String(b.fecha_entrega || '9999')))
+
+  const libre = etapa => etapa.estado !== 'COMPLETADA' && !etapa.jornada
+  const horasLibres = etapas => sumarHoras(etapas.filter(libre).map(etapa => etapa.horas_hombre))
+  const todas = enCurso.flatMap(pedido => pedido.etapas)
+  const seleccionadas = todas.filter(etapa => elegidas.has(String(etapa.id)))
+
+  const alternar = etapa => setElegidas(actuales => {
+    const nuevas = new Set(actuales)
+    const clave = String(etapa.id)
+    if (nuevas.has(clave)) nuevas.delete(clave)
+    else nuevas.add(clave)
+    return nuevas
+  })
+
+  const agregarSeleccion = async () => {
+    if (await onAgregar({ etapas: seleccionadas.map(etapa => etapa.id) })) setElegidas(new Set())
+  }
+
+  return (
+    <>
+      <section className="section-heading">
+        <div>
+          <h2>Agregar trabajo al {fechaDia(dia)}</h2>
+          <p>Pedidos en curso con etapas pendientes que todavía no están propuestas en ningún día.</p>
+        </div>
+      </section>
+
+      {pedidos.loading ? <p>Cargando pedidos...</p> : enCurso.length ? (
+        <section>
+          {enCurso.map(pedido => (
+            <article className="config-card" key={pedido.id}>
+              <div className="detalle-item-head">
+                <b>
+                  Pedido {pedido.codigo}
+                  <span className="muted"> · Entrega {fecha(pedido.fecha_entrega)} · {etiquetaPrioridad(pedido.prioridad)}</span>
+                </b>
+                <button type="button" className="add-stage en-linea" disabled={ocupado} onClick={() => onAgregar({ pedido_id: pedido.id })}>
+                  + Pedido completo ({horas(horasLibres(pedido.etapas))})
+                </button>
+              </div>
+
+              {pedido.items.map(item => {
+                const etapasItem = pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).sort((a, b) => a.orden - b.orden)
+                const horasItem = horasLibres(etapasItem)
+                return (
+                  <div className="jornada-producto" key={item.id}>
+                    <div className="detalle-item-head">
+                      <span>{item.cantidad}× {item.producto}</span>
+                      {horasItem > 0 && pedido.items.length > 1 && (
+                        <button type="button" className="add-stage en-linea" disabled={ocupado} onClick={() => onAgregar({ pedido_item_id: item.id })}>+ Producto ({horas(horasItem)})</button>
+                      )}
+                    </div>
+                    {etapasItem.map(etapa => (
+                      <label className={`etapa-elegible${libre(etapa) ? '' : ' no-disponible'}`} key={etapa.id}>
+                        <input type="checkbox" disabled={!libre(etapa) || ocupado} checked={elegidas.has(String(etapa.id))} onChange={() => alternar(etapa)} />
+                        <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
+                        <span>{horas(etapa.horas_hombre)}</span>
+                        <span className={etapa.responsable ? 'muted' : 'negativo'}>{etapa.responsable || 'Sin asignar'}</span>
+                        <span className="muted">
+                          {etapa.estado === 'COMPLETADA' ? 'Completada' : etapa.jornada ? (etapa.jornada === dia ? 'Ya está en este día' : `En la producción del ${fechaDia(etapa.jornada)}`) : ''}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )
+              })}
+            </article>
+          ))}
+
+          {seleccionadas.length > 0 && (
+            <div className="seleccion-jornada">
+              <span>{seleccionadas.length} {seleccionadas.length === 1 ? 'etapa elegida' : 'etapas elegidas'} · {horas(sumarHoras(seleccionadas.map(etapa => etapa.horas_hombre)))}</span>
+              <button type="button" className="secondary" onClick={() => setElegidas(new Set())}>Limpiar</button>
+              <button type="button" className="primary" disabled={ocupado} onClick={agregarSeleccion}>Agregar a la producción</button>
+            </div>
+          )}
+        </section>
+      ) : (
+        <p className="notice">No hay pedidos en curso con etapas pendientes sin proponer. Creá un pedido en Pedidos.</p>
+      )}
+    </>
   )
 }

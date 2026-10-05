@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, calcularSemaforo, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido } from '../comun.js'
+import { asyncRoute, auth, decimal, entero, esAdmin, fallo, sincronizarPedido } from '../comun.js'
 
 const router = Router()
 const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecución', minutos: 120 }, { nombre: 'Control de calidad', minutos: 20 }]
@@ -13,6 +13,14 @@ const consultaTareas = `SELECT t.id, t.titulo, t.descripcion, t.estado, t.asigna
     json_build_object('id', u.id, 'nombre', u.nombre, 'email', u.email) AS asignado
   FROM tareas t LEFT JOIN usuarios u ON u.id = t.asignado_a LEFT JOIN tarea_etapas e ON e.tarea_id = t.id`
 const agrupadoTareas = ' GROUP BY t.id, u.id ORDER BY t.creado_en DESC'
+
+// Etapas de la bandeja de trabajo (pedidos + tareas libres). "jornada" es
+// la fecha de la producción diaria abierta en la que está propuesta la
+// etapa (null si no está en ninguna).
+const consultaBandeja = `SELECT v.*, v.horas_hombre::float8 AS horas_hombre, u.nombre AS responsable,
+    (SELECT je.fecha::text FROM jornada_etapas je JOIN jornadas_equipo j ON j.fecha = je.fecha
+      WHERE v.origen = 'PEDIDO' AND je.pedido_etapa_id = v.id AND j.estado = 'ABIERTA' ORDER BY je.fecha LIMIT 1) AS jornada
+  FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a`
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const admin = esAdmin(req.user.rol)
@@ -85,9 +93,7 @@ router.patch('/asignadas/:origen/:id/asignar', auth(['admin']), asyncRoute(async
     throw fallo('Origen de tarea desconocido.')
   }
 
-  const { rows } = await pool.query(`SELECT v.*, u.nombre AS responsable
-    FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a
-    WHERE v.origen = $1 AND v.id = $2`, [req.params.origen, req.params.id])
+  const { rows } = await pool.query(`${consultaBandeja} WHERE v.origen = $1 AND v.id = $2`, [req.params.origen, req.params.id])
   res.json(rows[0])
 }))
 
@@ -107,10 +113,9 @@ router.patch('/:id/estado', auth(), asyncRoute(async (req, res) => {
   res.json(rows[0])
 }))
 
-// Marcar/desmarcar una etapa de tarea libre. Acepta minutos_reales para
-// calcular el semáforo igual que en las etapas de pedido.
+// Marcar/desmarcar una etapa de tarea libre (sin informar el tiempo).
 router.patch('/:tareaId/etapas/:etapaId', auth(), asyncRoute(async (req, res) => {
-  const { realizada, minutos_reales: minutosReales } = req.body
+  const { realizada } = req.body
   if (typeof realizada !== 'boolean') throw fallo('El campo realizada debe ser booleano.')
   if (!realizada) {
     const propia = esAdmin(req.user.rol) ? '' : ' AND t.asignado_a = $3'
@@ -120,18 +125,18 @@ router.patch('/:tareaId/etapas/:etapaId', auth(), asyncRoute(async (req, res) =>
     if (!rows[0]) throw fallo('Etapa no encontrada o sin permisos.', 404)
     return res.json({ id: rows[0].id, realizada: false })
   }
-  res.json(await completarEtapaTarea({ etapaId: req.params.etapaId, tareaId: req.params.tareaId, minutosReales, usuario: req.user }))
+  res.json(await completarEtapaTarea({ etapaId: req.params.etapaId, tareaId: req.params.tareaId, usuario: req.user }))
 }))
 
 // ---------------------------------------------------------------------
 // BANDEJA UNIFICADA DEL EMPLEADO
-// Reúne las etapas de pedido y las de tareas libres asignadas a la persona.
+// Reúne las etapas de pedido y las de tareas libres asignadas a la persona
+// (ver consultaBandeja arriba).
 // ---------------------------------------------------------------------
 router.get('/asignadas/mias', auth(), asyncRoute(async (req, res) => {
   const empleadoId = esAdmin(req.user.rol) && req.query.empleado_id ? req.query.empleado_id : req.user.id
   const admin = esAdmin(req.user.rol) && req.query.todas === 'true'
-  const { rows } = await pool.query(`SELECT v.*, u.nombre AS responsable
-    FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a
+  const { rows } = await pool.query(`${consultaBandeja}
     ${admin ? '' : 'WHERE v.asignado_a = $1'}
     ORDER BY (v.estado = 'COMPLETADA'), v.contenedor_id, v.orden`, admin ? [] : [empleadoId])
   res.json(rows)
@@ -149,15 +154,15 @@ router.patch('/asignadas/:origen/:id/iniciar', auth(), asyncRoute(async (req, re
   res.json(rows[0])
 }))
 
-// Cierre de la etapa: el empleado informa cuánto tardó realmente y el
-// sistema devuelve el semáforo (indicador; la recompensa es por equipo).
+// Cierre de la etapa: el empleado solo la marca como completada (ya no
+// informa cuánto tardó). Puede dejar observaciones. Si la etapa está en la
+// producción del día, cuenta para la recompensa cuando el admin la verifica
+// y da por terminada esa producción (ver rutas/produccion.js).
 router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, res) => {
-  const { minutos_reales: minutosReales, observaciones = null } = req.body
-  const minutos = entero(minutosReales)
-  if (!minutos || minutos <= 0) throw fallo('Indicá cuántos minutos te llevó completar la etapa.')
+  const observaciones = req.body?.observaciones?.toString().trim() || null
 
   if (req.params.origen === 'TAREA') {
-    return res.json(await completarEtapaTarea({ etapaId: req.params.id, minutosReales: minutos, usuario: req.user }))
+    return res.json(await completarEtapaTarea({ etapaId: req.params.id, usuario: req.user }))
   }
   if (req.params.origen !== 'PEDIDO') throw fallo('Origen de tarea desconocido.')
 
@@ -165,38 +170,56 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
   try {
     await conexion.query('BEGIN')
     const propia = esAdmin(req.user.rol) ? '' : ' AND responsable_id = $2'
-    const etapa = (await conexion.query(`SELECT id, pedido_id, nombre, responsable_id, minutos_estimados FROM pedido_etapas WHERE id = $1${propia} FOR UPDATE`,
+    const etapa = (await conexion.query(`SELECT id, pedido_id, nombre, estado FROM pedido_etapas WHERE id = $1${propia} FOR UPDATE`,
       esAdmin(req.user.rol) ? [req.params.id] : [req.params.id, req.user.id])).rows[0]
     if (!etapa) throw fallo('Etapa no encontrada o sin permisos.', 404)
+    if (etapa.estado === 'COMPLETADA') throw fallo('La etapa ya está completada.')
 
-    const config = await leerConfiguracion(conexion)
-    const resultado = calcularSemaforo(etapa.minutos_estimados, minutos, config)
-    await conexion.query(`UPDATE pedido_etapas SET estado = 'COMPLETADA', minutos_reales = $1, semaforo = $2::semaforo_rendimiento,
-      completado_en = NOW(), iniciado_en = COALESCE(iniciado_en, NOW()), observaciones = COALESCE($3, observaciones) WHERE id = $4`,
-      [minutos, resultado.semaforo, observaciones, etapa.id])
+    await conexion.query(`UPDATE pedido_etapas SET estado = 'COMPLETADA', completado_en = NOW(), iniciado_en = COALESCE(iniciado_en, NOW()),
+      observaciones = COALESCE($1, observaciones) WHERE id = $2`, [observaciones, etapa.id])
 
     const estadoPedido = await sincronizarPedido(conexion, etapa.pedido_id)
     await conexion.query('COMMIT')
-    res.json({ id: etapa.id, origen: 'PEDIDO', estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, estado_pedido: estadoPedido })
+    res.json({ id: etapa.id, origen: 'PEDIDO', estado: 'COMPLETADA', estado_pedido: estadoPedido })
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
-// Cierre de una etapa de tarea libre, con el mismo cálculo de semáforo.
-async function completarEtapaTarea({ etapaId, tareaId = null, minutosReales, usuario }) {
-  const minutos = entero(minutosReales)
+// Verificación del admin: vuelve a abrir una etapa de pedido que se marcó
+// como completada pero no quedó bien (o se marcó por error). Vuelve a
+// "pendiente" con el mismo responsable. No se permite si la etapa ya se
+// pagó en una producción diaria terminada y cumplida.
+router.patch('/asignadas/PEDIDO/:id/reabrir', auth(['admin']), asyncRoute(async (req, res) => {
+  const conexion = await pool.connect()
+  try {
+    await conexion.query('BEGIN')
+    const etapa = (await conexion.query('SELECT id, pedido_id, estado FROM pedido_etapas WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0]
+    if (!etapa) throw fallo('Etapa no encontrada.', 404)
+    if (etapa.estado !== 'COMPLETADA') throw fallo('La etapa no está completada.')
+    const pagada = (await conexion.query(
+      `SELECT to_char(j.fecha, 'DD/MM/YYYY') AS fecha FROM jornada_etapas je JOIN jornadas_equipo j ON j.fecha = je.fecha
+       WHERE je.pedido_etapa_id = $1 AND j.estado = 'TERMINADA' AND j.cumplido LIMIT 1`, [etapa.id])).rows[0]
+    if (pagada) throw fallo(`La etapa ya se pagó en la producción del ${pagada.fecha}: reabrí primero esa producción.`)
+    await conexion.query(`UPDATE pedido_etapas SET estado = 'PENDIENTE', completado_en = NULL, iniciado_en = NULL,
+      minutos_reales = NULL, semaforo = NULL WHERE id = $1`, [etapa.id])
+    await sincronizarPedido(conexion, etapa.pedido_id)
+    await conexion.query('COMMIT')
+  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+  const { rows } = await pool.query(`${consultaBandeja} WHERE v.origen = 'PEDIDO' AND v.id = $1`, [req.params.id])
+  res.json(rows[0])
+}))
+
+// Cierre de una etapa de tarea libre (tampoco informa el tiempo).
+async function completarEtapaTarea({ etapaId, tareaId = null, usuario }) {
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
     const propia = esAdmin(usuario.rol) ? '' : ' AND t.asignado_a = $2'
-    const etapa = (await conexion.query(`SELECT e.id, e.tarea_id, e.nombre, e.minutos_estimados, t.asignado_a
+    const etapa = (await conexion.query(`SELECT e.id, e.tarea_id, e.nombre, t.asignado_a
       FROM tarea_etapas e JOIN tareas t ON t.id = e.tarea_id WHERE e.id = $1${propia}`,
       esAdmin(usuario.rol) ? [etapaId] : [etapaId, usuario.id])).rows[0]
     if (!etapa || (tareaId && String(etapa.tarea_id) !== String(tareaId))) throw fallo('Etapa no encontrada o sin permisos.', 404)
 
-    const config = await leerConfiguracion(conexion)
-    const resultado = calcularSemaforo(etapa.minutos_estimados, minutos, config)
-    await conexion.query(`UPDATE tarea_etapas SET realizada = TRUE, completada_en = NOW(), minutos_reales = $1, semaforo = $2::semaforo_rendimiento WHERE id = $3`,
-      [minutos || null, resultado.semaforo, etapa.id])
+    await conexion.query('UPDATE tarea_etapas SET realizada = TRUE, completada_en = NOW() WHERE id = $1', [etapa.id])
 
     // Si ya no quedan etapas pendientes, la tarea pasa a REALIZADA.
     const pendientes = (await conexion.query('SELECT COUNT(*)::int AS pendientes FROM tarea_etapas WHERE tarea_id = $1 AND NOT realizada', [etapa.tarea_id])).rows[0].pendientes
@@ -205,7 +228,7 @@ async function completarEtapaTarea({ etapaId, tareaId = null, minutosReales, usu
       [pendientes ? 'EN_PROGRESO' : 'REALIZADA', etapa.tarea_id])
 
     await conexion.query('COMMIT')
-    return { id: etapa.id, origen: 'TAREA', realizada: true, estado: 'COMPLETADA', minutos_reales: minutos, ...resultado, etapas_pendientes: pendientes }
+    return { id: etapa.id, origen: 'TAREA', realizada: true, estado: 'COMPLETADA', etapas_pendientes: pendientes }
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }
 

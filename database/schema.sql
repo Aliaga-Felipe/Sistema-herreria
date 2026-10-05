@@ -410,6 +410,19 @@ ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS costo_estimado NUMERIC(12,2) 
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS minutos_estimados INTEGER NOT NULL DEFAULT 60;
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS minutos_reales INTEGER;
 ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS semaforo semaforo_rendimiento;
+-- Horas-hombre estimadas de la etapa (total de la etapa: por unidad ×
+-- cantidad). Al crear el pedido, las etapas de cada producto reparten las
+-- horas-hombre estimadas del producto (la suma tiene que coincidir) y son
+-- lo que vale la etapa en la producción diaria y en la recompensa
+-- (migracion_022). minutos_estimados se mantiene sincronizado (horas × 60)
+-- para las pantallas que muestran duraciones. Las etapas anteriores toman
+-- sus minutos pasados a horas.
+ALTER TABLE pedido_etapas ADD COLUMN IF NOT EXISTS horas_hombre NUMERIC(8,2);
+UPDATE pedido_etapas SET horas_hombre = ROUND(minutos_estimados / 60.0, 2) WHERE horas_hombre IS NULL;
+ALTER TABLE pedido_etapas ALTER COLUMN horas_hombre SET DEFAULT 0;
+ALTER TABLE pedido_etapas ALTER COLUMN horas_hombre SET NOT NULL;
+ALTER TABLE pedido_etapas DROP CONSTRAINT IF EXISTS pedido_etapas_horas_hombre_check;
+ALTER TABLE pedido_etapas ADD CONSTRAINT pedido_etapas_horas_hombre_check CHECK (horas_hombre >= 0);
 
 -- ---------------------------------------------------------------------
 -- PRESUPUESTOS
@@ -580,7 +593,8 @@ GROUP BY p.id;
 -- Bandeja unica de trabajo del empleado: etapas de pedido + etapas de tareas libres.
 -- iniciado_en, fecha_entrega y prioridad viajan solo para etapas de pedido (las
 -- tareas libres no tienen fecha de entrega). Ya no hay columna de cliente:
--- los pedidos no tienen cliente.
+-- los pedidos no tienen cliente. horas_hombre (al final) es lo que vale la
+-- etapa en la producción diaria; en las tareas libres sale de sus minutos.
 CREATE VIEW vista_tareas_empleado AS
 SELECT 'PEDIDO'::text AS origen,
        pe.id::bigint AS id,
@@ -599,7 +613,8 @@ SELECT 'PEDIDO'::text AS origen,
        pe.observaciones::text AS observaciones,
        pe.iniciado_en AS iniciado_en,
        p.fecha_entrega AS fecha_entrega,
-       p.prioridad::int AS prioridad
+       p.prioridad::int AS prioridad,
+       pe.horas_hombre::numeric(8,2) AS horas_hombre
 FROM pedido_etapas pe
 JOIN pedidos p ON p.id = pe.pedido_id
 LEFT JOIN pedido_items pi ON pi.id = pe.pedido_item_id
@@ -622,7 +637,8 @@ SELECT 'TAREA'::text,
        t.descripcion::text,
        NULL::timestamptz,
        NULL::date,
-       NULL::int
+       NULL::int,
+       ROUND(te.minutos_estimados / 60.0, 2)::numeric(8,2)
 FROM tarea_etapas te
 JOIN tareas t ON t.id = te.tarea_id;
 
@@ -965,6 +981,55 @@ UPDATE registros_produccion r SET tiempo_estandar = p.horas_hombre
 -- semaforo_tolerancia se conserva: el semáforo sigue como indicador.
 -- ---------------------------------------------------------------------
 DELETE FROM configuracion WHERE clave IN ('recompensa_activa', 'recompensa_valor_hora', 'recompensa_factor_ahorro', 'recompensa_bono_minimo');
+
+-- =====================================================================
+-- PRODUCCIÓN DIARIA POR ETAPAS (mismo contenido que migracion_022)
+-- Producto → pedido → etapas → producción diaria → recompensa:
+--   * Al crear el pedido, cada producto lleva sus horas-hombre estimadas
+--     repartidas en etapas, cada una con su empleado (pedido_etapas.horas_hombre).
+--   * La producción diaria (una jornada por fecha) es la lista de etapas
+--     propuestas para ese día (jornada_etapas): un pedido completo, un
+--     producto o etapas sueltas.
+--   * El empleado solo marca la etapa como completada (ya no informa el
+--     tiempo, así que no se genera semáforo).
+--   * El admin verifica y marca la producción diaria como TERMINADA. Si
+--     todas las etapas propuestas están completadas, el equipo cobra
+--     Σ horas-hombre estimadas × valor hora × % premio; si no, 0.
+-- Mientras la jornada está ABIERTA el resultado se calcula en vivo (ver
+-- server/jornadas.js); al terminarla se guarda una copia (objetivo_detalle
+-- y totales) que ya no cambia aunque después se editen las etapas.
+-- Los días cargados con el modelo anterior (objetivos por producto y
+-- registros de unidades) quedan como TERMINADOS, con su detalle, y las
+-- tablas objetivos_produccion y registros_produccion se conservan solo
+-- como historial: ya no se usan.
+-- =====================================================================
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS estado VARCHAR(12);
+UPDATE jornadas_equipo SET estado = 'TERMINADA' WHERE estado IS NULL;
+ALTER TABLE jornadas_equipo ALTER COLUMN estado SET DEFAULT 'ABIERTA';
+ALTER TABLE jornadas_equipo ALTER COLUMN estado SET NOT NULL;
+ALTER TABLE jornadas_equipo DROP CONSTRAINT IF EXISTS jornadas_equipo_estado_check;
+ALTER TABLE jornadas_equipo ADD CONSTRAINT jornadas_equipo_estado_check CHECK (estado IN ('ABIERTA', 'TERMINADA'));
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS cumplido BOOLEAN;
+UPDATE jornadas_equipo SET cumplido = (objetivo_horas > 0 AND horas_producidas >= objetivo_horas) WHERE cumplido IS NULL;
+ALTER TABLE jornadas_equipo ALTER COLUMN cumplido SET DEFAULT FALSE;
+ALTER TABLE jornadas_equipo ALTER COLUMN cumplido SET NOT NULL;
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS creado_por BIGINT REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS terminada_en TIMESTAMPTZ;
+ALTER TABLE jornadas_equipo ADD COLUMN IF NOT EXISTS terminada_por BIGINT REFERENCES usuarios(id) ON DELETE SET NULL;
+
+-- Etapas propuestas para cada jornada. Una etapa pendiente puede estar en
+-- una sola jornada ABIERTA a la vez (lo controla la API), así nunca se
+-- cuenta dos veces.
+CREATE TABLE IF NOT EXISTS jornada_etapas (
+  fecha DATE NOT NULL REFERENCES jornadas_equipo(fecha) ON DELETE CASCADE,
+  pedido_etapa_id BIGINT NOT NULL REFERENCES pedido_etapas(id) ON DELETE CASCADE,
+  agregada_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (fecha, pedido_etapa_id)
+);
+CREATE INDEX IF NOT EXISTS idx_jornada_etapas_etapa ON jornada_etapas(pedido_etapa_id);
+CREATE INDEX IF NOT EXISTS idx_jornadas_equipo_estado ON jornadas_equipo(estado);
+COMMENT ON TABLE objetivos_produccion IS 'Legado: objetivos diarios por producto del modelo anterior. Sólo historial (ver jornada_etapas).';
+COMMENT ON TABLE registros_produccion IS 'Legado: unidades producidas por día del modelo anterior. Sólo historial (ver jornada_etapas).';
 
 -- ---------------------------------------------------------------------
 -- PRIMER ADMINISTRADOR

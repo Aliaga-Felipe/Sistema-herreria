@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { dinero, duracion, fecha, useAutoRefresco, useData } from './api.js'
+import { dinero, fecha, horas, porcentaje, useAutoRefresco, useData } from './api.js'
 import { Empty, Heading, Progress, Stat } from './ui.jsx'
-import { BarraSemaforo } from './panel-recompensas.jsx'
 
 export default function PanelEstadisticas() {
   const [rango, setRango] = useState({ desde: '', hasta: '' })
@@ -22,7 +21,7 @@ export default function PanelEstadisticas() {
   if (!datos) return <Empty title="Sin datos todavía" text="Cargá productos y pedidos para generar las estadísticas." />
 
   // Mismo cálculo que el Panel de control (server/metricas.js).
-  const { metricas, rendimiento, semaforo, por_producto: porProducto, mensual, configuracion } = datos
+  const { metricas, rendimiento, produccion, por_producto: porProducto, mensual, configuracion } = datos
   const { productos, pedidos, real, en_curso: enCurso, proyectado } = metricas
   const conRango = Boolean(datos.rango?.desde || datos.rango?.hasta)
   const periodo = conRango ? `${datos.rango.desde ? fecha(`${datos.rango.desde}T00:00`) : 'el inicio'} al ${datos.rango.hasta ? fecha(`${datos.rango.hasta}T00:00`) : 'hoy'}` : 'todo el historial'
@@ -50,7 +49,7 @@ export default function PanelEstadisticas() {
       <section className="stats-grid monthly-stats">
         <Stat label="Ingresos cobrados" value={dinero(real.ingresos, moneda)} hint={`${productos.vendidos_periodo} productos vendidos ${dinero(real.ingresos_productos, moneda)} · ${pedidos.cobrados} pedidos terminados ${dinero(real.ingresos_pedidos, moneda)}`} />
         <Stat label="Gastos de producción" value={dinero(real.gastos_produccion, moneda)} hint={`Etapas completadas ${dinero(real.gastos_etapas_pedidos + real.gastos_tareas, moneda)} · Costo de lo vendido ${dinero(real.costo_productos_vendidos, moneda)}`} />
-        <Stat label="Recompensas pagadas" value={dinero(real.recompensas, moneda)} hint={`Premio del equipo por día (y bonos anteriores) · ${real.recompensas_cantidad} registros`} />
+        <Stat label="Recompensas pagadas" value={dinero(real.recompensas, moneda)} hint={`Premio del equipo por producción diaria terminada (y bonos anteriores) · ${real.recompensas_cantidad} registros`} />
         <Stat
           label="Ganancia neta"
           value={dinero(real.ganancia, moneda)}
@@ -98,12 +97,19 @@ export default function PanelEstadisticas() {
         </article>
 
         <article className="operator-summary">
-          <div className="card-title">Reparto del semáforo</div>
-          <BarraSemaforo verdes={semaforo.verdes} amarillos={semaforo.amarillos} rojos={semaforo.rojos} />
-          <p className="muted">
-            {semaforo.verdes + semaforo.amarillos + semaforo.rojos} etapas medidas · Tiempo estimado {duracion(semaforo.minutos_estimados)} · Tiempo real {duracion(semaforo.minutos_reales)}
-            {semaforo.sin_medir ? ` · ${semaforo.sin_medir} etapas cerradas sin informar tiempo` : ''}
-          </p>
+          <div className="card-title">Producción diaria</div>
+          {produccion.dias ? (
+            <>
+              <Progress value={porcentaje(produccion.cumplidas, produccion.terminadas)} />
+              <p className="muted">
+                {produccion.cumplidas} de {produccion.terminadas} días terminados se completaron
+                {produccion.abiertas ? ` · ${produccion.abiertas} en curso` : ''}
+              </p>
+              <p className="muted">
+                {horas(produccion.horas_completadas)} completadas de {horas(produccion.horas_propuestas)} propuestas · recompensas {dinero(produccion.recompensas, moneda)}
+              </p>
+            </>
+          ) : <p className="muted">Todavía no hay producciones diarias en el período elegido.</p>}
         </article>
       </section>
 
@@ -134,7 +140,7 @@ export default function PanelEstadisticas() {
 
       {/* ---------- EMPLEADOS ---------- */}
       <section className="section-heading">
-        <div><h2>Rendimiento de empleados</h2><p>Etapas completadas y tiempos del período; pendientes a hoy.</p></div>
+        <div><h2>Rendimiento de empleados</h2><p>Etapas y horas-hombre estimadas que completó cada uno en el período; lo pendiente es a hoy.</p></div>
       </section>
 
       {rendimiento.length ? (
@@ -146,22 +152,12 @@ export default function PanelEstadisticas() {
                 <small>{empleado.completadas} completadas · {empleado.pendientes} pendientes</small>
               </div>
 
-              <BarraSemaforo verdes={empleado.verdes} amarillos={empleado.amarillos} rojos={empleado.rojos} />
-
               <div className="rendimiento-datos">
-                <span><small>Promedio por etapa</small><b>{duracion(empleado.promedio_minutos)}</b></span>
-                <span><small>Estimado / real</small><b>{duracion(empleado.minutos_estimados)} / {duracion(empleado.minutos_reales)}</b></span>
+                <span><small>Horas-hombre completadas</small><b>{horas(empleado.horas_completadas)}</b></span>
+                <span><small>Horas-hombre pendientes</small><b>{horas(empleado.horas_pendientes)}</b></span>
               </div>
 
-              {empleado.eficiencia !== null && (
-                <>
-                  <Progress value={Math.min(100, empleado.eficiencia)} />
-                  <p className={`muted ${empleado.eficiencia <= 100 ? 'positivo' : 'negativo'}`}>
-                    Usó el {empleado.eficiencia}% del tiempo estimado
-                    {empleado.eficiencia <= 100 ? ' (por debajo de lo previsto)' : ' (por encima de lo previsto)'}
-                  </p>
-                </>
-              )}
+              <Progress value={porcentaje(empleado.horas_completadas, empleado.horas_completadas + empleado.horas_pendientes)} />
             </article>
           ))}
         </section>

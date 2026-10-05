@@ -726,3 +726,13 @@
         font-size: 16px;
     }
 }
+
+/* Producción por etapas: tablas con desplazamiento horizontal en el
+   celular, igual que el resto de las tablas de ranking. */
+@media (max-width: 767px) {
+    .app-shell .etapas-jornada-head,
+    .app-shell .etapas-jornada-fila {
+        grid-template-columns: .7fr 1.8fr 1fr .7fr .8fr;
+        min-width: 620px;
+    }
+}

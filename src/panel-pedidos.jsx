@@ -1,15 +1,21 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, dinero, duracion, etiquetaPrioridad, fecha, porcentaje, precioVenta, useData } from './api.js'
-import { Actions, Badge, Empty, Heading, Modal, Progress, Semaforo, useAviso } from './ui.jsx'
+import { api, dinero, etiquetaPrioridad, fecha, horas, hoyLocal, porcentaje, precioVenta, sumarHoras, useData } from './api.js'
+import { Actions, Badge, CampoNumero, Empty, EtiquetaJornada, Heading, Modal, Progress, useAviso } from './ui.jsx'
 import { ProductoModal, construirCuerpoProducto, sugerirIdPieza } from './panel-productos.jsx'
 
 const estadosPedido = ['PENDIENTE', 'EN_PRODUCCION', 'PAUSADO', 'TERMINADO', 'CANCELADO']
-// Cada producto del pedido lleva su propia lista de tareas (ver
-// "TAREAS DEL PEDIDO" en server/rutas/pedidos.js). El precio no se pide:
-// el backend toma el precio de venta del producto.
-const tareaVacia = () => ({ nombre: '', minutos_estimados: '' })
-const itemVacio = () => ({ producto_id: '', cantidad: 1, tareas: [tareaVacia()] })
+// Cada producto del pedido lleva sus horas-hombre estimadas (por unidad)
+// repartidas en etapas, cada una con su empleado (ver "ETAPAS DEL PEDIDO"
+// en server/rutas/pedidos.js). El precio no se pide: el backend toma el
+// precio de venta del producto.
+const etapaVacia = () => ({ nombre: '', horas_hombre: '', responsable_id: '' })
+const itemVacio = (productoId = '') => ({ producto_id: productoId, cantidad: 1, horas_hombre: '', tareas: [etapaVacia()] })
+
+// Un pedido admite trabajo nuevo en la producción diaria si está en curso
+// y tiene etapas pendientes que todavía no están propuestas en ningún día.
+const enCurso = pedido => ['PENDIENTE', 'EN_PRODUCCION'].includes(pedido.estado)
+const pendientesSinProponer = etapas => etapas.filter(etapa => etapa.estado !== 'COMPLETADA' && !etapa.jornada)
 
 // Orden de la lista de pedidos: por prioridad, % de avance, fecha de
 // entrega o estado, ascendente o descendente. Se ordena por pedido (no por
@@ -37,26 +43,31 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   const pedidos = useData('/pedidos')
   const productos = useData('/productos')
   const categorias = useData('/categorias')
+  const empleados = useData('/usuarios/empleados')
   const configuracion = useData('/configuracion/valores', {})
   const { mostrar, nodo } = useAviso()
+  // false (cerrado), true (pedido vacío) o { producto_id } (desde Productos).
   const [creando, setCreando] = useState(false)
   const [detalle, setDetalle] = useState(null)
   const [filtro, setFiltro] = useState('ACTIVOS')
   const [ordenPor, setOrdenPor] = useState('prioridad')
   const [ordenDir, setOrdenDir] = useState('desc')
 
+  // Accesos directos: 'nuevo' (Panel de control) o { accion: 'nuevo',
+  // producto_id } (botón "Crear pedido" de un producto).
   useEffect(() => {
     if (intencion === 'nuevo') { setCreando(true); limpiarIntencion?.() }
+    else if (intencion?.accion === 'nuevo') { setCreando({ producto_id: String(intencion.producto_id) }); limpiarIntencion?.() }
   }, [intencion])
 
   const crear = async pedido => {
     await api.post('/pedidos', pedido, pedidos.token)
     setCreando(false)
     await pedidos.load()
-    mostrar('Pedido creado con sus tareas de producción.')
+    mostrar('Pedido creado: sus etapas ya están asignadas. Proponelo en Producción diaria cuando se vaya a trabajar.')
   }
 
-  // Edición de las tareas de un pedido ya creado (desde el detalle).
+  // Edición de las etapas de un pedido ya creado (desde el detalle).
   const editarTareas = async (accion, pedido, datos) => {
     try {
       const ruta = accion === 'agregar'
@@ -65,9 +76,21 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       const actualizado = await ruta
       setDetalle(actualizado)
       await pedidos.load()
-      mostrar(accion === 'agregar' ? 'Tarea agregada al pedido.' : 'Tarea quitada del pedido.')
+      mostrar(accion === 'agregar' ? 'Etapa agregada al pedido.' : 'Etapa quitada del pedido.')
       return true
     } catch (error) { mostrar(error.message, 'error'); return false }
+  }
+
+  // Propone el pedido completo o un producto en la producción de hoy (ver
+  // POST /produccion/jornada/:fecha/etapas). Las etapas completadas o ya
+  // propuestas se omiten solas.
+  const aProduccionDeHoy = async (pedido, seleccion) => {
+    try {
+      const resultado = await api.post(`/produccion/jornada/${hoyLocal()}/etapas`, seleccion, pedidos.token)
+      setDetalle(await api.get(`/pedidos/${pedido.id}`, pedidos.token))
+      await pedidos.load()
+      mostrar(`${resultado.agregadas === 1 ? 'Se agregó 1 etapa' : `Se agregaron ${resultado.agregadas} etapas`} a la producción de hoy.`)
+    } catch (error) { mostrar(error.message, 'error') }
   }
 
   // Crea un producto nuevo sin salir del alta de pedido (ver "+ Crear
@@ -90,7 +113,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   }
 
   const eliminar = async pedido => {
-    if (!window.confirm(`¿Eliminar el pedido ${pedido.codigo}? Se borran también sus etapas.`)) return
+    if (!window.confirm(`¿Eliminar el pedido ${pedido.codigo}? Se borran también sus etapas (y se quitan de la producción diaria).`)) return
     try {
       await api.del(`/pedidos/${pedido.id}`, pedidos.token)
       setDetalle(null)
@@ -108,21 +131,18 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
   })
 
   // Una fila por producto del pedido: cada producto tiene su propio avance
-  // de etapas y su propio subtotal. La sección es solo informativa: los
-  // pedidos/productos no se asignan a empleados (las etapas se asignan
-  // desde Tareas), por eso no hay columna de empleado.
+  // de etapas y su propio subtotal.
   const filas = visiblesOrdenados.flatMap(pedido => pedido.items.map(item => {
     const etapasItem = pedido.etapas
       .filter(etapa => String(etapa.pedido_item_id) === String(item.id))
       .sort((a, b) => a.orden - b.orden)
-    const actual = etapasItem.find(etapa => etapa.estado !== 'COMPLETADA') || null
     const completadas = etapasItem.filter(etapa => etapa.estado === 'COMPLETADA').length
-    return { clave: `${pedido.id}-${item.id}`, pedido, item, etapasItem, actual, completadas }
+    return { clave: `${pedido.id}-${item.id}`, pedido, item, etapasItem, completadas }
   }))
 
   return (
     <>
-      <Heading kicker="Trabajo comprometido" title="Pedidos" text="Cada pedido agrupa uno o más productos, cada uno con sus propias tareas de producción, y refleja su avance según esas tareas.">
+      <Heading kicker="Trabajo comprometido" title="Pedidos" text="Cada pedido agrupa uno o más productos. Cada producto lleva sus horas-hombre estimadas, repartidas en etapas con su empleado; de acá el trabajo pasa a la Producción diaria.">
         <div className="actions">
           <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
             <option value="ACTIVOS">Activos</option>
@@ -148,7 +168,10 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           </div>
 
           {filas.map(fila => {
-            const avanceItem = porcentaje(fila.completadas, fila.etapasItem.length)
+            // Avance en horas-hombre: lo que vale cada etapa en la producción diaria.
+            const avanceItem = fila.item.horas_hombre > 0
+              ? porcentaje(fila.item.horas_completadas, fila.item.horas_hombre)
+              : porcentaje(fila.completadas, fila.etapasItem.length)
             return (
               <div className="order-row pedidos-row" key={fila.clave} onClick={() => setDetalle(fila.pedido)}>
                 <div className="product">
@@ -163,6 +186,7 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
 
                 <div className="etapas-cell">
                   <b>{fila.completadas}/{fila.etapasItem.length}</b>
+                  <small className="muted"> · {horas(fila.item.horas_hombre)}</small>
                 </div>
 
                 <div className="prioridad-cell"><span className={`prioridad ${etiquetaPrioridad(fila.pedido.prioridad).toLowerCase()}`}>{etiquetaPrioridad(fila.pedido.prioridad)}</span></div>
@@ -177,14 +201,16 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
           })}
         </section>
       ) : (
-        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo y definiendo sus tareas." action={() => setCreando(true)} label="Crear pedido" />
+        <Empty title="No hay pedidos en esta vista" text="Creá un pedido eligiendo productos del catálogo, sus horas-hombre y sus etapas." action={() => setCreando(true)} label="Crear pedido" />
       )}
 
-      {creando && (
+      {creando && !productos.loading && (
         <PedidoModal
           productos={productos.data.filter(producto => producto.activo)}
           productosExistentes={productos.data}
           categorias={categorias.data}
+          empleados={empleados.data}
+          productoInicial={creando?.producto_id || ''}
           costoHora={Number(configuracion.data.costo_hora_mano_obra) || 0}
           token={productos.token}
           crearProducto={crearProducto}
@@ -196,10 +222,12 @@ export default function PanelPedidos({ intencion, limpiarIntencion }) {
       {detalle && (
         <DetallePedido
           pedido={detalle}
+          empleados={empleados.data}
           close={() => setDetalle(null)}
           onEstado={cambiarEstado}
           onEliminar={eliminar}
           onTareas={editarTareas}
+          onProduccion={aProduccionDeHoy}
         />
       )}
     </>
@@ -256,14 +284,61 @@ function SelectorFecha({ value, onChange }) {
   )
 }
 
+// Estado del reparto de las horas-hombre estimadas de un producto entre
+// sus etapas (la misma regla que valida el backend: tienen que coincidir).
+function estadoReparto(item) {
+  const estimadas = Math.round((Number(item.horas_hombre) || 0) * 100) / 100
+  const suma = sumarHoras(item.tareas.map(etapa => etapa.horas_hombre))
+  const diferencia = Math.round((estimadas - suma) * 100) / 100
+  return { estimadas, suma, diferencia, coincide: estimadas > 0 && Math.abs(diferencia) < 0.01 }
+}
+
+function RepartoHoras({ item, onUsarSuma }) {
+  const { estimadas, suma, diferencia, coincide } = estadoReparto(item)
+  const cantidad = Number(item.cantidad) || 1
+  if (coincide) {
+    return (
+      <p className="stage-total positivo">
+        ✓ Las etapas suman {horas(suma)}, igual que la estimación{cantidad > 1 ? ` · ${horas(suma * cantidad)} en total (${cantidad} unidades)` : ''}.
+      </p>
+    )
+  }
+  return (
+    <p className="stage-total negativo">
+      {estimadas > 0
+        ? `Las etapas suman ${horas(suma)} de ${horas(estimadas)} estimadas: ${diferencia > 0 ? `faltan repartir ${horas(diferencia)}` : `se pasan ${horas(-diferencia)}`}.`
+        : `Indicá las horas-hombre estimadas por unidad (las etapas suman ${horas(suma)}).`}
+      {suma > 0 && <button type="button" className="add-stage reparto-usar" onClick={() => onUsarSuma(suma)}>Usar {horas(suma)} como estimación</button>}
+    </p>
+  )
+}
+
+// Grilla de etapas: nombre, horas por unidad, empleado y quitar.
+function FilaEtapa({ numero, etapa, empleados, onCambiar, onQuitar }) {
+  return (
+    <div className="etapa-hh-grid-row">
+      <small>{numero}</small>
+      <input value={etapa.nombre} onChange={event => onCambiar('nombre', event.target.value)} placeholder="Ej. Corte, Soldadura, Pintura" maxLength={120} />
+      <CampoNumero min="0" step="0.25" value={etapa.horas_hombre} onChange={valor => onCambiar('horas_hombre', valor)} placeholder="0" title="Horas-hombre por unidad" />
+      <select value={etapa.responsable_id} onChange={event => onCambiar('responsable_id', event.target.value)} title="Empleado que hace la etapa">
+        <option value="">Empleado…</option>
+        {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
+      </select>
+      {onQuitar ? <button type="button" onClick={onQuitar} title="Quitar etapa">×</button> : <span />}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------
 // ALTA DE PEDIDO
-// Por cada producto: cantidad y sus TAREAS de producción para este pedido.
-// Ni precio ni presupuesto: el precio sale del producto (lo copia el
-// backend) y el costo/ganancia se ven después en el detalle del pedido.
+// Por cada producto: cantidad, horas-hombre estimadas por unidad (se
+// propone las del producto) y sus ETAPAS, cada una con sus horas y su
+// empleado. Las etapas tienen que sumar la estimación. Ni precio ni
+// presupuesto: el precio sale del producto (lo copia el backend) y el
+// costo/ganancia se ven después en el detalle del pedido.
 // ---------------------------------------------------------------------
-function PedidoModal({ productos, productosExistentes, categorias, costoHora, token, crearProducto, close, save }) {
-  const [items, setItems] = useState([itemVacio()])
+function PedidoModal({ productos, productosExistentes, categorias, empleados, productoInicial, costoHora, token, crearProducto, close, save }) {
+  const [items, setItems] = useState([itemVacio(productoInicial)])
   const [entrega, setEntrega] = useState('')
   const [prioridad, setPrioridad] = useState(0)
   const [notas, setNotas] = useState('')
@@ -271,33 +346,45 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const cambiarItem = (indice, cambios) =>
+  // Cualquier cambio borra el error anterior (se vuelve a validar al guardar).
+  const cambiarItem = (indice, cambios) => {
+    setError('')
     setItems(actuales => actuales.map((item, posicion) => (posicion === indice ? { ...item, ...cambios } : item)))
+  }
 
-  const cambiarTarea = (indice, posicionTarea, campo, valor) =>
+  const cambiarEtapa = (indice, posicionEtapa, campo, valor) => {
+    setError('')
     setItems(actuales => actuales.map((item, posicion) => (posicion === indice
-      ? { ...item, tareas: item.tareas.map((tarea, cual) => (cual === posicionTarea ? { ...tarea, [campo]: valor } : tarea)) }
+      ? { ...item, tareas: item.tareas.map((etapa, cual) => (cual === posicionEtapa ? { ...etapa, [campo]: valor } : etapa)) }
       : item)))
+  }
 
-  const detalleProducto = id => productos.find(producto => String(producto.id) === String(id))
+  const detalleProducto = id => productosExistentes.find(producto => String(producto.id) === String(id))
 
-  // Al elegir un producto se proponen tareas (las del último pedido de ese
-  // producto, si hay). Sólo si todavía no se escribió ninguna tarea: nunca
-  // pisa lo que el usuario ya cargó. Son editables y propias de este pedido.
+  // Al elegir un producto se proponen sus horas-hombre y las etapas del
+  // último pedido de ese producto (con sus empleados), si hay. Nunca pisa
+  // lo que el usuario ya cargó. Todo es editable y propio de este pedido.
   const elegirProducto = async (indice, productoId) => {
-    cambiarItem(indice, { producto_id: productoId })
+    const producto = detalleProducto(productoId)
+    setItems(actuales => actuales.map((item, posicion) => (posicion === indice
+      ? { ...item, producto_id: productoId, horas_hombre: item.horas_hombre === '' && Number(producto?.horas_hombre) > 0 ? producto.horas_hombre : item.horas_hombre }
+      : item)))
     if (!productoId) return
-    const vacias = items[indice]?.tareas.every(tarea => !tarea.nombre.trim())
-    if (!vacias) return
     try {
       const sugeridas = await api.get(`/pedidos/tareas-sugeridas?producto_id=${productoId}`, token)
-      if (sugeridas.tareas.length) {
-        setItems(actuales => actuales.map((item, posicion) => (posicion === indice && item.tareas.every(tarea => !tarea.nombre.trim())
-          ? { ...item, tareas: sugeridas.tareas.map(tarea => ({ nombre: tarea.nombre, minutos_estimados: tarea.minutos_estimados || '' })) }
-          : item)))
-      }
+      if (!sugeridas.tareas.length) return
+      setItems(actuales => actuales.map((item, posicion) => (posicion === indice && item.tareas.every(etapa => !etapa.nombre.trim())
+        ? {
+            ...item,
+            tareas: sugeridas.tareas.map(etapa => ({ nombre: etapa.nombre, horas_hombre: etapa.horas_hombre || '', responsable_id: etapa.responsable_id ? String(etapa.responsable_id) : '' })),
+            horas_hombre: item.horas_hombre === '' ? sumarHoras(sugeridas.tareas.map(etapa => etapa.horas_hombre)) || '' : item.horas_hombre
+          }
+        : item)))
     } catch { /* sin sugerencias: se cargan a mano */ }
   }
+
+  // Desde Productos ("Crear pedido") el producto ya viene elegido.
+  useEffect(() => { if (productoInicial) elegirProducto(0, productoInicial) }, [])
 
   const enviar = async event => {
     event.preventDefault()
@@ -305,9 +392,14 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
     if (!validos.length) return setError('Elegí al menos un producto.')
     for (const item of validos) {
       const nombre = detalleProducto(item.producto_id)?.nombre || 'el producto'
-      const tareas = item.tareas.filter(tarea => tarea.nombre.trim() || tarea.minutos_estimados !== '')
-      if (!tareas.length) return setError(`Agregá al menos una tarea para "${nombre}".`)
-      if (tareas.some(tarea => !tarea.nombre.trim())) return setError(`Cada tarea de "${nombre}" necesita un nombre.`)
+      const etapas = item.tareas.filter(etapa => etapa.nombre.trim() || etapa.horas_hombre !== '' || etapa.responsable_id)
+      if (!etapas.length) return setError(`Agregá al menos una etapa para "${nombre}".`)
+      if (etapas.some(etapa => !etapa.nombre.trim())) return setError(`Cada etapa de "${nombre}" necesita un nombre.`)
+      if (etapas.some(etapa => !(Number(etapa.horas_hombre) > 0))) return setError(`Cada etapa de "${nombre}" necesita sus horas-hombre.`)
+      if (etapas.some(etapa => !etapa.responsable_id)) return setError(`Asigná un empleado a cada etapa de "${nombre}".`)
+      const reparto = estadoReparto({ ...item, tareas: etapas })
+      if (!(reparto.estimadas > 0)) return setError(`Indicá las horas-hombre estimadas para terminar "${nombre}".`)
+      if (!reparto.coincide) return setError(`Las etapas de "${nombre}" suman ${horas(reparto.suma)} y las horas-hombre estimadas son ${horas(reparto.estimadas)}: tienen que coincidir.`)
     }
     setBusy(true); setError('')
     try {
@@ -318,9 +410,10 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
         items: validos.map(item => ({
           producto_id: item.producto_id,
           cantidad: Number(item.cantidad) || 1,
+          horas_hombre: Number(item.horas_hombre),
           tareas: item.tareas
-            .filter(tarea => tarea.nombre.trim())
-            .map(tarea => ({ nombre: tarea.nombre.trim(), minutos_estimados: Number(tarea.minutos_estimados) || 0 }))
+            .filter(etapa => etapa.nombre.trim())
+            .map(etapa => ({ nombre: etapa.nombre.trim(), horas_hombre: Number(etapa.horas_hombre), responsable_id: etapa.responsable_id }))
         }))
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -329,13 +422,13 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
   if (!productos.length) {
     return (
       <Modal title="Nuevo pedido" close={close}>
-        <Empty title="Primero creá un producto" text="Los pedidos se arman con productos del catálogo; las tareas se definen en cada pedido." action={close} label="Entendido" />
+        <Empty title="Primero creá un producto" text="Los pedidos se arman con productos del catálogo; las etapas se definen en cada pedido." action={close} label="Entendido" />
       </Modal>
     )
   }
 
   return (
-    <Modal title="Nuevo pedido" subtitle="Elegí los productos y definí las tareas de este pedido. Los empleados se asignan después, desde Tareas." close={close} ancho="720px">
+    <Modal title="Nuevo pedido" subtitle="Elegí los productos, estimá sus horas-hombre y repartilas en etapas, cada una con el empleado que la hace." close={close} ancho="760px">
       <form onSubmit={enviar}>
         <div className="form-grid">
           <label>Fecha de entrega
@@ -351,6 +444,8 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
           </label>
         </div>
 
+        {!empleados.length && <p className="notice">Todavía no hay empleados activos: cada etapa se asigna a un empleado. Crealos en Usuarios.</p>}
+
         <div className="stage-edit">
           <div>
             <b>Productos del pedido</b>
@@ -359,8 +454,6 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
 
           {items.map((item, indice) => {
             const producto = detalleProducto(item.producto_id)
-            const cantidad = Number(item.cantidad) || 1
-            const minutosTotal = item.tareas.reduce((total, tarea) => total + (Number(tarea.minutos_estimados) || 0), 0) * cantidad
             return (
               <div className="item-bloque" key={indice}>
                 <div className="item-linea">
@@ -376,26 +469,32 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
 
                 {producto && (
                   <div className="item-tareas">
+                    <label className="item-horas">Horas-hombre estimadas para terminar una unidad
+                      <CampoNumero min="0" step="0.25" value={item.horas_hombre} onChange={valor => cambiarItem(indice, { horas_hombre: valor })} placeholder="Ej. 4" />
+                    </label>
+
                     <div>
-                      <b>Tareas</b>
-                      <span className="muted"> · propias de este pedido: se asignan en Tareas y miden el semáforo.</span>
+                      <b>Etapas</b>
+                      <span className="muted"> · repartí esas horas entre las etapas y asigná quién hace cada una.</span>
                     </div>
 
-                    <div className="etapa-grid-head">
-                      <small>#</small><small>Tarea</small><small>Min. por unidad</small><small />
+                    <div className="etapa-hh-grid-head">
+                      <small>#</small><small>Etapa</small><small>Horas/u</small><small>Empleado</small><small />
                     </div>
 
-                    {item.tareas.map((tarea, posicionTarea) => (
-                      <div className="etapa-grid-row" key={posicionTarea}>
-                        <small>{posicionTarea + 1}</small>
-                        <input value={tarea.nombre} onChange={event => cambiarTarea(indice, posicionTarea, 'nombre', event.target.value)} placeholder="Ej. Corte, Soldadura, Pintura" maxLength={120} />
-                        <input min="0" type="number" value={tarea.minutos_estimados} onChange={event => cambiarTarea(indice, posicionTarea, 'minutos_estimados', event.target.value)} placeholder="0" />
-                        <button type="button" onClick={() => cambiarItem(indice, { tareas: item.tareas.filter((_, cual) => cual !== posicionTarea) })}>×</button>
-                      </div>
+                    {item.tareas.map((etapa, posicionEtapa) => (
+                      <FilaEtapa
+                        key={posicionEtapa}
+                        numero={posicionEtapa + 1}
+                        etapa={etapa}
+                        empleados={empleados}
+                        onCambiar={(campo, valor) => cambiarEtapa(indice, posicionEtapa, campo, valor)}
+                        onQuitar={() => cambiarItem(indice, { tareas: item.tareas.filter((_, cual) => cual !== posicionEtapa) })}
+                      />
                     ))}
 
-                    <button type="button" className="add-stage" onClick={() => cambiarItem(indice, { tareas: [...item.tareas, tareaVacia()] })}>+ Agregar tarea</button>
-                    <p className="stage-total">{item.tareas.length} tareas · Tiempo estimado {duracion(minutosTotal)}{cantidad > 1 ? ` (${cantidad} unidades)` : ''}</p>
+                    <button type="button" className="add-stage" onClick={() => cambiarItem(indice, { tareas: [...item.tareas, etapaVacia()] })}>+ Agregar etapa</button>
+                    <RepartoHoras item={item} onUsarSuma={suma => cambiarItem(indice, { horas_hombre: suma })} />
                   </div>
                 )}
               </div>
@@ -424,6 +523,9 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
           close={() => setCreandoProductoPara(null)}
           save={async nuevoProducto => {
             const creado = await crearProducto(nuevoProducto)
+            setItems(actuales => actuales.map((item, posicion) => (posicion === creandoProductoPara
+              ? { ...item, horas_hombre: Number(creado.horas_hombre) > 0 ? creado.horas_hombre : item.horas_hombre }
+              : item)))
             elegirProducto(creandoProductoPara, String(creado.id))
             setCreandoProductoPara(null)
           }}
@@ -436,29 +538,33 @@ function PedidoModal({ productos, productosExistentes, categorias, costoHora, to
 
 // ---------------------------------------------------------------------
 // DETALLE DEL PEDIDO
-// Muestra el avance de las tareas de cada producto y permite agregar o
-// quitar tareas pendientes de ESTE pedido. Acá no se asignan empleados:
-// eso se hace únicamente desde la sección Tareas.
+// Muestra el avance de las etapas de cada producto (con su empleado, sus
+// horas-hombre y si están propuestas en la producción diaria), permite
+// agregar o quitar etapas pendientes y proponer el pedido completo o un
+// producto en la producción de hoy. Para reasignar una etapa se usa Tareas.
 // ---------------------------------------------------------------------
-function DetallePedido({ pedido, close, onEstado, onEliminar, onTareas }) {
+function DetallePedido({ pedido, empleados, close, onEstado, onEliminar, onTareas, onProduccion }) {
   const ganancia = pedido.total - pedido.costo_estimado
+  const hoy = hoyLocal()
   const [nuevas, setNuevas] = useState({})
-  const nuevaDe = itemId => nuevas[itemId] || tareaVacia()
+  const nuevaDe = itemId => nuevas[itemId] || etapaVacia()
   const cambiarNueva = (itemId, campo, valor) => setNuevas({ ...nuevas, [itemId]: { ...nuevaDe(itemId), [campo]: valor } })
+  const sinProponer = pendientesSinProponer(pedido.etapas)
+  const admiteProduccion = enCurso(pedido)
 
   const agregar = async item => {
-    const tarea = nuevaDe(item.id)
-    if (!tarea.nombre.trim()) return
-    // El tiempo se carga por unidad, igual que al crear el pedido.
+    const etapa = nuevaDe(item.id)
+    if (!etapa.nombre.trim() || !(Number(etapa.horas_hombre) > 0) || !etapa.responsable_id) return
+    // Las horas se cargan por unidad, igual que al crear el pedido.
     const ok = await onTareas('agregar', pedido, {
       itemId: item.id,
-      tarea: { nombre: tarea.nombre.trim(), minutos_estimados: (Number(tarea.minutos_estimados) || 0) * (Number(item.cantidad) || 1) }
+      tarea: { nombre: etapa.nombre.trim(), horas_hombre: Number(etapa.horas_hombre), responsable_id: etapa.responsable_id }
     })
-    if (ok) setNuevas({ ...nuevas, [item.id]: tareaVacia() })
+    if (ok) setNuevas({ ...nuevas, [item.id]: etapaVacia() })
   }
 
   return (
-    <Modal title={`Pedido ${pedido.codigo}`} subtitle={`${pedido.avance}% completado · ${pedido.etapas_completadas} de ${pedido.etapas_totales} etapas`} close={close} ancho="760px">
+    <Modal title={`Pedido ${pedido.codigo}`} subtitle={`${pedido.avance}% completado · ${pedido.etapas_completadas} de ${pedido.etapas_totales} etapas · ${horas(pedido.horas_hombre)}`} close={close} ancho="780px">
       <div className="detalle-pedido">
         <section className="detalle-bloque">
           <b>Estado y entrega</b>
@@ -469,6 +575,18 @@ function DetallePedido({ pedido, close, onEstado, onEliminar, onTareas }) {
             </select>
           </label>
           <small>Entrega: {fecha(pedido.fecha_entrega)}</small>
+        </section>
+
+        <section className="detalle-bloque">
+          <b>Producción diaria</b>
+          {admiteProduccion && sinProponer.length ? (
+            <>
+              <small>{sinProponer.length} etapas pendientes ({horas(sumarHoras(sinProponer.map(etapa => etapa.horas_hombre)))}) sin proponer.</small>
+              <button type="button" className="secondary" onClick={() => onProduccion(pedido, { pedido_id: pedido.id })}>Pedido completo a la producción de hoy</button>
+            </>
+          ) : (
+            <small>{admiteProduccion ? 'Todas las etapas pendientes ya están propuestas.' : 'El pedido no está en curso.'}</small>
+          )}
         </section>
       </div>
 
@@ -482,11 +600,18 @@ function DetallePedido({ pedido, close, onEstado, onEliminar, onTareas }) {
 
       {pedido.items.map(item => {
         const gananciaItem = item.subtotal - item.costo_produccion
+        const etapasItem = pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id))
+        const proponibles = pendientesSinProponer(etapasItem)
         return (
           <section className="detalle-item" key={item.id}>
             <div className="detalle-item-head">
-              <b>{item.cantidad}× {item.producto}</b>
-              <span>{dinero(item.subtotal)}</span>
+              <b>{item.cantidad}× {item.producto} · {horas(item.horas_hombre)}{item.horas_completadas > 0 ? ` (${horas(item.horas_completadas)} hechas)` : ''}</b>
+              <span>
+                {admiteProduccion && proponibles.length > 0 && pedido.items.length > 1 && (
+                  <button type="button" className="add-stage en-linea" onClick={() => onProduccion(pedido, { pedido_item_id: item.id })}>+ A la producción de hoy</button>
+                )}
+                {dinero(item.subtotal)}
+              </span>
             </div>
 
             <p className="stage-total">
@@ -496,29 +621,27 @@ function DetallePedido({ pedido, close, onEstado, onEliminar, onTareas }) {
             </p>
 
             <div className="etapas-tabla">
-              {pedido.etapas.filter(etapa => String(etapa.pedido_item_id) === String(item.id)).map((etapa, _, delItem) => (
+              {etapasItem.map(etapa => (
                 <div className="etapa-fila etapa-fila-editable" key={etapa.id}>
                   <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
                   <Badge estado={etapa.estado} />
-                  <span className="etapa-tiempo">
-                    {duracion(etapa.minutos_estimados)}
-                    {etapa.minutos_reales ? <b> → {duracion(etapa.minutos_reales)}</b> : null}
-                  </span>
-                  <Semaforo valor={etapa.semaforo} compacto />
-                  <span className="etapa-responsable" title="La asignación se gestiona desde Tareas">{etapa.responsable || 'Sin asignar'}</span>
-                  {etapa.estado !== 'COMPLETADA' && delItem.length > 1
-                    ? <button type="button" title="Quitar esta tarea del pedido" onClick={() => window.confirm(`¿Quitar la tarea "${etapa.nombre}" de este pedido?`) && onTareas('quitar', pedido, { tareaId: etapa.id })}>×</button>
+                  <span className="etapa-tiempo">{horas(etapa.horas_hombre)}</span>
+                  <span><EtiquetaJornada fecha={etapa.jornada} hoy={hoy} /></span>
+                  <span className="etapa-responsable" title="Para reasignarla, usá la sección Tareas">{etapa.responsable || 'Sin asignar'}</span>
+                  {etapa.estado !== 'COMPLETADA' && etapasItem.length > 1
+                    ? <button type="button" title="Quitar esta etapa del pedido" onClick={() => window.confirm(`¿Quitar la etapa "${etapa.nombre}" de este pedido? Sus ${horas(etapa.horas_hombre)} se restan de la estimación del producto.`) && onTareas('quitar', pedido, { tareaId: etapa.id })}>×</button>
                     : <span />}
                 </div>
               ))}
             </div>
 
-            <div className="etapa-grid-row">
-              <small>+</small>
-              <input value={nuevaDe(item.id).nombre} onChange={event => cambiarNueva(item.id, 'nombre', event.target.value)} placeholder="Nueva tarea para este producto" maxLength={120} />
-              <input min="0" type="number" value={nuevaDe(item.id).minutos_estimados} onChange={event => cambiarNueva(item.id, 'minutos_estimados', event.target.value)} placeholder="Min/u" title="Minutos por unidad" />
-              <button type="button" title="Agregar tarea" onClick={() => agregar(item)}>✓</button>
-            </div>
+            <FilaEtapa
+              numero="+"
+              etapa={nuevaDe(item.id)}
+              empleados={empleados}
+              onCambiar={(campo, valor) => cambiarNueva(item.id, campo, valor)}
+            />
+            <button type="button" className="add-stage" onClick={() => agregar(item)}>+ Agregar esta etapa (suma sus horas a la estimación)</button>
           </section>
         )
       })}

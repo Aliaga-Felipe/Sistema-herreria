@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
-import { api, dinero, duracion, fecha, iniciales, precioVenta, useAutoRefresco, useData } from './api.js'
-import { Badge, Empty, Heading, Modal, Progress, QuickActions, Semaforo, Stat, useAviso } from './ui.jsx'
+import { api, dinero, fecha, horas, hoyLocal, iniciales, precioVenta, useAutoRefresco, useData } from './api.js'
+import { Badge, Empty, EtiquetaJornada, Heading, Modal, Progress, QuickActions, Stat, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
-import PanelRecompensas, { ConfiguracionSemaforo } from './panel-recompensas.jsx'
+import PanelRecompensas from './panel-recompensas.jsx'
 import PanelEstadisticas from './panel-estadisticas.jsx'
 import PanelUsuarios from './panel-usuarios.jsx'
 import PanelProduccion from './panel-produccion.jsx'
@@ -63,7 +63,7 @@ export default function WorkshopPanels({ section, setSection, rol }) {
     'Panel de control': <Dashboard ir={ir} />,
     Pedidos: <PanelPedidos intencion={intencion} limpiarIntencion={limpiar} />,
     Presupuestos: <PanelPresupuestos />,
-    Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} />,
+    Productos: <PanelProductos intencion={intencion} limpiarIntencion={limpiar} ir={ir} />,
     Categorías: <PanelCategorias />,
     'Producción diaria': <PanelProduccion />,
     Tareas: <PanelTareas />,
@@ -101,10 +101,14 @@ function Dashboard({ ir }) {
   // desactivados no cuentan—, pedidos terminados, etapas completadas,
   // recompensas). PROYECTADO = además se venden todos los productos activos
   // y se cobran los pedidos abiertos.
-  const { pedidos, trabajo, catalogo, metricas, productos_vendidos: vendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
+  const { pedidos, trabajo, catalogo, metricas, produccion_hoy: hoy, productos_vendidos: vendidos, empleados_pendientes: pendientes, proximos_pedidos: proximos, configuracion } = datos
   const { en_curso: enCurso } = metricas
   const moneda = configuracion?.moneda || 'ARS'
   const maxPrecio = Math.max(...vendidos.map(producto => producto.precio || 0), 1)
+  // Producción propuesta para hoy (ver Producción diaria).
+  const estadoHoy = hoy.estado === 'SIN_PLANIFICAR' ? 'Sin planificar'
+    : hoy.estado === 'TERMINADA' ? (hoy.cumplido ? '✅ Terminada' : 'Terminada sin completar')
+      : hoy.cumplido ? 'Lista para verificar' : `${hoy.avance}%`
 
   return (
     <>
@@ -114,12 +118,12 @@ function Dashboard({ ir }) {
 
       <QuickActions
         acciones={[
-          { icono: '⌁', label: 'Nuevo pedido', texto: 'Productos y tareas', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
+          { icono: '⌁', label: 'Nuevo pedido', texto: 'Horas-hombre y etapas', onClick: () => ir('Pedidos', 'nuevo'), destacada: true },
           { icono: '▱', label: 'Nuevo producto', texto: 'Precio y costos', onClick: () => ir('Productos', 'nuevo') },
           // "admin" y "super_admin" pueden crear cuentas (ver PanelUsuarios).
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
-          { icono: '✓', label: 'Asignar tareas', texto: `${trabajo.sin_asignar} etapas sin dueño`, onClick: () => ir('Tareas') },
-          { icono: '◫', label: 'Estadísticas', texto: 'Gastos y ganancias', onClick: () => ir('Estadísticas') },
+          { icono: '◈', label: 'Producción diaria', texto: hoy.estado === 'SIN_PLANIFICAR' ? 'Proponer el trabajo de hoy' : `Hoy: ${estadoHoy}`, onClick: () => ir('Producción diaria') },
+          { icono: '✓', label: 'Tareas', texto: trabajo.sin_asignar ? `${trabajo.sin_asignar} etapas sin dueño` : 'Reasignar etapas', onClick: () => ir('Tareas') },
           { icono: '♛', label: 'Recompensas', texto: 'Premio del equipo', onClick: () => ir('Recompensas') }
         ]}
       />
@@ -127,20 +131,18 @@ function Dashboard({ ir }) {
       <section className="stats-grid dashboard-stats">
         <Stat label="Pedidos abiertos" value={pedidos.abiertos} hint={`${pedidos.terminados} terminados${pedidos.pausados ? ` · ${pedidos.pausados} pausados` : ''}`} />
         <Stat label="Pedidos atrasados" value={pedidos.atrasados} tone={pedidos.atrasados ? 'danger' : ''} hint="Pasaron su fecha de entrega" />
-        <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${trabajo.sin_asignar} sin asignar`} />
+        <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${horas(trabajo.horas_pendientes)}${trabajo.sin_asignar ? ` · ${trabajo.sin_asignar} sin asignar` : ''}`} />
         <Stat label="Ingresos en curso" value={dinero(enCurso.ingresos, moneda)} hint={`Pedidos abiertos · faltan ${dinero(enCurso.gastos_pendientes, moneda)} de costo`} />
         <Stat
-          label="Semáforo del taller"
-          value={
-            <span className="semaforo-taller">
-              <span>🟢 {trabajo.verdes}</span>
-              <span>🟡 {trabajo.amarillos}</span>
-              <span>🔴 {trabajo.rojos}</span>
-            </span>
-          }
-          hint={`${catalogo.empleados} empleados activos`}
+          label="Producción de hoy"
+          value={estadoHoy}
+          hint={hoy.estado === 'SIN_PLANIFICAR'
+            ? `${catalogo.empleados} empleados activos`
+            : `${horas(hoy.horas_completadas)} de ${horas(hoy.objetivo_horas)} · ${hoy.estado === 'TERMINADA' ? `recompensa ${dinero(hoy.recompensa, moneda)}` : `premio ${dinero(hoy.recompensa_al_cumplir, moneda)}`}`}
+          tone={hoy.estado === 'SIN_PLANIFICAR' ? 'danger' : ''}
         />
       </section>
+      {hoy.estado === 'ABIERTA' && <div className="jornada-progreso"><Progress value={hoy.avance} /></div>}
 
       <section className="analytics">
         <article className="chart-card">
@@ -481,8 +483,9 @@ function GestorImagenNosotros({ imagenInicial, token, onCambiar }) {
 
 // ---------------------------------------------------------------------
 // TAREAS (vista de producción del administrador)
-// Único lugar de la app donde se asignan empleados: cada etapa de cada
-// producto se asigna por separado. Pedidos es solo informativo.
+// Todas las etapas del taller. Cada etapa se asigna al crear el pedido;
+// desde acá se reasigna (por ejemplo, si un empleado falta o se dio de
+// baja) y el admin puede reabrir una etapa completada que no quedó bien.
 // ---------------------------------------------------------------------
 function PanelTareas() {
   const tareas = useData('/tareas/asignadas/mias?todas=true')
@@ -509,6 +512,17 @@ function PanelTareas() {
     } catch (error) { mostrar(error.message, 'error') }
   }
 
+  // Verificación: una etapa completada que no quedó bien vuelve a pendiente.
+  const reabrir = async tarea => {
+    if (!window.confirm(`¿Reabrir "${tarea.etapa}"? Vuelve a pendiente y ${tarea.responsable || 'el empleado'} la va a ver de nuevo en Mis tareas.`)) return
+    try {
+      const actualizada = await api.patch(`/tareas/asignadas/PEDIDO/${tarea.id}/reabrir`, {}, tareas.token)
+      await tareas.load()
+      setSeleccionada(actualizada)
+      mostrar(`Etapa "${tarea.etapa}" reabierta.`)
+    } catch (error) { mostrar(error.message, 'error') }
+  }
+
   // Cada tarjeta agrupa las etapas de un mismo producto/trabajo (mismo
   // pedido u origen + el nombre del producto), para no repetir el
   // encabezado por cada etapa suelta.
@@ -516,7 +530,7 @@ function PanelTareas() {
 
   return (
     <>
-      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller. Hacé clic en una etapa para asignarle un empleado, ver el tiempo estimado y el resultado del semáforo.">
+      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller, con su empleado y sus horas-hombre. Cada etapa se asigna al crear el pedido: hacé clic en una para reasignarla o ver su detalle.">
         <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
           <option value="TODAS">Todas</option>
           <option value="PENDIENTES">Pendientes</option>
@@ -553,7 +567,7 @@ function PanelTareas() {
                     <span className="etapa-item-nombre">{tarea.estado === 'COMPLETADA' && <span className="etapa-check" aria-hidden="true">✓ </span>}{tarea.etapa}</span>
                     {tarea.estado === 'COMPLETADA' && <span className="task-status completada">Completada</span>}
                     <span className="etapa-item-responsable">{tarea.responsable || 'Sin asignar'}</span>
-                    <span className="etapa-item-tiempo">{duracion(tarea.minutos_estimados)}</span>
+                    <span className="etapa-item-tiempo">{horas(tarea.horas_hombre)}</span>
                   </button>
                 ))}
               </div>
@@ -561,7 +575,7 @@ function PanelTareas() {
           ))}
         </div>
       ) : (
-        <Empty title="No hay etapas en esta vista" text="Las tareas se definen al crear un pedido, para cada producto del pedido." />
+        <Empty title="No hay etapas en esta vista" text="Las etapas se definen al crear un pedido, para cada producto del pedido." />
       )}
 
       {seleccionada && (
@@ -569,6 +583,7 @@ function PanelTareas() {
           tarea={seleccionada}
           empleados={empleados.data}
           onAsignar={asignar}
+          onReabrir={reabrir}
           close={() => setSeleccionada(null)}
         />
       )}
@@ -593,8 +608,9 @@ function agruparPorProducto(lista) {
 
 // Ventana de detalle: se abre al hacer click en una tarjeta y muestra todos
 // los datos de esa etapa sin abandonar la grilla que queda detrás, oscurecida.
-// Desde acá se asigna el empleado de la etapa (única vía de asignación).
-function DetalleTarea({ tarea, empleados, onAsignar, close }) {
+// Desde acá se reasigna el empleado de la etapa o se la reabre si ya estaba
+// completada pero no quedó bien.
+function DetalleTarea({ tarea, empleados, onAsignar, onReabrir, close }) {
   const [busy, setBusy] = useState(false)
   const completada = tarea.estado === 'COMPLETADA'
   const cambiarResponsable = async event => {
@@ -612,9 +628,8 @@ function DetalleTarea({ tarea, empleados, onAsignar, close }) {
       <div className="tarea-detalle-grid">
         <span><small>Estado</small><Badge estado={tarea.estado} /></span>
         <span><small>Responsable</small><b>{tarea.responsable || 'Sin asignar'}</b></span>
-        <span><small>Tiempo estimado</small><b>{duracion(tarea.minutos_estimados)}</b></span>
-        <span><small>Tiempo real</small><b>{tarea.minutos_reales ? duracion(tarea.minutos_reales) : '—'}</b></span>
-        <span><small>Semáforo</small><Semaforo valor={tarea.semaforo} /></span>
+        <span><small>Horas-hombre</small><b>{horas(tarea.horas_hombre)}</b></span>
+        <span><small>Producción diaria</small><b>{tarea.jornada ? <EtiquetaJornada fecha={tarea.jornada} hoy={hoyLocal()} /> : '—'}</b></span>
         {tarea.costo > 0 && <span><small>Costo estimado</small><b>{dinero(tarea.costo)}</b></span>}
         {tarea.fecha_entrega && <span><small>Fecha de entrega</small><b>{fecha(tarea.fecha_entrega)}</b></span>}
         {tarea.prioridad > 0 && <span><small>Prioridad</small><b>{tarea.prioridad >= 2 ? 'Urgente' : 'Alta'}</b></span>}
@@ -632,6 +647,9 @@ function DetalleTarea({ tarea, empleados, onAsignar, close }) {
           </select>
         </label>
         {completada && <small className="muted">La etapa ya está completada: no se puede reasignar.</small>}
+        {completada && tarea.origen === 'PEDIDO' && (
+          <button type="button" className="secondary" onClick={() => onReabrir(tarea)}>Reabrir etapa (no quedó bien)</button>
+        )}
         {!completada && tarea.origen === 'TAREA' && <small className="muted">Tarea libre: el responsable se aplica a todas sus etapas.</small>}
       </div>
 
@@ -710,7 +728,7 @@ function PanelConfiguracion({ rol }) {
 
   return (
     <>
-      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller, datos de la web pública y semáforo de rendimiento." />
+      <Heading kicker="Administración" title="Configuración" text="Parámetros del taller y datos de la web pública." />
 
       {aviso && <p className="notice">{aviso}</p>}
 
@@ -719,8 +737,6 @@ function PanelConfiguracion({ rol }) {
       {esSuperAdmin && <ConfiguracionMailReceptor onGuardar={() => setAviso('Correo receptor de consultas actualizado.')} />}
 
       <ConfiguracionCosteo onGuardar={() => setAviso('Costo de la mano de obra actualizado.')} />
-
-      <ConfiguracionSemaforo onGuardar={() => setAviso('Tolerancia del semáforo guardada.')} />
 
       <section className="settings-grid">
         <article>
@@ -732,13 +748,13 @@ function PanelConfiguracion({ rol }) {
         <article>
           <span>▣</span>
           <h3>Productos y pedidos</h3>
-          <p>Cada producto define su precio de venta y sus costos. Las tareas de fabricación se definen en cada pedido (dos pedidos del mismo producto pueden tener tareas distintas), y el pedido copia el precio y el costo del producto, de modo que editar el catálogo no altera la producción en curso.</p>
+          <p>Cada producto define su precio de venta, sus costos y las horas-hombre que se proponen al pedirlo. En cada pedido esas horas se reparten en etapas, cada una con su empleado, y el pedido copia el precio y el costo, de modo que editar el catálogo no altera la producción en curso.</p>
         </article>
 
         <article>
-          <span>🚦</span>
-          <h3>Semáforo de rendimiento</h3>
-          <p>El sistema compara el tiempo real informado por el empleado contra el estimado por el administrador y clasifica la etapa en verde, amarillo o rojo. Es un indicador: la recompensa es una sola por día para todo el equipo (ver Recompensas).</p>
+          <span>◈</span>
+          <h3>Producción diaria y recompensa</h3>
+          <p>El administrador propone qué etapas se terminan cada día. Los empleados solo las marcan como terminadas; el administrador verifica y cierra el día. Si se completó todo lo propuesto, el equipo cobra esas horas-hombre (valor hora y % de premio en Recompensas).</p>
         </article>
       </section>
     </>

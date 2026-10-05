@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, auth, leerConfiguracion } from '../comun.js'
 import { calcularMetricas, enRango, validarFecha } from '../metricas.js'
+import { fechaDeHoy, obtenerJornada } from '../jornadas.js'
 
 const router = Router()
 const unaFila = async (sql, valores = []) => (await pool.query(sql, valores)).rows[0]
@@ -31,10 +32,17 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
       COUNT(*) FILTER (WHERE estado = 'COMPLETADA')::int AS completadas,
       COUNT(*) FILTER (WHERE estado <> 'COMPLETADA')::int AS pendientes,
       COUNT(*) FILTER (WHERE estado <> 'COMPLETADA' AND asignado_a IS NULL)::int AS sin_asignar,
-      COUNT(*) FILTER (WHERE semaforo = 'VERDE')::int AS verdes,
-      COUNT(*) FILTER (WHERE semaforo = 'AMARILLO')::int AS amarillos,
-      COUNT(*) FILTER (WHERE semaforo = 'ROJO')::int AS rojos
+      COALESCE(SUM(horas_hombre) FILTER (WHERE estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes
     FROM vista_tareas_empleado`)
+
+  // Producción propuesta para hoy (Producción diaria).
+  const hoy = await obtenerJornada(fechaDeHoy())
+  const produccionHoy = {
+    fecha: hoy.fecha, estado: hoy.estado, cumplido: hoy.cumplido,
+    objetivo_horas: hoy.objetivo_horas, horas_completadas: hoy.horas_completadas, avance: hoy.avance,
+    etapas_totales: hoy.etapas_totales, etapas_completadas: hoy.etapas_completadas,
+    recompensa: hoy.recompensa, recompensa_al_cumplir: hoy.recompensa_al_cumplir
+  }
 
   const catalogo = await unaFila(`SELECT
       (SELECT COUNT(*) FROM clientes)::int AS clientes,
@@ -63,7 +71,7 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
     ORDER BY prioridad DESC, fecha_entrega NULLS LAST, creado_en LIMIT 6`)
 
   res.json({
-    pedidos, trabajo, catalogo, metricas,
+    pedidos, trabajo, catalogo, metricas, produccion_hoy: produccionHoy,
     productos_vendidos: vendidos, empleados_pendientes: empleadosPendientes, proximos_pedidos: proximosPedidos,
     configuracion: await leerConfiguracion()
   })
@@ -72,7 +80,7 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
 // ---------------------------------------------------------------------
 // ESTADÍSTICAS GENERALES (apartado propio, más detallado)
 // "desde" / "hasta" (YYYY-MM-DD, opcionales) filtran todo lo que tiene
-// fecha: ventas, cobros, etapas completadas, recompensas del equipo y semáforos.
+// fecha: ventas, cobros, etapas completadas, producciones diarias y recompensas del equipo.
 // ---------------------------------------------------------------------
 router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   const desde = validarFecha(req.query.desde)
@@ -81,36 +89,32 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
 
   const metricas = await calcularMetricas({ desde, hasta })
 
-  // Rendimiento por empleado dentro del rango: etapas completadas en el
-  // período (por completado_en) + lo que tiene pendiente hoy.
+  // Rendimiento por empleado dentro del rango: etapas y horas-hombre
+  // completadas en el período (por completado_en) + lo que tiene pendiente
+  // hoy. Ya no hay tiempos reales: el empleado no informa cuánto tardó.
   const rendimiento = await filas(`SELECT u.id, u.nombre, u.email, u.activo,
       COUNT(v.id) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})::int AS completadas,
       COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA')::int AS pendientes,
-      COUNT(v.id) FILTER (WHERE v.semaforo = 'VERDE' AND ${enRango('v.completado_en')})::int AS verdes,
-      COUNT(v.id) FILTER (WHERE v.semaforo = 'AMARILLO' AND ${enRango('v.completado_en')})::int AS amarillos,
-      COUNT(v.id) FILTER (WHERE v.semaforo = 'ROJO' AND ${enRango('v.completado_en')})::int AS rojos,
-      COALESCE(SUM(v.minutos_estimados) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::int AS minutos_estimados,
-      COALESCE(SUM(v.minutos_reales) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::int AS minutos_reales,
-      COALESCE(ROUND(AVG(v.minutos_reales) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})), 0)::int AS promedio_minutos
+      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::float8 AS horas_completadas,
+      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes
     FROM usuarios u
     LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
     WHERE LOWER(u.rol::text) = 'empleado'
     GROUP BY u.id
-    ORDER BY completadas DESC, u.nombre`, parametros)
-  for (const empleado of rendimiento) {
-    empleado.eficiencia = empleado.minutos_estimados > 0 ? Math.round((100 * empleado.minutos_reales) / empleado.minutos_estimados) : null
-  }
+    ORDER BY horas_completadas DESC, completadas DESC, u.nombre`, parametros)
 
-  // Reparto del semáforo de las etapas cerradas dentro del rango.
-  const semaforo = await unaFila(`SELECT
-      COUNT(*) FILTER (WHERE semaforo = 'VERDE')::int AS verdes,
-      COUNT(*) FILTER (WHERE semaforo = 'AMARILLO')::int AS amarillos,
-      COUNT(*) FILTER (WHERE semaforo = 'ROJO')::int AS rojos,
-      COUNT(*) FILTER (WHERE semaforo IS NULL)::int AS sin_medir,
-      COALESCE(SUM(minutos_estimados), 0)::int AS minutos_estimados,
-      COALESCE(SUM(minutos_reales), 0)::int AS minutos_reales
-    FROM vista_tareas_empleado
-    WHERE estado = 'COMPLETADA' AND ${enRango('completado_en')}`, parametros)
+  // Producciones diarias del período: cuántas se propusieron, cuántas se
+  // terminaron completas (con recompensa) y cuántas horas-hombre sumaron.
+  const produccion = await unaFila(`SELECT
+      COUNT(*)::int AS dias,
+      COUNT(*) FILTER (WHERE estado = 'TERMINADA')::int AS terminadas,
+      COUNT(*) FILTER (WHERE estado = 'TERMINADA' AND cumplido)::int AS cumplidas,
+      COUNT(*) FILTER (WHERE estado = 'ABIERTA')::int AS abiertas,
+      COALESCE(SUM(objetivo_horas) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS horas_propuestas,
+      COALESCE(SUM(horas_producidas) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS horas_completadas,
+      COALESCE(SUM(recompensa) FILTER (WHERE estado = 'TERMINADA'), 0)::float8 AS recompensas
+    FROM jornadas_equipo
+    WHERE ${enRango('fecha')}`, parametros)
 
   // Ventas reales del período, una fila por evento: cada producto
   // vendido (estado VENDIDO, o borrado después de venderse) y cada item de
@@ -142,7 +146,7 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   res.json({
     rango: { desde, hasta },
     metricas,
-    rendimiento, semaforo, por_producto: porProducto, mensual,
+    rendimiento, produccion, por_producto: porProducto, mensual,
     configuracion: await leerConfiguracion()
   })
 }))

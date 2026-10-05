@@ -37,21 +37,12 @@ export const Badge = ({ estado }) => (
   <span className={`task-status ${String(estado || '').toLowerCase()}`}>{etiquetaEstado(estado)}</span>
 )
 
-// Semáforo de rendimiento: verde más rápido, amarillo en promedio, rojo más lento.
-export const semaforos = {
-  VERDE: { icono: '🟢', texto: 'Más rápido de lo esperado' },
-  AMARILLO: { icono: '🟡', texto: 'Dentro del promedio' },
-  ROJO: { icono: '🔴', texto: 'Más lento de lo esperado' }
-}
-
-export const Semaforo = ({ valor, compacto = false }) => {
-  if (!valor) return <span className="semaforo vacio" title="Sin tiempo informado">⚪{compacto ? '' : ' Sin medir'}</span>
-  const dato = semaforos[valor] || semaforos.AMARILLO
-  return (
-    <span className={`semaforo ${valor.toLowerCase()}`} title={dato.texto}>
-      {dato.icono}{compacto ? '' : ` ${valor.toLowerCase()}`}
-    </span>
-  )
+// Marca de la producción diaria (abierta) en la que está propuesta una
+// etapa: "Hoy" o la fecha. Sin producción no muestra nada.
+export const EtiquetaJornada = ({ fecha, hoy }) => {
+  if (!fecha) return null
+  const texto = fecha === hoy ? 'Producción de hoy' : `Producción ${String(fecha).slice(0, 10).split('-').reverse().slice(0, 2).join('/')}`
+  return <span className={`jornada-tag${fecha === hoy ? ' hoy' : ''}`} title="Propuesta en la producción diaria">{texto}</span>
 }
 
 export function Modal({ title, subtitle, close, children, ancho, icono }) {

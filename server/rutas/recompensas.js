@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
 import { asyncRoute, auth, decimal, fallo } from '../comun.js'
-import { fechaDeHoy as hoy, guardarJornada, obtenerJornada, parametrosVigentes, validarFechaDia } from '../jornadas.js'
+import { fechaDeHoy as hoy, listarJornadas, obtenerJornada, parametrosVigentes, validarFechaDia } from '../jornadas.js'
 
 const router = Router()
 
@@ -10,8 +10,9 @@ const router = Router()
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js).
 // Leer está abierto a cualquier usuario; el valor hora-hombre y el % de
 // premio solo los cambia un administrador. El objetivo del día no se
-// carga acá: sale de los objetivos diarios por producto de Producción
-// diaria (ver rutas/produccion.js y server/jornadas.js).
+// carga acá: son las horas-hombre de las etapas propuestas en Producción
+// diaria, y la recompensa se paga cuando el admin la marca como terminada
+// con todo completado (ver rutas/produccion.js y server/jornadas.js).
 // -----------------------------------------------------------------------
 const fechaParametro = valor => {
   const fecha = validarFechaDia(valor)
@@ -19,21 +20,13 @@ const fechaParametro = valor => {
   return fecha
 }
 
-// Historial de días calculados (copia guardada en jornadas_equipo).
+// Historial de días: los terminados con su resultado guardado y los
+// abiertos calculados en vivo.
 router.get('/equipo', auth(), asyncRoute(async (req, res) => {
-  const desde = validarFechaDia(req.query.desde)
-  const hasta = validarFechaDia(req.query.hasta)
-  const { rows } = await pool.query(
-    `SELECT fecha::text AS fecha, objetivo_horas::float8 AS objetivo_horas, objetivo_detalle,
-       horas_producidas::float8 AS horas_producidas, excedente_horas::float8 AS excedente_horas, valor_hora::float8 AS valor_hora,
-       porcentaje_premio::float8 AS porcentaje_premio, recompensa::float8 AS recompensa, calculado_en
-     FROM jornadas_equipo
-     WHERE ($1::date IS NULL OR fecha >= $1::date) AND ($2::date IS NULL OR fecha <= $2::date)
-     ORDER BY fecha DESC LIMIT 366`, [desde, hasta])
-  res.json(rows)
+  res.json(await listarJornadas({ desde: validarFechaDia(req.query.desde), hasta: validarFechaDia(req.query.hasta) }))
 }))
 
-// Desglose de un día: objetivo, producido, si se cumplió y recompensa.
+// Desglose de un día: etapas propuestas, avance, si se cumplió y recompensa.
 router.get('/equipo/dia/:fecha', auth(), asyncRoute(async (req, res) => {
   res.json(await obtenerJornada(fechaParametro(req.params.fecha)))
 }))
@@ -49,7 +42,8 @@ router.get('/parametros', auth(), asyncRoute(async (_, res) => {
 }))
 
 // Cada cambio agrega una fila al historial, vigente desde hoy. Los días
-// anteriores siguen usando el valor que tenían.
+// ya terminados conservan el valor con el que se cerraron; los abiertos
+// toman el vigente en su fecha.
 router.put('/parametros', auth(['admin']), asyncRoute(async (req, res) => {
   const actual = await parametrosVigentes(pool, hoy())
   const { valor_hora: valorHora = actual.valor_hora, porcentaje_premio: porcentajePremio = actual.porcentaje_premio } = req.body || {}
@@ -58,17 +52,9 @@ router.put('/parametros', auth(['admin']), asyncRoute(async (req, res) => {
   if (!Number.isFinite(valor) || valor < 0) throw fallo('El valor de la hora-hombre debe ser un número mayor o igual a cero.')
   if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) throw fallo('El porcentaje de premio va de 0 a 100.')
 
-  const conexion = await pool.connect()
-  try {
-    await conexion.query('BEGIN')
-    await conexion.query(
-      'INSERT INTO parametros_recompensa_historial (vigente_desde, valor_hora, porcentaje_premio, creado_por) VALUES ($1, $2, $3, $4)',
-      [hoy(), decimal(valor), decimal(porcentaje), req.user.id])
-    // Solo se recalcula el día de hoy (si ya tenía datos): es el único que toma el valor nuevo.
-    const existe = (await conexion.query('SELECT 1 FROM jornadas_equipo WHERE fecha = $1', [hoy()])).rows[0]
-    if (existe) await guardarJornada(conexion, hoy())
-    await conexion.query('COMMIT')
-  } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
+  await pool.query(
+    'INSERT INTO parametros_recompensa_historial (vigente_desde, valor_hora, porcentaje_premio, creado_por) VALUES ($1, $2, $3, $4)',
+    [hoy(), decimal(valor), decimal(porcentaje), req.user.id])
   res.json(await parametrosVigentes(pool, hoy()))
 }))
 

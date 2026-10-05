@@ -21,7 +21,7 @@
 // los capítulos que son solo para ese rol no se incluyen en el PDF.
 // ---------------------------------------------------------------------
 
-export const MANUAL_VERSION = 'Septiembre 2026'
+export const MANUAL_VERSION = 'Octubre 2026'
 
 const TODOS = ['super_admin', 'admin', 'empleado']
 const GESTION = ['super_admin', 'admin']
@@ -43,8 +43,8 @@ export const manual = {
           t: 'tabla',
           cab: ['Tipo de cuenta', 'Qué puede hacer'],
           filas: [
-            ['Administrador', 'Gestiona productos, categorías, pedidos, tareas, producción diaria, la recompensa del equipo y estadísticas. Da de alta empleados y restablece sus contraseñas.'],
-            ['Empleado', 'Ve solo sus etapas de trabajo asignadas, las empieza y las marca como terminadas informando el tiempo que le llevó.']
+            ['Administrador', 'Gestiona productos, categorías, pedidos (con sus etapas y empleados), la producción diaria, la recompensa del equipo y estadísticas. Da de alta empleados y restablece sus contraseñas.'],
+            ['Empleado', 'Ve solo sus etapas de trabajo asignadas (primero las de la producción de hoy), las empieza y las marca como terminadas. No tiene que informar cuánto tardó.']
           ]
         },
         { t: 'nota', x: 'En la esquina superior derecha del panel aparece un círculo con una letra: **A** es administrador y **O** es empleado. Sirve para saber con qué tipo de cuenta estás trabajando.' }
@@ -97,9 +97,9 @@ export const manual = {
             ['Panel de control', 'Resumen del taller de un vistazo y accesos directos.'],
             ['Productos', 'Catálogo: precios, costos, fotos, estados y publicación en la web.'],
             ['Categorías', 'Grupos para ordenar los productos.'],
-            ['Tareas', 'Etapas de producción y asignación de empleados.'],
-            ['Pedidos', 'Trabajos comprometidos con sus productos, fechas y avance.'],
-            ['Producción diaria', 'Objetivos diarios por producto y registro de lo producido cada día.'],
+            ['Tareas', 'Todas las etapas de los pedidos con su empleado: reasignar o reabrir una etapa.'],
+            ['Pedidos', 'Trabajos comprometidos: productos, horas-hombre, etapas con su empleado, fechas y avance.'],
+            ['Producción diaria', 'Qué se propone terminar cada día, su avance, la verificación y el cierre del día.'],
             ['Estadísticas', 'Ventas, gastos, ganancias y rendimiento del equipo.'],
             ['Recompensas', 'Premio diario del equipo cuando se completa la producción propuesta.'],
             ['Usuarios', 'Cuentas de las personas del taller.'],
@@ -107,8 +107,29 @@ export const manual = {
           ]
         },
         { t: 'h', x: 'El Panel de control' },
-        { t: 'p', x: 'Es la pantalla inicial. Muestra cifras clave (pedidos abiertos, pedidos atrasados, etapas pendientes, ingresos en curso y semáforo del taller), los pedidos en curso ordenados por prioridad y fecha de entrega, los últimos productos vendidos y los empleados con tareas pendientes. Desde ahí también hay accesos directos para crear un pedido, un producto o un empleado, asignar tareas y entrar a Estadísticas o Recompensas.' },
+        { t: 'p', x: 'Es la pantalla inicial. Muestra cifras clave (pedidos abiertos, pedidos atrasados, etapas y horas-hombre pendientes, ingresos en curso y la **producción de hoy**, con su avance y la recompensa en juego), los pedidos en curso ordenados por prioridad y fecha de entrega, los últimos productos vendidos y los empleados con tareas pendientes. Desde ahí también hay accesos directos para crear un pedido, un producto o un empleado y para ir a Producción diaria, Tareas y Recompensas.' },
         { t: 'nota', x: 'Los números se actualizan solos cada tanto y cuando volvés a la pestaña del navegador. Si algo no coincide con lo que esperás, recargá la página.' }
+      ]
+    },
+    {
+      id: 'flujo',
+      titulo: 'Cómo se organiza el trabajo: del producto a la recompensa',
+      para: GESTION,
+      bloques: [
+        { t: 'p', x: 'Productos, pedidos, tareas, producción diaria y recompensas forman **un solo circuito**. Conviene entenderlo una vez, porque todas las pantallas de gestión se apoyan en él:' },
+        {
+          t: 'ol',
+          x: [
+            '**Producto.** Lo cargás en Productos con sus **horas-hombre estimadas**: las horas de trabajo que lleva fabricar una unidad.',
+            '**Pedido.** Le asignás un pedido al producto (botón **“Crear pedido”** en la tarjeta del producto, o desde Pedidos). Ahí repartís esas horas-hombre en **etapas** (Corte, Soldadura, Pintura…) y elegís **qué empleado** hace cada una. La suma de las etapas tiene que dar las horas-hombre estimadas.',
+            '**Producción diaria.** Cada día proponés qué se va a terminar: **un pedido completo**, **un producto** del pedido o **etapas sueltas**.',
+            '**Mis tareas.** Cada empleado ve sus etapas, primero las de hoy. Cuando termina una, la marca como terminada. **No tiene que decir cuánto tardó.**',
+            '**Verificación.** Revisás el trabajo. Si algo no quedó bien, reabrís esa etapa. Cuando está todo en orden, marcás la **producción diaria como terminada**.',
+            '**Recompensa.** Si se completó todo lo propuesto, el equipo cobra las horas-hombre de ese día por el valor de la hora-hombre. Si faltó algo, ese día no hay recompensa.'
+          ]
+        },
+        { t: 'p', x: '**Ejemplo.** Una mesa de comedor lleva 11 horas-hombre: Corte 3 hs (Martín), Soldadura 6 hs (Lucía) y Pintura 2 hs (Diego). Si hoy proponés la mesa completa y los tres terminan sus etapas, al cerrar el día el equipo cobra 11 horas-hombre: con la hora a $2.500 y 100 % de premio, **$27.500**.' },
+        { t: 'nota', x: 'Las horas-hombre que se pagan son siempre las **estimadas** por el administrador al armar el pedido: el sistema no mide cuánto tardó cada uno. Por eso es importante estimarlas bien.' }
       ]
     },
     {
@@ -124,7 +145,7 @@ export const manual = {
           x: [
             'Entrá a **Productos** y tocá **“+ Nuevo producto”**.',
             'Completá el **nombre**. El **ID de producto (chapita)** se genera solo; podés cambiarlo. Es el número que aparece en la chapita de la pieza y en la web.',
-            'Elegí la **categoría** y, si querés, cargá horas-hombre, medidas y precio de venta. Si dejás el precio vacío, la web muestra “Consultar precio”.',
+            'Elegí la **categoría** y, si querés, cargá las **horas-hombre estimadas** (las horas de trabajo para fabricar una unidad), las medidas y el precio de venta. Si dejás el precio vacío, la web muestra “Consultar precio”.',
             'Escribí la **descripción técnica** (medidas, materiales, notas) y la **historia del producto** (el relato detrás de la pieza). Se muestran en la web pública.',
             'Si querés que se vea en la web, marcá **“Publicar en la web”**. Para publicar son obligatorios: nombre, ID, descripción técnica, historia y categoría. Sin esa marca, el producto queda como **borrador**, visible solo en el panel.',
             'Opcional: marcá **“Producto destacado”** para que aparezca en la portada de la web.',
@@ -144,7 +165,9 @@ export const manual = {
         { t: 'img', src: 'producto-fotos.png', pie: 'Fotos de un producto: la principal está marcada y abajo está la zona para subir más.' },
         { t: 'h', x: 'Costos y márgenes' },
         { t: 'p', x: 'Cada producto calcula solo su costo: **materiales** (precio unitario por cantidad que usa una unidad) más **mano de obra** (horas-hombre por el costo por hora que define el taller). Con el precio de venta se obtiene el **margen**. Esta información es interna: no se muestra en la web.' },
-        { t: 'nota', x: 'Las **horas-hombre** de un producto se usan también para la recompensa: con ese número se pasan a horas tanto los objetivos diarios como lo producido (ver “Recompensa del equipo”). Un producto sin horas-hombre cargadas no suma.' },
+        { t: 'nota', x: 'Las **horas-hombre** del producto se proponen solas cada vez que se arma un pedido de ese producto, donde se reparten en etapas (ver “Pedidos”). Cambiarlas no modifica los pedidos ya creados.' },
+        { t: 'h', x: 'Crear un pedido desde el producto' },
+        { t: 'p', x: 'En la tarjeta de cada producto activo está el botón **“Crear pedido”**: abre el formulario de pedido con ese producto ya elegido, sus horas-hombre y, si ya se pidió antes, las mismas etapas y empleados de la última vez.' },
         { t: 'h', x: 'WhatsApp' },
         { t: 'p', x: 'Cada producto muestra una marca de sincronización con el catálogo de WhatsApp: ✓ sincronizado, ✗ con error (al pasar el mouse se ve el motivo), … sincronizando y — todavía sin sincronizar. Es informativa; el sistema la actualiza solo.' },
         { t: 'h', x: 'Buscar y filtrar' },
@@ -214,99 +237,108 @@ export const manual = {
       titulo: 'Pedidos',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Un pedido es un trabajo comprometido. Puede incluir uno o más productos y cada producto tiene sus propias tareas de producción. El avance del pedido se calcula solo a partir de esas tareas.' },
-        { t: 'img', src: 'pedidos.png', pie: 'Listado de pedidos con prioridad, fecha de entrega y cumplimiento.' },
+        { t: 'p', x: 'Un pedido es un trabajo comprometido. Puede incluir uno o más productos. Para cada producto se estiman sus **horas-hombre** y se reparten en **etapas**, cada una con el **empleado** que la hace. El avance del pedido se calcula solo a partir de esas etapas.' },
+        { t: 'img', src: 'pedidos.png', pie: 'Listado de pedidos con sus etapas, horas-hombre, prioridad, entrega y cumplimiento.' },
         { t: 'h', x: 'Crear un pedido' },
         {
           t: 'ol',
           x: [
-            'En **Pedidos** tocá **“+ Nuevo pedido”** (también está en el Panel de control).',
-            'En **“Productos del pedido”** elegí el producto y la **cantidad**. Con **“+ Agregar producto”** sumás más. Si el producto todavía no existe, usá **“+ Crear producto nuevo”**.',
-            'Para cada producto definí sus **tareas** o etapas (por ejemplo: Corte, Soldadura, Pintura) con los **minutos por unidad** de cada una.',
-            'Elegí la **prioridad** (Normal, Alta o Urgente) y la **fecha de entrega**.',
-            'Podés agregar **notas** (detalles de fabricación, condiciones de pago, etc.).',
-            'Guardá. El sistema arma el presupuesto (materiales, mano de obra, precio y ganancia) con los datos del producto.'
+            'En **Pedidos** tocá **“+ Nuevo pedido”** (también está en el Panel de control), o tocá **“Crear pedido”** en la tarjeta de un producto.',
+            'Elegí el producto y la **cantidad**. Con **“+ Agregar producto”** sumás más. Si el producto todavía no existe, usá **“+ Crear producto nuevo”**.',
+            'Revisá las **horas-hombre estimadas para terminar una unidad**. Se completan solas con las del producto; podés cambiarlas para este pedido.',
+            'Cargá las **etapas** (por ejemplo: Corte, Soldadura, Pintura): para cada una, el nombre, sus **horas por unidad** y el **empleado** que la hace. Si el producto ya se pidió antes, se proponen las etapas y los empleados de la última vez.',
+            'Debajo de las etapas, el sistema te dice si **la suma coincide** con las horas-hombre estimadas (✓) o cuántas horas faltan repartir o sobran. Con **“Usar X hs como estimación”** ajustás la estimación a lo que suman las etapas.',
+            'Elegí la **prioridad** (Normal, Alta o Urgente), la **fecha de entrega** y, si querés, agregá **notas**.',
+            'Tocá **“Crear pedido”**. Las etapas quedan asignadas: cada empleado ya las ve en su pantalla “Mis tareas”.'
           ]
         },
-        { t: 'img', src: 'pedido-nuevo.png', pie: 'Formulario “Nuevo pedido”.' },
-        { t: 'nota', x: 'Los empleados no se asignan al crear el pedido: se asignan después desde **Tareas**.' },
+        { t: 'img', src: 'pedido-nuevo.png', pie: 'Formulario “Nuevo pedido”: horas-hombre estimadas repartidas en etapas, cada una con su empleado.' },
+        { t: 'aviso', x: 'El pedido no se guarda si alguna etapa no tiene empleado o si las etapas no suman exactamente las horas-hombre estimadas. Las horas se cargan **por unidad**: si pedís 4 sillas, cada etapa vale 4 veces lo que cargaste.' },
+        { t: 'h', x: 'Revisar y cambiar un pedido' },
+        { t: 'p', x: 'Tocá un pedido en el listado para ver su detalle: precio, costos y ganancia, y cada producto con sus etapas, horas-hombre, estado y empleado. Las etapas propuestas en la producción diaria muestran la marca **“Producción de hoy”** (o la fecha del día).' },
+        {
+          t: 'ul',
+          x: [
+            'Para **agregar una etapa** a un producto, completá la fila de abajo (nombre, horas por unidad y empleado) y tocá **“+ Agregar esta etapa”**. Sus horas se suman a la estimación del producto.',
+            'Con la **×** quitás una etapa que todavía no se completó (sus horas se restan de la estimación).',
+            'Con **“Pedido completo a la producción de hoy”** (o **“+ A la producción de hoy”** en un producto) proponés ese trabajo para hoy sin ir a Producción diaria.',
+            'Para cambiar el empleado de una etapa, usá la sección **Tareas**.'
+          ]
+        },
         { t: 'h', x: 'Estados de un pedido' },
-        { t: 'p', x: 'Un pedido puede estar **pendiente, en producción, pausado, terminado o cancelado**. Cambia solo a medida que se completan etapas, y también podés modificarlo a mano. El pedido copia el precio y el costo del producto al momento de crearlo: si después editás el producto, los pedidos existentes **no cambian**.' },
+        { t: 'p', x: 'Un pedido puede estar **pendiente, en producción, pausado, terminado o cancelado**. Cambia solo a medida que se completan etapas, y también podés modificarlo a mano. El pedido copia el precio, el costo y las horas-hombre al momento de crearlo: si después editás el producto, los pedidos existentes **no cambian**.' },
         { t: 'h', x: 'Ordenar y revisar' },
-        { t: 'p', x: 'El listado se puede ordenar por prioridad y por fecha de entrega, y se cambia la dirección del orden con el botón correspondiente. Cada pedido muestra su porcentaje de avance, las etapas completadas y su cumplimiento.' },
-        { t: 'aviso', x: '“Eliminar pedido” borra el pedido definitivamente. Si solo querés frenarlo, cambiá su estado a pausado o cancelado.' }
+        { t: 'p', x: 'El listado se puede ordenar por prioridad, porcentaje completado, fecha de entrega o estado, y se cambia la dirección del orden con el botón correspondiente. Cada producto muestra sus etapas completadas, sus horas-hombre y su cumplimiento.' },
+        { t: 'aviso', x: '“Eliminar pedido” borra el pedido definitivamente y saca sus etapas de la producción diaria. Si solo querés frenarlo, cambiá su estado a pausado o cancelado.' }
       ]
     },
     {
       id: 'tareas',
-      titulo: 'Tareas: asignar el trabajo al equipo',
+      titulo: 'Tareas: el trabajo de cada empleado',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'La sección **Tareas** muestra todas las etapas del taller en un solo lugar. Desde acá se decide **quién hace cada etapa**.' },
+        { t: 'p', x: 'La sección **Tareas** muestra todas las etapas de los pedidos en un solo lugar, agrupadas por producto, con su empleado y sus horas-hombre. Las etapas se asignan **al crear el pedido**; acá se **cambia el responsable** cuando hace falta (por ejemplo, si alguien falta) y se **reabre** una etapa que no quedó bien.' },
         { t: 'img', src: 'tareas.png', pie: 'Tareas de producción agrupadas por producto y pedido.' },
         {
           t: 'ol',
           x: [
-            'Entrá a **Tareas** y hacé clic en la etapa que querés asignar.',
-            'Elegí el **empleado responsable**. Se ve el tiempo estimado y, cuando corresponde, el resultado del semáforo.',
-            'Guardá. La etapa aparece en “Mis tareas” del empleado.'
+            'Entrá a **Tareas**. Con el filtro de arriba elegís ver todas, las pendientes, las sin asignar o las completadas.',
+            'Hacé clic en una etapa para ver su detalle: estado, responsable, horas-hombre, si está en la producción diaria y sus fechas.',
+            'Para cambiar quién la hace, elegí otro empleado en **“Responsable de esta etapa”**. El cambio se guarda solo y la etapa pasa a “Mis tareas” de esa persona.'
           ]
         },
-        { t: 'img', src: 'tarea-asignar.png', pie: 'Detalle de una etapa: en “Responsable de esta etapa” se elige al empleado.' },
+        { t: 'img', src: 'tarea-asignar.png', pie: 'Detalle de una etapa: en “Responsable de esta etapa” se cambia el empleado.' },
         {
           t: 'ul',
           x: [
             'Una etapa **ya completada no se puede reasignar**.',
-            'En una tarea libre, el responsable se aplica a todas sus etapas.',
-            'Cada etapa muestra su estado: pendiente, en proceso o completada, con tiempo estimado y tiempo real.'
+            'Si una etapa completada no quedó bien, tocá **“Reabrir etapa”**: vuelve a pendiente y el empleado la ve de nuevo en “Mis tareas”. No se puede reabrir una etapa que ya se pagó en una producción diaria terminada (primero hay que reabrir ese día).',
+            'Si se elimina la cuenta de un empleado, sus etapas pendientes quedan **sin asignar**: el filtro “Sin asignar” te ayuda a encontrarlas y reasignarlas.'
           ]
         }
       ]
     },
     {
       id: 'produccion',
-      titulo: 'Producción diaria y objetivos',
+      titulo: 'Producción diaria',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Sirve para seguir el avance de lo que se está fabricando, definir la **producción propuesta por día** y cargar lo que se produjo. Con esos datos el sistema calcula la recompensa del equipo.' },
-        { t: 'p', x: 'Arriba, las tarjetas muestran el **objetivo del equipo** (la producción propuesta, en horas-hombre) y la **recompensa al cumplir** (cuánto cobra el equipo si lo completa).' },
-        { t: 'h', x: 'Seguimiento' },
-        { t: 'p', x: '**Productos en producción** muestra el avance de cada producto de los pedidos abiertos, etapa por etapa, con su responsable y el resultado del semáforo.' },
-        { t: 'img', src: 'produccion.png', pie: 'Producción diaria: objetivo del equipo, recompensa al cumplir y avance de cada producto.' },
-        { t: 'h', x: 'Definir los objetivos' },
-        {
-          t: 'ol',
-          x: [
-            'Tocá **“+ Nuevo objetivo”**.',
-            'Elegí el tipo: **“Producción diaria de un producto”** (cuántas unidades por día se esperan) o **“Terminar un pedido específico”**.',
-            'Indicá el producto y la **cantidad objetivo por día**, o el pedido. El formulario muestra a cuántas horas equivale cada unidad y cuánto suma ese objetivo al del equipo.',
-            'Dejá marcado **“Objetivo activo”** y guardá.'
-          ]
-        },
-        { t: 'img', src: 'objetivo-nuevo.png', pie: 'Formulario “Nuevo objetivo”.' },
-        { t: 'p', x: 'Los objetivos **activos por producto** forman el **objetivo del equipo**: cada uno aporta su cantidad multiplicada por las horas-hombre del producto. Por ejemplo, 4 sillas de 4 horas-hombre y 2 mesitas de 6 horas-hombre dan un objetivo de 28 horas.' },
+        { t: 'p', x: 'Acá se decide **qué se propone terminar cada día**, se sigue cómo avanza y, al final, se **verifica y se cierra** el día. Con eso el sistema calcula la recompensa del equipo.' },
+        { t: 'p', x: 'Arriba elegís el **Día** (por defecto, hoy; con **“Hoy”** volvés al día actual). Las tarjetas muestran lo **propuesto** y lo **completado** (en horas-hombre), el **estado** del día y la **recompensa** que cobra el equipo si se completa todo.' },
+        { t: 'img', src: 'produccion.png', pie: 'Producción del día en curso: lo propuesto, lo completado y cada etapa con su empleado.' },
+        { t: 'h', x: 'Proponer el trabajo del día' },
+        { t: 'p', x: 'En **“Agregar trabajo”** aparecen los pedidos en curso con sus etapas pendientes. Podés agregar:' },
         {
           t: 'ul',
           x: [
-            'Un objetivo de tipo **“Terminar un pedido”** sirve para el seguimiento, pero **no suma** al objetivo del equipo ni a la recompensa.',
-            'Un producto **sin horas-hombre** tampoco suma: la tarjeta del objetivo lo avisa. Cargalas en Productos.',
-            'Con **“Editar”** cambiás la cantidad o lo pausás; con **“Eliminar”** lo quitás.'
+            '**Un pedido completo**: botón **“+ Pedido completo”**.',
+            '**Un producto** de un pedido que tiene varios productos: botón **“+ Producto”**.',
+            '**Etapas sueltas**: marcá sus casillas y tocá **“Agregar a la producción”** en la barra de abajo, que muestra cuántas etapas y horas elegiste.'
           ]
         },
-        { t: 'h', x: 'Cargar la producción del día' },
+        { t: 'img', src: 'produccion-agregar.png', pie: 'Agregar trabajo al día: un pedido completo, un producto o etapas sueltas.' },
+        { t: 'nota', x: 'Una etapa pendiente solo puede estar en **una** producción abierta: si ya la propusiste para otro día, aparece como “En la producción del…”. Las etapas completadas y las de pedidos pausados, cancelados o terminados no se pueden agregar. También podés proponer trabajo desde el detalle de un pedido.' },
+        { t: 'h', x: 'Seguir el avance' },
+        { t: 'p', x: 'En **“Propuesto para el día”** se ven las etapas agrupadas por pedido y producto, con su estado, sus horas, el empleado y cuándo se completaron (📝 indica que el empleado dejó observaciones: pasá el mouse para leerlas). Con **“Quitar”** sacás una etapa del día (no se borra del pedido) y con **“Vaciar el día”** sacás todo.' },
+        { t: 'h', x: 'Verificar y terminar el día' },
         {
           t: 'ol',
           x: [
-            'En **“Producción del día”** elegí la **fecha** (por defecto, hoy). Podés elegir un día anterior si te olvidaste de cargarlo.',
-            'Escribí cuántas unidades se hicieron de cada producto y tocá **“Registrar”** en cada fila.',
-            'Si se fabricó un producto que no tiene objetivo propio, elegilo en **“Otro producto”**: se agrega a la lista y también suma horas producidas.'
+            'Cuando los empleados terminan todas sus etapas, el estado del día pasa a **“Lista para verificar”**.',
+            'Revisá el trabajo. Si una etapa no quedó bien, tocá **“Reabrir”**: vuelve a pendiente y el empleado la ve de nuevo en “Mis tareas”.',
+            'Cuando todo está en orden, tocá **“Marcar producción diaria terminada”** y confirmá. El sistema guarda el resultado y la recompensa del equipo.'
           ]
         },
-        { t: 'img', src: 'produccion-planilla.png', pie: 'Objetivos activos y carga de la producción del día, con el resumen de la recompensa al pie.' },
-        { t: 'p', x: 'Al pie aparece el **resumen del día**: objetivo, producido y si se cumplió (con la recompensa) o cuántas horas faltan. Se actualiza cada vez que registrás producción o cambiás un objetivo.' },
-        { t: 'aviso', x: 'Si volvés a registrar un producto en la misma fecha, la cantidad nueva **reemplaza** a la anterior (no se suma).' },
-        { t: 'h', x: 'Historial de producción' },
-        { t: 'p', x: 'Lista lo producido por día y por producto. Si el producto tiene objetivo propio, indica si se cumplió; si no, dice “Sin objetivo propio”. Se puede filtrar por fechas.' }
+        { t: 'img', src: 'produccion-terminada.png', pie: 'Producción del día terminada y cumplida, con la recompensa del equipo.' },
+        {
+          t: 'ul',
+          x: [
+            'Si al terminar el día **falta alguna etapa**, el sistema te avisa: podés terminarlo igual, pero ese día **no hay recompensa**. Lo que quedó pendiente se puede proponer otro día.',
+            'Una producción terminada ya no cambia aunque después se editen los pedidos. Si la cerraste por error, usá **“Reabrir producción”**: la recompensa vuelve a $0 hasta que la termines de nuevo.',
+            'Podés armar la producción de otro día (por ejemplo, la de mañana) eligiendo esa fecha arriba.'
+          ]
+        },
+        { t: 'aviso', x: 'Las horas-hombre que cuentan son las **estimadas** al crear el pedido, no el tiempo que se tardó. Verificá bien el trabajo antes de terminar el día: es lo que habilita la recompensa.' }
       ]
     },
     {
@@ -314,39 +346,21 @@ export const manual = {
       titulo: 'Mis tareas (para empleados)',
       para: ['empleado'],
       bloques: [
-        { t: 'p', x: 'Al ingresar como empleado ves **“Mis etapas”**: las etapas de pedidos que el administrador te asignó. Si todavía no hay ninguna, verás el mensaje “No tenés tareas asignadas”.' },
+        { t: 'p', x: 'Al ingresar como empleado ves **“Mis tareas”**: las etapas de pedidos que te asignaron. Arriba, en **“Producción de hoy”**, están las que el taller se propuso terminar hoy y te tocan a vos; abajo, tus otras etapas. Si todavía no hay ninguna, verás el mensaje “No tenés tareas asignadas”.' },
+        { t: 'p', x: 'Las tarjetas de arriba muestran cuántas etapas tenés para hoy, cuántas pendientes en total, cuántas completaste y cómo viene **el equipo hoy** (qué parte de la producción del día ya se completó).' },
         { t: 'img', src: 'mis-tareas.png', pie: 'Pantalla “Mis tareas” de un empleado.' },
         {
           t: 'ol',
           x: [
-            'Elegí una etapa y tocá **“Empezar”** cuando comiences a trabajarla.',
-            'Al terminar, tocá **“Marcar terminada”**.',
-            'Escribí cuántos **minutos** te llevó realmente y, si querés, agregá observaciones (materiales usados, inconvenientes, detalles del trabajo).',
-            'Confirmá. Se muestra el **resultado** del semáforo.'
+            'Cuando empieces una etapa, tocá **“Empezar”** (es opcional: sirve para que el administrador sepa que ya la estás haciendo).',
+            'Al terminarla, tocá **“Marcar terminada”**.',
+            'Si querés, escribí observaciones (materiales usados, inconvenientes, detalles del trabajo). **No hace falta decir cuánto tardaste.**',
+            'Tocá **“Sí, la terminé”**. La etapa queda como completada, en el mismo lugar de la lista.'
           ]
         },
-        { t: 'img', src: 'mis-tareas-terminar.png', pie: 'Al marcar una etapa como terminada se informa el tiempo real.' },
-        { t: 'nota', x: 'El tiempo real lo informás vos al terminar la etapa. Cargalo con honestidad: de eso depende el semáforo. Las etapas cerradas quedan en la lista, en su mismo lugar, con el estado “Completada”.' },
-        { t: 'p', x: 'El semáforo es un indicador de tiempos y no genera plata. La **recompensa es para todo el equipo**: se paga cuando se completa la producción propuesta para el día.' }
-      ]
-    },
-    {
-      id: 'semaforo',
-      titulo: 'Semáforo de rendimiento',
-      para: TODOS,
-      bloques: [
-        { t: 'p', x: 'Cada vez que se cierra una etapa, el sistema compara el **tiempo real** que informó el empleado con el **tiempo estimado** por el administrador:' },
-        {
-          t: 'tabla',
-          cab: ['Color', 'Significado'],
-          filas: [
-            ['🟢 Verde', 'Terminó más rápido de lo esperado.'],
-            ['🟡 Amarillo', 'Terminó dentro del tiempo esperado.'],
-            ['🔴 Rojo', 'Tardó más de lo esperado.']
-          ]
-        },
-        { t: 'p', x: 'El semáforo es **solo un indicador de tiempos**: sirve para ver cómo viene el trabajo y ajustar las estimaciones. **No genera plata** para nadie en particular.' },
-        { t: 'nota', x: 'La recompensa es **una sola por día y para todo el equipo**: se paga cuando el taller completa la producción propuesta para el día.' }
+        { t: 'img', src: 'mis-tareas-terminar.png', pie: 'Al terminar una etapa solo se confirma; las observaciones son opcionales.' },
+        { t: 'nota', x: 'Cada etapa muestra sus **horas-hombre estimadas**: es lo que vale esa etapa para el equipo. Si el equipo completa todo lo propuesto para el día, el administrador lo verifica y **el equipo cobra la recompensa del día**.' },
+        { t: 'p', x: 'Si marcaste una etapa por error, o el administrador ve que algo no quedó bien, la puede **reabrir**: vuelve a aparecer como pendiente en tu lista.' }
       ]
     },
     {
@@ -354,38 +368,37 @@ export const manual = {
       titulo: 'Recompensa del equipo',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Todo el taller trabaja como **un único equipo**. La recompensa es **un solo monto por día**, nunca por empleado, y se paga por **completar la producción propuesta** para la jornada.' },
+        { t: 'p', x: 'Todo el taller trabaja como **un único equipo**. La recompensa es **un solo monto por día**, nunca por empleado, y se paga cuando se **completa la producción propuesta** para el día y el administrador la da por terminada.' },
         { t: 'h', x: 'Cómo se calcula' },
         {
           t: 'tabla',
           cab: ['Dato', 'De dónde sale'],
           filas: [
-            ['Objetivo', 'La suma de los objetivos diarios activos por producto, pasados a horas: cantidad × horas-hombre de cada producto. Se definen en Producción diaria.'],
-            ['Producido', 'Las unidades registradas ese día de cada producto multiplicadas por sus horas-hombre. Cuenta cualquier producto, tenga o no objetivo propio.'],
-            ['Resultado', 'Cumplido si lo producido alcanza o supera el objetivo.'],
-            ['Recompensa', 'Objetivo × valor de la hora-hombre × % de premio, si el día se cumplió. Si no, es $0.']
+            ['Propuesto', 'La suma de las horas-hombre estimadas de las etapas propuestas para el día en Producción diaria.'],
+            ['Completado', 'Las horas-hombre de las etapas propuestas que ya se completaron.'],
+            ['Resultado', 'Cumplido si al terminar el día se completaron **todas** las etapas propuestas.'],
+            ['Recompensa', 'Propuesto × valor de la hora-hombre × % de premio, si el día se cumplió. Si no, es $0.']
           ]
         },
-        { t: 'p', x: '**Ejemplo.** Los objetivos diarios son 4 sillas de 4 horas-hombre (16 hs) y 2 mesitas de 6 horas-hombre (12 hs): el objetivo del equipo es de 28 horas. Si ese día se producen 28 horas o más, con un valor de $2.500 la hora-hombre y 100 % de premio la recompensa es **$70.000**. Si se producen 26, faltaron 2 horas y la recompensa es $0.' },
+        { t: 'p', x: '**Ejemplo.** Hoy se propone una mesa de comedor completa (11 horas-hombre) y el corte de 4 sillas (4 horas-hombre): el día vale 15 horas. Si se completan todas esas etapas y el administrador termina el día, con un valor de $2.500 la hora-hombre y 100 % de premio la recompensa es **$37.500**. Si falta una sola etapa, la recompensa del día es $0.' },
         {
           t: 'ul',
           x: [
-            '**Producir de más no aumenta la recompensa**: se paga siempre el objetivo completo.',
-            'La comparación es por el **total de horas**, no producto por producto: hacer más de un producto compensa haber hecho menos de otro.',
-            'Sin objetivos diarios activos el objetivo es 0 y **no se paga** recompensa.'
+            'Se paga solo lo **propuesto**: terminar etapas que no estaban en la producción del día no suma a la recompensa de ese día.',
+            'Mientras el día está abierto, la pantalla muestra la recompensa **“al completar”**; recién cuando el administrador termina el día queda como pagada y cuenta como gasto en Estadísticas.',
+            'Sin trabajo propuesto no hay recompensa.'
           ]
         },
-        { t: 'aviso', x: 'Un producto sin horas-hombre cargadas suma 0 horas, tanto en el objetivo como en lo producido (la pantalla lo avisa). Completá ese dato en Productos.' },
         { t: 'h', x: 'Ver el resultado de un día' },
-        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran el objetivo, lo producido, el resultado y la recompensa, con la cuenta que la explica. Debajo hay dos tablas: el **objetivo** del día (cada producto con su cantidad, sus horas y cuánto vale) y la **producción** del día pasada a horas.' },
-        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado del día, detalle del objetivo y de la producción.' },
-        { t: 'nota', x: 'El objetivo no se carga en esta pantalla: sale de los objetivos diarios por producto de **Producción diaria**.' },
+        { t: 'p', x: 'Entrá a **Recompensas** y elegí el **Día** arriba a la derecha (por defecto, hoy). Las tarjetas muestran lo propuesto, lo completado, el resultado y la recompensa, con la cuenta que la explica. Debajo está la lista de etapas de ese día con su pedido, producto, empleado, horas y estado.' },
+        { t: 'img', src: 'recompensas.png', pie: 'Recompensas: resultado de un día terminado y sus etapas.' },
+        { t: 'nota', x: 'El trabajo del día no se carga en esta pantalla: se arma y se termina en **Producción diaria**.' },
         { t: 'h', x: 'Valor de la hora-hombre y % de premio' },
-        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora-hombre del objetivo y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días anteriores conservan los que tenían. Cada cambio queda anotado en un historial.' },
+        { t: 'p', x: 'En **“Cómo se calcula la recompensa”** se define cuánto vale cada hora-hombre y qué porcentaje se paga (de 0 a 100; 100 paga todo el valor). Al tocar **“Guardar parámetros”** los valores nuevos **rigen desde hoy**: los días ya terminados conservan los que tenían. Cada cambio queda anotado en un historial.' },
         { t: 'h', x: 'Historial de días' },
-        { t: 'p', x: 'Lista cada día con producción cargada: objetivo, producido, si se cumplió o cuántas horas faltaron, y la recompensa. Tocá un día para ver su desglose arriba.' },
+        { t: 'p', x: 'Lista cada día con producción propuesta: lo propuesto, lo completado, el resultado (cumplido, en curso o cuántas horas faltaron) y la recompensa. Tocá un día para ver su desglose arriba.' },
         { t: 'img', src: 'recompensas-historial.png', pie: 'Parámetros del cálculo e historial de días.' },
-        { t: 'nota', x: 'El día de hoy se vuelve a calcular cada vez que cambia su producción, un objetivo o las horas-hombre de un producto. Los **días anteriores ya cargados conservan el objetivo** con el que se calcularon: editar un objetivo después no los modifica.' },
+        { t: 'nota', x: 'Un día terminado guarda una copia de su resultado: si después se cambia el valor de la hora-hombre o se edita un pedido, ese día no se modifica. Los días cargados con el sistema anterior (objetivos por producto) también se pueden consultar acá.' },
         { t: 'p', x: 'Si el taller venía usando los bonos individuales del sistema anterior, al final de la pantalla aparece **“Historial anterior: bonos individuales”**. Es solo de consulta: esos bonos ya no se generan, pero siguen contando como gasto en Estadísticas.' }
       ]
     },
@@ -402,8 +415,9 @@ export const manual = {
             '**Real: ganancias y gastos**: lo que efectivamente se vendió (productos marcados como vendidos) y lo que costó producir.',
             '**Proyectado: si se vende todo el stock**: cuánto se ganaría si se vendieran todos los productos activos. Es una estimación, no dinero ya cobrado.',
             '**Facturación por mes**, **rentabilidad por producto** y **margen**.',
-            '**Recompensas pagadas**: la recompensa del equipo de cada día (más los bonos individuales del sistema anterior, si los hubo). Se cuenta como gasto.',
-            '**Rendimiento de empleados**: etapas completadas, promedio por etapa y reparto del semáforo.'
+            '**Recompensas pagadas**: la recompensa del equipo de cada producción diaria terminada (más los bonos individuales del sistema anterior, si los hubo). Se cuenta como gasto.',
+            '**Producción diaria**: cuántos días terminados se completaron, las horas-hombre propuestas y completadas y las recompensas del período.',
+            '**Rendimiento de empleados**: etapas y horas-hombre que completó cada uno en el período y lo que tiene pendiente.'
           ]
         },
         { t: 'p', x: 'Para el conteo de productos, el sistema distingue tres grupos: **activos**, **vendidos** y **desactivados**. Los desactivados no suman a las ventas ni a las ganancias, y los vendidos se mantienen en el historial aunque el producto se elimine.' },
@@ -463,14 +477,8 @@ export const manual = {
         },
         { t: 'h', x: 'Video de fondo de la portada' },
         { t: 'p', x: 'Subí un video corto para el fondo de la página de inicio. En la web se reproduce **solo, sin sonido, en bucle y sin controles**. Con “Quitar video” se elimina. Conviene un video liviano (pocos MB) para que la página cargue rápido, sobre todo en celulares.' },
-        { t: 'h', x: 'Costos y semáforo' },
-        {
-          t: 'ul',
-          x: [
-            '**Costo por hora de mano de obra**: se multiplica por las horas-hombre de cada producto para calcular su costo.',
-            '**Tolerancia del semáforo** (0,1 equivale a 10 %): el margen alrededor del tiempo estimado que se considera “dentro de lo esperado”. El valor de la hora-hombre y el % de premio se cambian en Recompensas.'
-          ]
-        },
+        { t: 'h', x: 'Costos' },
+        { t: 'p', x: '**Costo por hora de mano de obra**: se multiplica por las horas-hombre de cada producto (y de cada pedido) para calcular el costo de mano de obra. El valor de la hora-hombre de la recompensa y el % de premio se cambian en Recompensas.' },
         { t: 'aviso', x: 'Cambiar estos valores modifica los cálculos futuros. Antes de tocarlos, anotá los valores actuales.' }
       ]
     },
@@ -552,8 +560,11 @@ export const manual = {
             ['No puedo eliminar un producto', 'Está dentro de un pedido. Desactivalo en lugar de eliminarlo.'],
             ['Marqué como vendido por error', 'Tocá “Reactivar”: la venta se anula y el producto vuelve a estar disponible.'],
             ['No puedo publicar un producto en la web', 'Faltan datos obligatorios: nombre, ID, descripción técnica, historia o categoría. El aviso te dice cuál.'],
-            ['La recompensa del día da $0', 'Revisá en Producción diaria que haya objetivos diarios activos por producto, que esté cargada la producción de ese día y que los productos tengan horas-hombre. Solo paga si lo producido alcanza el objetivo.'],
-            ['Un producto no suma horas al objetivo o a lo producido', 'No tiene horas-hombre cargadas. Completalas en Productos y volvé a registrar su producción de ese día.'],
+            ['No puedo crear un pedido: dice que las etapas tienen que coincidir', 'La suma de las horas de las etapas tiene que ser igual a las horas-hombre estimadas por unidad. Ajustá las horas de alguna etapa o tocá “Usar X hs como estimación”.'],
+            ['Un empleado no ve una etapa en “Mis tareas”', 'Revisá en Tareas a quién está asignada. Si se eliminó la cuenta de un empleado, sus etapas quedan sin asignar.'],
+            ['No puedo agregar una etapa a la producción del día', 'Ya está completada, ya está propuesta en otra producción abierta o el pedido está pausado, cancelado o terminado. El mensaje te dice cuál.'],
+            ['La recompensa del día da $0', 'Solo se paga cuando el administrador termina la producción del día con **todas** las etapas propuestas completadas. Revisá en Producción diaria qué etapa falta; si el día ya se cerró, reabrilo.'],
+            ['Una etapa se marcó como terminada por error', 'El administrador la reabre desde Producción diaria o desde Tareas.'],
             ['No puedo eliminar a un empleado', 'Tiene tareas, recompensas o registros asociados. Se conserva su historial.'],
             ['Un número de las estadísticas no coincide', 'Recordá que los productos desactivados no cuentan como venta. Recargá la página y revisá el período elegido.']
           ]
@@ -570,11 +581,10 @@ export const manual = {
           cab: ['Término', 'Significado'],
           filas: [
             ['Chapita / ID de producto', 'Número visible que identifica cada pieza. Se libera si el producto se elimina.'],
-            ['Etapa / tarea', 'Cada paso de la fabricación (corte, soldadura, pintura…).'],
-            ['Horas-hombre', 'Horas de trabajo de una persona necesarias para fabricar una unidad. Se usan para el costo, para el objetivo del equipo y para medir lo producido.'],
-            ['Semáforo', 'Comparación entre el tiempo real y el estimado de una etapa. Es un indicador: no genera plata.'],
-            ['Objetivo del equipo', 'Producción propuesta para el día, en horas-hombre: la suma de los objetivos diarios activos por producto.'],
-            ['Recompensa del equipo', 'Premio en dinero, uno por día para todo el taller, cuando se completa el objetivo del equipo.'],
+            ['Etapa / tarea', 'Cada paso de la fabricación de un producto dentro de un pedido (corte, soldadura, pintura…). Tiene sus horas-hombre y su empleado.'],
+            ['Horas-hombre', 'Horas de trabajo de una persona. Cada producto tiene una estimación por unidad; en cada pedido se reparten entre sus etapas y son lo que vale cada etapa para la recompensa.'],
+            ['Producción diaria', 'Lista de etapas que el taller se propone terminar en un día. El administrador la verifica y la marca como terminada.'],
+            ['Recompensa del equipo', 'Premio en dinero, uno por día para todo el taller: las horas-hombre de la producción del día × el valor de la hora, cuando se completa todo lo propuesto.'],
             ['Borrador', 'Producto guardado pero no publicado en la web.'],
             ['Destacado', 'Producto que se muestra en la portada de la web.'],
             ['Real / proyectado', 'Real es lo ya vendido; proyectado es lo que se ganaría si se vendiera todo el stock.']

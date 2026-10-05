@@ -1423,3 +1423,223 @@
     color: #f0d9c9;
     font: 800 15px 'DM Mono', monospace;
 }
+
+/* =========================
+   PRODUCCIÓN POR ETAPAS
+   Producto → pedido (horas-hombre repartidas en etapas con su empleado)
+   → producción diaria → recompensa. Ver panel-pedidos.jsx,
+   panel-produccion.jsx y mis-tareas.jsx.
+*/
+/* Etapas del alta de pedido: número, nombre, horas por unidad, empleado y quitar. */
+.etapa-hh-grid-head,
+.etapa-hh-grid-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) 80px 150px 26px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.etapa-hh-grid-head small {
+    font-size: 8px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.modal .etapa-hh-grid-row input,
+.modal .etapa-hh-grid-row select {
+    display: block;
+    width: 100%;
+    margin: 0;
+    background: #12100f;
+    border: 1px solid #3d3733;
+    border-radius: 0;
+    color: var(--text);
+    padding: 7px 8px;
+    font: 400 12px Manrope, sans-serif;
+}
+
+.etapa-hh-grid-row button {
+    background: none;
+    border: 1px solid #4a423c;
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 0;
+}
+
+.modal label.item-horas {
+    margin: 4px 0 12px;
+}
+
+/* "Usar X hs como estimación" junto al aviso de reparto. */
+.add-stage.reparto-usar {
+    margin: 0 0 0 8px;
+    padding: 0;
+}
+
+/* Botón de texto dentro de un encabezado (ej. "+ Pedido completo"). */
+.add-stage.en-linea {
+    margin: 0 10px 0 0;
+}
+
+.form-actions .danger-link {
+    background: transparent;
+    border: 1px solid #6b3b32;
+    color: #e58978;
+    padding: 9px 14px;
+    border-radius: 999px;
+    font: 800 10px Manrope;
+    cursor: pointer;
+    margin-right: auto;
+}
+
+/* Marca "Producción de hoy" / "Producción dd/mm" de una etapa propuesta. */
+.jornada-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border: 1px solid #8a6a55;
+    color: #e8c3a8;
+    font: 800 8px Manrope;
+    text-transform: uppercase;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.jornada-tag.hoy {
+    border-color: var(--accent);
+    background: #3a281d;
+    color: var(--accent);
+}
+
+/* Producción diaria: cada etapa propuesta (nombre, estado, horas,
+   empleado, cuándo se completó y acciones de verificación). */
+.jornada-producto {
+    margin-top: 10px;
+}
+
+.etapa-fila.jornada-etapa-fila {
+    grid-template-columns: 1.4fr .8fr .6fr 1fr 1fr auto;
+}
+
+.jornada-acciones {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.jornada-acciones button {
+    background: none;
+    border: 1px solid #4a423c;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 3px 8px;
+    font: 700 10px Manrope;
+}
+
+.jornada-acciones button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Etapa que se puede elegir para agregar al día (casilla). */
+.config-card label.etapa-elegible {
+    display: grid;
+    grid-template-columns: 20px 1.4fr .6fr 1fr 1.2fr;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid #26221f;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.config-card label.etapa-elegible.no-disponible {
+    opacity: .5;
+    cursor: default;
+}
+
+/* Barra con la selección de etapas, pegada al pie mientras se elige. */
+.seleccion-jornada {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 12px 16px;
+    margin-top: 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--accent);
+}
+
+.seleccion-jornada span {
+    margin-right: auto;
+    font-weight: 800;
+}
+
+/* Recompensas: etapas de la producción del día. */
+.etapas-jornada-head,
+.etapas-jornada-fila {
+    grid-template-columns: .7fr 1.8fr 1fr .7fr .8fr;
+}
+
+@media (max-width: 900px) {
+    .etapa-fila.jornada-etapa-fila,
+    .config-card label.etapa-elegible {
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+    }
+
+    .etapa-fila.jornada-etapa-fila {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .config-card label.etapa-elegible > :nth-child(n+4),
+    .etapa-fila.jornada-etapa-fila > :nth-child(n+4) {
+        grid-column: 1 / -1;
+    }
+
+    .seleccion-jornada {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 700px) {
+    .etapa-hh-grid-head {
+        display: none;
+    }
+
+    .etapa-hh-grid-row {
+        grid-template-columns: 20px minmax(0, 1fr) 70px 30px;
+    }
+
+    /* El empleado pasa a una segunda línea, debajo del nombre y las horas. */
+    .modal .etapa-hh-grid-row select {
+        grid-column: 2 / 4;
+        grid-row: 2;
+    }
+}
+
+/* La etiqueta de estado de una etapa ocupa solo su ancho (no toda la columna). */
+.etapa-fila > .task-status {
+    justify-self: start;
+}
+
+/* Separaciones de las pantallas de producción diaria: la barra de avance
+   debajo de las tarjetas, los botones de cierre del día y los encabezados
+   o tarjetas que siguen a una lista o tabla. */
+.jornada-progreso {
+    margin: -20px 0 30px;
+}
+
+.form-actions.acciones-jornada {
+    margin-bottom: 36px;
+}
+
+.task-list + .section-heading {
+    margin-top: 30px;
+}
+
+.ranking-tabla + .config-card {
+    margin-top: 24px;
+}

@@ -1,27 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { api, dinero, fecha, useData } from './api.js'
-import { CampoNumero, Empty, Heading, Stat, useAviso } from './ui.jsx'
-
-// Fecha local en formato AAAA-MM-DD (toISOString daría el día siguiente
-// a la noche en Argentina).
-export const hoyLocal = () => {
-  const ahora = new Date()
-  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
-}
-
-// "2026-09-30" → "30/09/2026" sin pasar por Date (evita el corrimiento de zona horaria).
-export const fechaDia = texto => (texto ? String(texto).slice(0, 10).split('-').reverse().join('/') : '—')
-
-export const horas = valor => `${Number(valor || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })} hs`
+import { api, dinero, fecha, fechaDia, horas, hoyLocal, useData } from './api.js'
+import { Badge, CampoNumero, Empty, Heading, Stat, useAviso } from './ui.jsx'
 
 // ---------------------------------------------------------------------
 // RECOMPENSA DEL EQUIPO
 // Un único monto por día para todo el taller (ver server/recompensa-equipo.js):
-//   objetivo   = Σ (cantidad objetivo × horas-hombre) de los objetivos
-//                diarios por producto (se definen en Producción diaria)
-//   recompensa = objetivo × valor hora-hombre × % de premio, si lo producido
-//                en el día (en horas-hombre) completa el objetivo; si no, 0
-// La producción y los objetivos se cargan en Producción diaria.
+//   propuesto  = Σ horas-hombre de las etapas propuestas en Producción diaria
+//   recompensa = propuesto × valor hora-hombre × % de premio, cuando el admin
+//                marca la producción del día como terminada con todas las
+//                etapas completadas; si falta alguna, 0
+// El trabajo del día se arma y se cierra en Producción diaria; acá se ve el
+// resultado y se definen el valor de la hora-hombre y el % de premio.
 // ---------------------------------------------------------------------
 export default function PanelRecompensas() {
   const [dia, setDia] = useState(hoyLocal())
@@ -33,8 +22,8 @@ export default function PanelRecompensas() {
 
   return (
     <>
-      <Heading kicker="Trabajo en equipo" title="Recompensa del equipo" text="Un único premio por día para todo el taller, cuando se completa la producción propuesta para la jornada.">
-        <label className="rango">Día<input type="date" max={hoyLocal()} value={dia} onChange={event => event.target.value && setDia(event.target.value)} /></label>
+      <Heading kicker="Trabajo en equipo" title="Recompensa del equipo" text="Un único premio por día para todo el taller: las horas-hombre de la producción propuesta, cuando se completa todo y el administrador la da por terminada.">
+        <label className="rango">Día<input type="date" value={dia} onChange={event => event.target.value && setDia(event.target.value)} /></label>
       </Heading>
 
       {nodo}
@@ -46,29 +35,31 @@ export default function PanelRecompensas() {
       <ParametrosRecompensa onGuardar={async () => { await recargar(); mostrar('Valor hora y % de premio actualizados. Rigen desde hoy.') }} />
 
       <section className="section-heading">
-        <div><h2>Historial de días</h2><p>Resultado guardado de cada día con producción cargada. Tocá un día para ver su desglose.</p></div>
+        <div><h2>Historial de días</h2><p>Cada día con producción propuesta. Los terminados muestran la recompensa que se pagó; los abiertos, cómo vienen. Tocá un día para ver su desglose.</p></div>
       </section>
 
       {historial.loading ? <p>Cargando historial...</p> : historial.data.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head jornada-head">
-            <span>Día</span><span>Objetivo</span><span>Producido</span><span>Resultado</span><span>Valor hora · premio</span><span>Recompensa</span>
+            <span>Día</span><span>Propuesto</span><span>Completado</span><span>Resultado</span><span>Valor hora · premio</span><span>Recompensa</span>
           </div>
           {historial.data.map(fila => (
             <div className="ranking-fila jornada-fila" key={fila.fecha} role="button" tabIndex={0} onClick={() => setDia(fila.fecha)} onKeyDown={event => event.key === 'Enter' && setDia(fila.fecha)}>
               <b>{fechaDia(fila.fecha)}</b>
               <span>{horas(fila.objetivo_horas)}</span>
-              <span>{horas(fila.horas_producidas)}</span>
-              {fila.objetivo_horas > 0 && fila.horas_producidas >= fila.objetivo_horas
-                ? <span className="positivo">✅ Cumplido</span>
-                : <span className="negativo">{fila.objetivo_horas > 0 ? `Faltaron ${horas(fila.objetivo_horas - fila.horas_producidas)}` : 'Sin objetivo'}</span>}
+              <span>{horas(fila.horas_completadas)}</span>
+              {fila.estado === 'ABIERTA'
+                ? <span className="muted">{fila.cumplido ? 'Falta verificar' : 'En curso'}</span>
+                : fila.cumplido
+                  ? <span className="positivo">✅ Cumplido</span>
+                  : <span className="negativo">{fila.objetivo_horas > 0 ? `Faltaron ${horas(fila.objetivo_horas - fila.horas_completadas)}` : 'Sin objetivo'}</span>}
               <span>{dinero(fila.valor_hora)} · {fila.porcentaje_premio}%</span>
-              <b className={fila.recompensa > 0 ? 'positivo' : ''}>{dinero(fila.recompensa)}</b>
+              <b className={fila.recompensa > 0 ? 'positivo' : ''}>{fila.estado === 'ABIERTA' ? '—' : dinero(fila.recompensa)}</b>
             </div>
           ))}
         </section>
       ) : (
-        <Empty title="Todavía no hay días calculados" text="Cargá los objetivos y la producción del día en Producción diaria." />
+        <Empty title="Todavía no hay días con producción" text="Proponé el trabajo del día en Producción diaria." />
       )}
 
       <HistorialIndividual />
@@ -76,86 +67,101 @@ export default function PanelRecompensas() {
   )
 }
 
-// Objetivo, producido, resultado y recompensa del día. El objetivo sale de
-// los objetivos diarios por producto (Producción diaria).
+// Propuesto, completado, resultado y recompensa del día, con el detalle
+// de las etapas. Los días del sistema anterior muestran sus objetivos y su
+// producción por producto.
 function DesgloseDia({ jornada }) {
-  const formula = jornada.cumplido
-    ? `${horas(jornada.objetivo_horas)} × ${dinero(jornada.valor_hora)} × ${jornada.porcentaje_premio}%`
-    : 'No se completó el objetivo'
-  const faltan = jornada.objetivo_horas - jornada.horas_producidas
-  const unidades = valor => (valor === null || valor === undefined ? '—' : Number(valor).toLocaleString('es-AR', { maximumFractionDigits: 2 }))
-  const objetivoPorProducto = Object.fromEntries(jornada.objetivos.map(fila => [String(fila.producto_id), fila.cantidad]))
-  const resumenObjetivo = jornada.objetivos.filter(fila => fila.cantidad > 0).map(fila => `${fila.cantidad} × ${fila.producto}`).join(' + ')
+  const terminada = jornada.estado === 'TERMINADA'
+  const formula = `${horas(jornada.objetivo_horas)} × ${dinero(jornada.valor_hora)} × ${jornada.porcentaje_premio}%`
+  const resultado = jornada.estado === 'SIN_PLANIFICAR' ? 'Sin producción'
+    : terminada ? (jornada.cumplido ? '✅ Cumplido' : 'No cumplido')
+      : jornada.cumplido ? 'Falta verificar' : 'En curso'
 
   return (
     <>
       <section className="stats-grid dashboard-stats">
-        <Stat label="Objetivo" value={horas(jornada.objetivo_horas)} hint={resumenObjetivo || 'Sin objetivos de producción'} tone={jornada.objetivo_horas ? '' : 'danger'} />
-        <Stat label="Producido" value={horas(jornada.horas_producidas)} hint="En horas-hombre" />
-        <Stat label="Resultado" value={jornada.cumplido ? '✅ Cumplido' : 'No cumplido'} tone={jornada.cumplido ? '' : 'danger'} hint={jornada.cumplido ? 'Se completó la producción propuesta' : jornada.objetivo_horas ? `Faltan ${horas(faltan)}` : 'Sin objetivo cargado'} />
-        <Stat label="Recompensa del equipo" value={dinero(jornada.recompensa)} hint={formula} />
+        <Stat label="Propuesto" value={horas(jornada.objetivo_horas)} hint={jornada.modelo === 'productos' ? 'Objetivos por producto (sistema anterior)' : `${jornada.etapas_totales} etapas de pedidos`} tone={jornada.objetivo_horas ? '' : 'danger'} />
+        <Stat label="Completado" value={horas(jornada.horas_completadas)} hint={`${jornada.avance}% de lo propuesto`} />
+        <Stat
+          label="Resultado"
+          value={resultado}
+          tone={terminada && !jornada.cumplido ? 'danger' : ''}
+          hint={terminada ? `Terminada${jornada.terminada_por ? ` por ${jornada.terminada_por}` : ''}${jornada.terminada_en ? ` el ${fecha(jornada.terminada_en)}` : ''}` : jornada.estado === 'ABIERTA' ? 'Se cierra en Producción diaria' : 'Proponé trabajo en Producción diaria'}
+        />
+        <Stat label={terminada ? 'Recompensa del equipo' : 'Recompensa al completar'} value={dinero(terminada ? jornada.recompensa : jornada.recompensa_al_cumplir)} hint={formula} />
       </section>
 
-      {jornada.advertencias.map(texto => <p className="notice" key={texto}>⚠ {texto}</p>)}
+      {!terminada && jornada.estado !== 'SIN_PLANIFICAR' && jornada.advertencias.map(texto => <p className="notice" key={texto}>⚠ {texto}</p>)}
 
+      {jornada.modelo === 'productos' ? <DesgloseAnterior jornada={jornada} /> : jornada.etapas.length > 0 && (
+        <>
+          <section className="section-heading">
+            <div>
+              <h2>Producción del {fechaDia(jornada.fecha)}</h2>
+              <p>{terminada ? 'Copia guardada al terminar el día: ya no cambia aunque después se editen los pedidos.' : 'Se arma y se cierra en Producción diaria.'}</p>
+            </div>
+          </section>
+          <section className="ranking-tabla">
+            <div className="ranking-head etapas-jornada-head">
+              <span>Pedido</span><span>Producto · etapa</span><span>Empleado</span><span>Horas-hombre</span><span>Estado</span>
+            </div>
+            {jornada.etapas.map(etapa => (
+              <div className="ranking-fila etapas-jornada-fila" key={etapa.id}>
+                <span>{etapa.pedido}</span>
+                <b>{etapa.producto} · {etapa.nombre}</b>
+                <span>{etapa.responsable || 'Sin asignar'}</span>
+                <span>{horas(etapa.horas_hombre)}</span>
+                <Badge estado={etapa.estado} />
+              </div>
+            ))}
+          </section>
+        </>
+      )}
+    </>
+  )
+}
+
+// Día cargado con el sistema anterior: objetivos diarios por producto y
+// unidades producidas.
+function DesgloseAnterior({ jornada }) {
+  return (
+    <>
       <section className="section-heading">
-        <div>
-          <h2>Objetivo del {fechaDia(jornada.fecha)}</h2>
-          <p>
-            Sale de los objetivos diarios por producto que se cargan en Producción diaria.
-            {jornada.objetivo_congelado ? ' Es un día cerrado: conserva el objetivo con el que se calculó.' : ''}
-          </p>
-        </div>
+        <div><h2>Objetivo del {fechaDia(jornada.fecha)} (sistema anterior)</h2><p>Objetivos diarios por producto con los que se calculó este día.</p></div>
       </section>
-
-      {jornada.objetivos.length ? (
+      {jornada.objetivos_anteriores.length ? (
         <section className="ranking-tabla">
           <div className="ranking-head produccion-head">
-            <span>Producto</span><span>Objetivo diario</span><span>Horas-hombre c/u</span><span>Horas del objetivo</span><span>Valor</span>
+            <span>Producto</span><span>Objetivo diario</span><span>Horas-hombre c/u</span><span>Horas del objetivo</span><span />
           </div>
-          {jornada.objetivos.map(fila => (
+          {jornada.objetivos_anteriores.map(fila => (
             <div className="ranking-fila produccion-fila" key={fila.producto_id}>
-              <b>{fila.producto}</b>
-              <span>{fila.cantidad}</span>
-              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
-              <span>{horas(fila.horas_equivalentes)}</span>
-              <span>{dinero(fila.horas_equivalentes * jornada.valor_hora * (jornada.porcentaje_premio / 100))}</span>
+              <b>{fila.producto}</b><span>{fila.cantidad}</span><span>{horas(fila.tiempo_estandar)}</span><span>{horas(fila.horas)}</span><span />
             </div>
           ))}
         </section>
-      ) : <p className="notice">No hay objetivos diarios de producción activos. Cargalos en Producción diaria.</p>}
+      ) : <p className="notice">Este día no tenía objetivos cargados.</p>}
 
-      <section className="section-heading">
-        <div>
-          <h2>Producción del {fechaDia(jornada.fecha)}</h2>
-          <p>Lo producido, pasado a horas-hombre. Se carga en Producción diaria.</p>
-        </div>
-      </section>
-
-      {jornada.produccion.length ? (
+      {jornada.produccion_anterior.length > 0 && (
         <section className="ranking-tabla">
           <div className="ranking-head produccion-head">
-            <span>Producto</span><span>Unidades</span><span>Horas-hombre c/u</span><span>Horas producidas</span><span>Objetivo diario</span>
+            <span>Producto</span><span>Unidades</span><span>Horas-hombre c/u</span><span>Horas producidas</span><span />
           </div>
-          {jornada.produccion.map(fila => (
+          {jornada.produccion_anterior.map(fila => (
             <div className="ranking-fila produccion-fila" key={fila.producto_id}>
-              <b>{fila.producto}</b>
-              <span>{fila.cantidad}</span>
-              <span className={fila.tiempo_estandar ? '' : 'negativo'}>{fila.tiempo_estandar ? horas(fila.tiempo_estandar) : 'Sin horas-hombre'}</span>
-              <span>{horas(fila.horas_equivalentes)}</span>
-              <span>{unidades(objetivoPorProducto[String(fila.producto_id)])}</span>
+              <b>{fila.producto}</b><span>{fila.cantidad}</span><span>{horas(fila.tiempo_estandar)}</span><span>{horas(fila.horas)}</span><span />
             </div>
           ))}
         </section>
-      ) : <p className="notice">No hay producción registrada este día.</p>}
+      )}
     </>
   )
 }
 
 // ---------------------------------------------------------------------
 // VALOR HORA-HOMBRE Y % DE PREMIO (solo administradores)
-// Cada cambio queda en el historial y rige desde hoy: los días anteriores
-// conservan el valor que tenían.
+// Cada cambio queda en el historial y rige desde hoy: los días ya
+// terminados conservan el valor con el que se cerraron.
 // ---------------------------------------------------------------------
 function ParametrosRecompensa({ onGuardar }) {
   const parametros = useData('/recompensas/parametros', null)
@@ -182,8 +188,9 @@ function ParametrosRecompensa({ onGuardar }) {
     <form className="config-card" onSubmit={guardar}>
       <div className="card-title">Cómo se calcula la recompensa</div>
       <p className="muted">
-        Cada producto vale sus horas-hombre (se editan en Productos). Si lo producido en el día completa el objetivo de Producción diaria,
-        el equipo cobra: horas-hombre del objetivo × valor de la hora-hombre × % de premio. Si no lo completa, la recompensa es 0.
+        Cada etapa de un pedido vale las horas-hombre que se le estimaron al crear el pedido. Si se completan todas las etapas propuestas en la
+        Producción diaria y el administrador la da por terminada, el equipo cobra: horas-hombre propuestas × valor de la hora-hombre × % de premio.
+        Si falta alguna etapa, la recompensa del día es 0.
       </p>
 
       <div className="form-grid config-grid">
@@ -195,7 +202,7 @@ function ParametrosRecompensa({ onGuardar }) {
         </label>
       </div>
 
-      <p className="form-note">Ejemplo: completar un objetivo de 16 hs-hombre (4 sillas de 4 hs) paga <b>{dinero(ejemplo)}</b> al equipo.</p>
+      <p className="form-note">Ejemplo: completar una producción diaria de 16 hs-hombre (4 sillas de 4 hs) paga <b>{dinero(ejemplo)}</b> al equipo.</p>
 
       {parametros.data?.historial?.length > 1 && (
         <details>
@@ -241,66 +248,5 @@ function HistorialIndividual() {
         ))}
       </section>
     </details>
-  )
-}
-
-// ---------------------------------------------------------------------
-// TOLERANCIA DEL SEMÁFORO (Configuración, super_admin)
-// El semáforo quedó como indicador de tiempos: ya no genera recompensas.
-// ---------------------------------------------------------------------
-export function ConfiguracionSemaforo({ onGuardar }) {
-  const configuracion = useData('/configuracion/valores', {})
-  const [tolerancia, setTolerancia] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => { if (configuracion.data?.semaforo_tolerancia !== undefined) setTolerancia(configuracion.data.semaforo_tolerancia) }, [configuracion.data])
-  if (tolerancia === null) return null
-
-  const guardar = async event => {
-    event.preventDefault()
-    setBusy(true); setError('')
-    try {
-      const guardados = await api.put('/configuracion', { semaforo_tolerancia: tolerancia }, configuracion.token)
-      setTolerancia(guardados.semaforo_tolerancia)
-      onGuardar?.()
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
-
-  const porcentajeTolerancia = Math.round((Number(tolerancia) || 0) * 100)
-
-  return (
-    <form className="config-card" onSubmit={guardar}>
-      <div className="card-title">Semáforo de rendimiento</div>
-      <p className="muted">
-        🟢 verde: termina antes del {100 - porcentajeTolerancia}% del tiempo estimado · 🟡 amarillo: entre {100 - porcentajeTolerancia}% y {100 + porcentajeTolerancia}% ·
-        🔴 rojo: se pasa del {100 + porcentajeTolerancia}%. Es un indicador de tiempos; la recompensa es por equipo (ver Recompensas).
-      </p>
-      <div className="form-grid config-grid">
-        <label>Tolerancia del semáforo (0.1 = 10%)
-          <input min="0" max="1" step="0.01" type="number" value={tolerancia} onChange={event => setTolerancia(event.target.value)} />
-        </label>
-      </div>
-      {error && <p className="form-error">{error}</p>}
-      <div className="form-actions">
-        <button className="primary" disabled={busy}>{busy ? 'Guardando...' : 'Guardar'}</button>
-      </div>
-    </form>
-  )
-}
-
-// Barra comparativa de semáforos reutilizada por el panel de estadísticas.
-export const BarraSemaforo = ({ verdes, amarillos, rojos }) => {
-  const total = verdes + amarillos + rojos
-  if (!total) return <p className="muted">Sin etapas medidas todavía.</p>
-  return (
-    <div className="barra-semaforo">
-      <div className="barra">
-        <i className="verde" style={{ width: `${(verdes / total) * 100}%` }} />
-        <i className="amarillo" style={{ width: `${(amarillos / total) * 100}%` }} />
-        <i className="rojo" style={{ width: `${(rojos / total) * 100}%` }} />
-      </div>
-      <p className="muted">🟢 {verdes} &nbsp; 🟡 {amarillos} &nbsp; 🔴 {rojos}</p>
-    </div>
   )
 }

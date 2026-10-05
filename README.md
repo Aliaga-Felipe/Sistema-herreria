@@ -1,6 +1,6 @@
 # Un atelier — Hub de producción
 
-Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC, catálogo de productos con etapas de fabricación, pedidos multiproducto, semáforo de rendimiento, recompensa diaria por equipo y estadísticas de gestión.
+Sistema de gestión para herrería, construido con React, Express y PostgreSQL. Incluye autenticación con JWT, RBAC, catálogo de productos, pedidos multiproducto con horas-hombre repartidas en etapas asignadas, producción diaria verificada por el administrador, recompensa diaria por equipo y estadísticas de gestión.
 
 ## Puesta en marcha
 
@@ -19,6 +19,7 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 - `database/migracion_019_estados_producto.sql`: los productos pasan a tener tres estados —**Activo**, **Vendido** (botón “Producto vendido”, conserva fecha y precio) y **Desactivado** (no se ve en la web y no cuenta como stock ni como venta)—. **Eliminar** ahora borra el producto de verdad y deja libre su ID de producto; si estaba vendido, su venta pasa a `historial_ventas_productos` y las estadísticas la conservan. Un producto con pedidos asociados no se puede eliminar (se desactiva). Los productos que estaban desactivados pasan a *Desactivado*. Incluida en `schema.sql`.
 - `database/migracion_020_dos_pasos.sql`: tabla `codigos_acceso` de la **verificación en dos pasos**. Al iniciar sesión se envía un código de 6 dígitos por email (vence a los 10 minutos, un solo uso, 5 intentos, se guarda sólo su hash). **Requiere el SMTP configurado** (`SMTP_*` en `.env`); `DOS_PASOS_OBLIGATORIO=false` la apaga como salida de emergencia. Incluida en `schema.sql`.
 - `database/migracion_021_textos_portada.sql`: reemplaza el eslogan y la descripción de la portada de la web pública por los textos nuevos (“Un galpón de objetos con historia” y su bajada) y corrige el rubro si quedó como “Herreria e diseño”. Solo toca los valores que todavía son los textos anteriores: si se personalizaron desde Configuración, no se modifican. Se aplica con `node server/scripts/aplicar-schema.js` (ya está incluida en `schema.sql`).
+- `database/migracion_022_produccion_por_etapas.sql`: une productos, pedidos, tareas, producción diaria y recompensas en un solo flujo. Cada etapa de pedido guarda sus **horas-hombre** (`pedido_etapas.horas_hombre`; las etapas existentes toman sus minutos pasados a horas), cada jornada (`jornadas_equipo`) pasa a tener estado **ABIERTA / TERMINADA** y la nueva tabla `jornada_etapas` guarda qué etapas se propusieron para cada día. Los días del modelo anterior quedan como terminados con su detalle y `objetivos_produccion` / `registros_produccion` se conservan solo como historial. No borra datos. Incluida en `schema.sql`: alcanza con `node server/scripts/aplicar-schema.js`.
 - `database/migracion_016_tareas_por_pedido.sql`: las tareas de producción se definen al crear cada pedido (una lista propia por producto del pedido, en `pedido_etapas`) y los productos ya no tienen tareas; el pedido toma el precio de venta del producto (el formulario ya no pide precio ni arma presupuesto). La vieja tabla `etapas_producto` se conserva sólo como sugerencia de tareas. Incluida en `schema.sql`.
 - `database/migracion_017_precio_opcional_y_categorias.sql`: el **precio de venta pasa a ser opcional** (columna `precio_venta` admite NULL; sin precio, la web pública muestra "Consultar precio", el panel "Sin precio" y el producto no se envía al catálogo de WhatsApp, que exige un precio) y publicar en la web ya no exige precio. Además, las **categorías creadas desde el panel** (sección Categorías) se conservan: el esquema ya no borra las que no sean Mesas, Mesitas ratoneras o Fogoneros. No modifica datos existentes. Incluida en `schema.sql`.
 - `database/prueba-humo.mjs` recorre el flujo completo contra la API y borra al final todo lo que creó:
@@ -48,57 +49,55 @@ Sistema de gestión para herrería, construido con React, Express y PostgreSQL. 
 
 ## Cómo funciona
 
+### El flujo de trabajo
+
+Productos, pedidos, tareas, producción diaria y recompensas funcionan como un único circuito:
+
+1. **Producto**: el admin lo crea con su precio, costos y **horas-hombre estimadas** para fabricar una unidad.
+2. **Pedido**: desde el producto (botón **Crear pedido**) o desde Pedidos, el admin arma el pedido. Para cada producto indica las horas-hombre estimadas (se proponen las del producto) y las **reparte en etapas**, cada una con sus horas y **el empleado que la hace**. La suma de las etapas tiene que ser igual a la estimación: el formulario y la API lo validan.
+3. **Producción diaria**: el admin propone qué se termina en el día: un **pedido completo**, un **producto** del pedido o **etapas sueltas**. Una etapa pendiente puede estar en una sola producción abierta a la vez.
+4. **Mis tareas**: cada empleado ve sus etapas (arriba las de la producción de hoy) y, al terminar una, **solo la marca como terminada**: no informa cuánto tardó.
+5. **Verificación**: el admin revisa el trabajo; si una etapa no quedó bien la **reabre** (vuelve a pendiente). Después marca la **producción diaria como terminada**.
+6. **Recompensa**: si al terminar el día se completaron todas las etapas propuestas, el equipo cobra sus horas-hombre estimadas (ver abajo). Si falta alguna, ese día no hay recompensa y lo pendiente se puede proponer otro día.
+
 ### Productos
 
-El admin define nombre, precio de venta y las **etapas de fabricación** propias del producto. Cada etapa lleva nombre, costo y duración estimada. El sistema muestra el costo total y el margen calculados a partir de esas etapas.
+El admin define nombre, precio de venta, costos (materiales y costo por hora de mano de obra) y las **horas-hombre estimadas** por unidad, que se proponen al pedir el producto. Las etapas de fabricación no viven en el producto sino en cada pedido.
 
 Al marcar un producto como **"Publicar en la web"** además se sincroniza solo con el catálogo de WhatsApp Business del cliente (una sola carga, dos catálogos). Ver [`INTEGRACION_WHATSAPP.md`](INTEGRACION_WHATSAPP.md) para la configuración completa.
 
 ### Pedidos
 
-Un pedido agrupa **uno o más productos** con su cantidad y precio, más los datos del cliente (nombre, contacto, correo, dirección y notas). Al crearlo, cada etapa de cada producto se despliega como una **tarea de producción asignable a un empleado**, con el costo y la duración multiplicados por la cantidad pedida.
+Un pedido agrupa **uno o más productos** con su cantidad (el precio sale del producto). Cada producto lleva sus horas-hombre estimadas por unidad repartidas en etapas (`pedido_etapas`), cada una con su nombre, sus horas y su responsable. Las horas se cargan por unidad y se multiplican por la cantidad; la mano de obra del pedido es horas-hombre estimadas × costo por hora.
 
-Las etapas guardan su propia copia de nombre, costo y minutos, así que editar el catálogo más adelante no altera la producción en curso. El estado del pedido (`PENDIENTE` → `EN_PRODUCCION` → `TERMINADO`) se recalcula solo según el avance de sus etapas.
+Las etapas guardan su propia copia de nombre y horas, así que editar el producto más adelante no altera la producción en curso. Después de crear el pedido se pueden agregar o quitar etapas pendientes (las horas del producto en el pedido son siempre la suma de sus etapas) y reasignarlas desde **Tareas**. El estado del pedido (`PENDIENTE` → `EN_PRODUCCION` → `TERMINADO`) se recalcula solo según el avance de sus etapas.
 
 ### Tareas del empleado
 
-En **Mis tareas** el empleado ve las etapas asignadas, las marca como iniciadas y, al terminarlas, **informa cuánto tiempo le llevó**. Ese dato es el que alimenta el semáforo.
-
-### Semáforo de rendimiento
-
-Al cerrar una etapa se compara el tiempo real contra el estimado por el admin:
-
-| Semáforo | Condición (tolerancia `t`, por defecto 10%) |
-| --- | --- |
-| 🟢 Verde | real ≤ estimado × (1 − t) — más rápido de lo esperado |
-| 🟡 Amarillo | dentro de ± t del estimado |
-| 🔴 Rojo | real > estimado × (1 + t) — más lento de lo esperado |
-
-Es solo un indicador de tiempos: no genera plata. La tolerancia (`semaforo_tolerancia`) se edita en **Configuración**.
+En **Mis tareas** el empleado ve sus etapas asignadas, las de la producción de hoy primero, con sus horas-hombre y cómo viene el equipo en el día. Puede marcarlas como empezadas y, al terminarlas, solo confirma (con observaciones opcionales). Ya no se informa el tiempo real, así que el **semáforo de rendimiento dejó de calcularse**: las etapas cerradas antes lo conservan en la base como historial.
 
 ### Recompensa del equipo
 
-Todo el taller es un único equipo y la recompensa se paga por día, por completar la producción propuesta para la jornada (nunca por empleado). En **Producción diaria** el admin define los objetivos diarios por producto y se carga lo producido; en **Recompensas** se ve el desglose.
+Todo el taller es un único equipo y la recompensa se paga por día, por completar la producción propuesta para la jornada (nunca por empleado). En **Producción diaria** el admin la arma y la da por terminada; en **Recompensas** se ve el desglose y el historial.
 
 ```
-objetivo (hs)     = Σ (cantidad objetivo × horas-hombre) de los objetivos diarios
-                    por producto activos (ej. 4 sillas de 4 hs = 16 hs)
-horas producidas  = Σ (unidades × horas-hombre del producto)
-recompensa        = objetivo × valor hora-hombre × % de premio   si horas producidas >= objetivo
-                    0                                            si no se completa el objetivo
+propuesto (hs)    = Σ horas-hombre estimadas de las etapas propuestas para el día
+completado (hs)   = Σ horas-hombre de las que ya están completadas
+recompensa        = propuesto × valor hora-hombre × % de premio   si se completaron todas
+                    0                                             si falta alguna
 ```
 
-- Cada producto vale sus **horas-hombre** (Productos). No se cargan horas trabajadas por empleado.
-- Producir de más no aumenta la recompensa: se paga el objetivo completo.
-- Objetivos diarios, horas-hombre, valor hora-hombre y % de premio (por defecto 100%) solo los cambia un `admin` o `super_admin`; la API lo valida.
-- El objetivo se guarda en el día con su detalle (`jornadas_equipo`): editar un objetivo después no cambia días pasados. El valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`) y cada registro de producción copia las horas-hombre del producto: los cambios posteriores no recalculan días pasados.
-- La lógica está en funciones puras en `server/recompensa-equipo.js`. Tests: `npm test`.
-- Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto (migración `database/migracion_018_recompensa_equipo.sql`).
+- La jornada (`jornadas_equipo`) está **ABIERTA** mientras se trabaja: el resultado se calcula en vivo. Al marcarla como **TERMINADA** se guarda una copia de sus etapas y del cálculo (`objetivo_detalle` y totales), que ya no cambia aunque después se editen los pedidos. Se puede reabrir; la recompensa vuelve a 0 hasta terminarla de nuevo.
+- Solo cuentan como gasto (Estadísticas) las recompensas de días **terminados**.
+- Armar, verificar y cerrar la producción del día, el valor hora-hombre y el % de premio (por defecto 100%) son solo de `admin` o `super_admin`; la API lo valida. El valor hora y el % tienen historial por fecha (`parametros_recompensa_historial`).
+- Una etapa que ya se pagó en un día terminado y cumplido no se puede reabrir (hay que reabrir primero ese día).
+- La lógica está en funciones puras en `server/recompensa-equipo.js` y la lectura/cierre en `server/jornadas.js`. Tests: `npm test` (los de permisos usan la base de `.env`).
+- Los días del modelo anterior (objetivos diarios por producto) quedan como terminados y se ven en Recompensas. Las recompensas individuales del sistema anterior quedan como historial de solo lectura y siguen contando como gasto.
 
 ### Panel y estadísticas
 
-- **Panel de control**: pedidos activos y atrasados, etapas pendientes y sin asignar, ganancia estimada, semáforo del taller, productos más vendidos, empleados con tareas pendientes y accesos directos para crear productos, pedidos y usuarios.
-- **Estadísticas**: apartado propio y filtrable por fechas, con ingresos cobrados y en curso, gastos de producción y recompensas, ganancia neta y proyectada, facturación por mes, rentabilidad por producto y rendimiento de cada empleado (tareas completadas, tiempos promedio y conteo de semáforos).
+- **Panel de control**: pedidos activos y atrasados, etapas y horas-hombre pendientes, ingresos en curso, **producción de hoy** (avance y recompensa), productos vendidos, empleados con tareas pendientes y accesos directos (nuevo pedido, producto, empleado, producción diaria, tareas y recompensas).
+- **Estadísticas**: apartado propio y filtrable por fechas, con ingresos cobrados y en curso, gastos de producción y recompensas, ganancia neta y proyectada, facturación por mes, resumen de las producciones diarias (días completados, horas propuestas y completadas), rentabilidad por producto y rendimiento de cada empleado en etapas y horas-hombre completadas.
 
 ### Manual de usuario
 
@@ -114,10 +113,10 @@ recompensa        = objetivo × valor hora-hombre × % de premio   si horas prod
 | Usuarios | `GET /api/usuarios`, `GET /api/usuarios/empleados`, `POST /api/usuarios`, `PATCH /api/usuarios/:id`, `/:id/rol`, `/:id/activo`, `/:id/contrasena` |
 | Productos | `GET|POST /api/productos`, `GET|PUT|DELETE /api/productos/:id`, `PATCH /api/productos/:id/activo`, `POST /api/productos/:id/whatsapp/reintentar` |
 | Clientes | `GET|POST /api/clientes`, `PUT /api/clientes/:id` |
-| Pedidos | `GET|POST /api/pedidos`, `GET|PATCH|DELETE /api/pedidos/:id` (solo informativo: no asigna empleados) |
-| Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (única vía para asignar empleados a etapas), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` |
+| Pedidos | `GET|POST /api/pedidos` (cada producto con `horas_hombre` y sus etapas `{ nombre, horas_hombre, responsable_id }`), `GET|PATCH|DELETE /api/pedidos/:id`, `GET /api/pedidos/tareas-sugeridas`, `POST /api/pedidos/:id/items/:itemId/tareas`, `PATCH|DELETE /api/pedidos/:id/tareas/:tareaId` |
+| Tareas | `GET|POST /api/tareas`, `PATCH /api/tareas/:id/estado`, `PATCH /api/tareas/:tareaId/etapas/:etapaId`, `GET /api/tareas/asignadas/mias`, `PATCH /api/tareas/asignadas/:origen/:id/asignar` (reasignar), `PATCH /api/tareas/asignadas/:origen/:id/iniciar`, `PATCH /api/tareas/asignadas/:origen/:id/completar` (sin informar tiempo), `PATCH /api/tareas/asignadas/PEDIDO/:id/reabrir` (admin) |
 | Recompensas | `GET /api/recompensas/equipo`, `GET /api/recompensas/equipo/dia/:fecha`, `GET|PUT /api/recompensas/parametros`, `GET /api/recompensas/historial-individual` |
-| Producción | `GET /api/produccion/objetivos`, `PUT|DELETE /api/produccion/objetivos/:productoId`, `GET|POST /api/produccion/registros` |
+| Producción | `GET|DELETE /api/produccion/jornada/:fecha`, `POST /api/produccion/jornada/:fecha/etapas` (`{ pedido_id }`, `{ pedido_item_id }` o `{ etapas }`), `DELETE /api/produccion/jornada/:fecha/etapas/:etapaId`, `POST /api/produccion/jornada/:fecha/terminar`, `POST /api/produccion/jornada/:fecha/reabrir` |
 | Estadísticas | `GET /api/estadisticas/resumen`, `GET /api/estadisticas/generales` |
 | Manual | `GET /api/manual/pdf` (PDF del manual, requiere sesión) |
 | Configuración | `GET /api/configuracion`, `GET /api/configuracion/valores`, `PUT /api/configuracion` |

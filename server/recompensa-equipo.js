@@ -3,75 +3,69 @@
 // Todo el taller trabaja como un único equipo: la recompensa se paga por
 // completar la producción propuesta para el día, nunca por empleado.
 //
-//   objetivo (horas)   = Σ (cantidad objetivo × horas-hombre) de cada
-//                        producto con objetivo diario activo (se definen en
-//                        Producción diaria; ej. 4 sillas de 4 hs = 16 hs)
-//   horas_producidas   = Σ (unidades × horas-hombre del producto)
-//   cumplido           = horas_producidas >= objetivo
+// La producción diaria es una lista de etapas de pedidos, cada una con
+// las horas-hombre que el admin estimó al crear el pedido:
+//
+//   objetivo (horas)   = Σ horas-hombre de las etapas propuestas
+//   horas_completadas  = Σ horas-hombre de las que ya están completadas
+//   cumplido           = todas las etapas propuestas están completadas
 //   recompensa         = objetivo × valor hora-hombre × % premio
-//                        (0 si no se completa el objetivo)
+//                        (0 si queda alguna etapa sin completar)
 //
-// Producir de más no aumenta la recompensa: se paga el objetivo completo.
-//
-// Sin base de datos ni UI: las rutas (server/jornadas.js) leen los datos y
-// llaman a estas funciones, y los tests las prueban de forma aislada.
+// Sin base de datos ni UI: server/jornadas.js lee los datos y llama a
+// estas funciones, y los tests las prueban de forma aislada.
 // =====================================================================
 
-const redondear = valor => Math.round((Number(valor) || 0) * 100) / 100
+export const redondear = valor => Math.round((Number(valor) || 0) * 100) / 100
 const positivo = valor => { const numero = Number(valor); return Number.isFinite(numero) && numero > 0 ? numero : 0 }
 
-// Convierte una lista { producto, cantidad, tiempo_estandar } a horas
-// estándar. Sirve tanto para lo producido como para los objetivos. Los
-// productos sin tiempo estándar suman 0 horas y se devuelven aparte.
-export function horasProducidas(lista = []) {
-  let horas = 0
-  const sinTiempoEstandar = []
-  for (const fila of lista) {
-    const cantidad = positivo(fila.cantidad)
-    const tiempo = positivo(fila.tiempo_estandar)
-    if (cantidad && !tiempo) sinTiempoEstandar.push(fila.producto ?? fila.producto_id ?? null)
-    horas += cantidad * tiempo
-  }
-  return { horas: redondear(horas), sinTiempoEstandar }
+// Margen para comparar horas con decimales (0,01 h ≈ 36 segundos).
+const TOLERANCIA_HORAS = 0.01
+
+// ¿Las etapas de un producto reparten exactamente sus horas-hombre
+// estimadas? Devuelve la suma y la diferencia (positiva = faltan horas
+// por repartir, negativa = las etapas se pasan de la estimación).
+export function validarRepartoHoras(horasEstimadas, horasEtapas = []) {
+  const estimadas = redondear(positivo(horasEstimadas))
+  const suma = redondear(horasEtapas.reduce((total, horas) => total + positivo(horas), 0))
+  const diferencia = redondear(estimadas - suma)
+  return { estimadas, suma, diferencia, coincide: estimadas > 0 && Math.abs(diferencia) < TOLERANCIA_HORAS }
 }
 
-// Objetivo del equipo a partir de los objetivos diarios por producto.
-export const objetivoEquipo = (objetivos = []) => horasProducidas(objetivos)
-
-// Resultado completo del día.
-//   objetivos         objetivos diarios por producto [{ producto, cantidad, tiempo_estandar }]
-//   objetivoHoras     objetivo ya guardado para el día (días cerrados); si viene, reemplaza al calculado con `objetivos`
-//   producciones      [{ producto, cantidad, tiempo_estandar }]
+// Resultado de una producción diaria.
+//   etapas            [{ horas_hombre, estado, responsable_id? }]
 //   valorHora         valor monetario de una hora-hombre
 //   porcentajePremio  0 a 100 (100 = se paga todo el valor del objetivo)
-export function calcularRecompensaEquipo({ objetivos = [], objetivoHoras = null, producciones = [], valorHora = 0, porcentajePremio = 100 } = {}) {
-  const desdeObjetivos = objetivoEquipo(objetivos)
-  const guardado = objetivoHoras !== null && objetivoHoras !== undefined && objetivoHoras !== '' && Number.isFinite(Number(objetivoHoras))
-  const objetivo = guardado ? redondear(Math.max(0, Number(objetivoHoras))) : desdeObjetivos.horas
-  const producido = horasProducidas(producciones)
+export function calcularRecompensaEquipo({ etapas = [], valorHora = 0, porcentajePremio = 100 } = {}) {
+  const completadas = etapas.filter(etapa => etapa.estado === 'COMPLETADA')
+  const objetivo = redondear(etapas.reduce((total, etapa) => total + positivo(etapa.horas_hombre), 0))
+  const hechas = redondear(completadas.reduce((total, etapa) => total + positivo(etapa.horas_hombre), 0))
   const valor = positivo(valorHora)
   const porcentaje = positivo(porcentajePremio)
+  const sinAsignar = etapas.filter(etapa => etapa.estado !== 'COMPLETADA' && !etapa.responsable_id).length
 
   const advertencias = []
-  if (!objetivo) advertencias.push('El objetivo del día es 0: definí objetivos diarios por producto en Producción diaria. Sin objetivo no se paga recompensa.')
-  if (!guardado && desdeObjetivos.sinTiempoEstandar.length) advertencias.push(`Productos con objetivo pero sin horas-hombre (no suman al objetivo): ${desdeObjetivos.sinTiempoEstandar.join(', ')}.`)
-  if (producido.sinTiempoEstandar.length) advertencias.push(`Productos sin horas-hombre (no suman horas producidas): ${producido.sinTiempoEstandar.join(', ')}.`)
+  if (!etapas.length) advertencias.push('No hay etapas propuestas para este día: agregá pedidos, productos o etapas en Producción diaria.')
+  else if (!objetivo) advertencias.push('Las etapas propuestas no tienen horas-hombre estimadas: la recompensa sería 0.')
+  if (sinAsignar) advertencias.push(`${sinAsignar === 1 ? 'Hay 1 etapa propuesta' : `Hay ${sinAsignar} etapas propuestas`} sin empleado asignado: nadie la va a ver en Mis tareas.`)
   if (!valor) advertencias.push('El valor de la hora-hombre es 0.')
 
-  // Con objetivo 0 no hay nada que completar: nunca se paga.
-  const cumplido = objetivo > 0 && producido.horas >= objetivo
-  const recompensa = cumplido ? redondear(objetivo * valor * (porcentaje / 100)) : 0
+  // Sin etapas no hay nada que completar: nunca se paga.
+  const cumplido = etapas.length > 0 && completadas.length === etapas.length
+  const recompensaAlCumplir = redondear(objetivo * valor * (porcentaje / 100))
 
   return {
     objetivo_horas: objetivo,
-    horas_producidas: producido.horas,
-    // Diferencia contra el objetivo (informativa: negativa = lo que faltó).
-    excedente_horas: objetivo > 0 ? redondear(producido.horas - objetivo) : 0,
+    horas_completadas: hechas,
+    horas_pendientes: redondear(objetivo - hechas),
+    etapas_totales: etapas.length,
+    etapas_completadas: completadas.length,
+    avance: objetivo > 0 ? Math.round((100 * hechas) / objetivo) : 0,
     cumplido,
     valor_hora: redondear(valor),
     porcentaje_premio: redondear(porcentaje),
-    recompensa,
-    productos_sin_tiempo_estandar: producido.sinTiempoEstandar,
+    recompensa_al_cumplir: recompensaAlCumplir,
+    recompensa: cumplido ? recompensaAlCumplir : 0,
     advertencias
   }
 }

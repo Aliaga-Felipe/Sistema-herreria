@@ -75,6 +75,22 @@ export const duracion = minutos => {
 
 export const fecha = valor => (valor ? new Date(valor).toLocaleDateString('es-AR') : '—')
 
+// Fecha local en formato AAAA-MM-DD (toISOString daría el día siguiente
+// a la noche en Argentina).
+export const hoyLocal = () => {
+  const ahora = new Date()
+  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
+}
+
+// "2026-09-30" → "30/09/2026" sin pasar por Date (evita el corrimiento de zona horaria).
+export const fechaDia = texto => (texto ? String(texto).slice(0, 10).split('-').reverse().join('/') : '—')
+
+// Horas-hombre con hasta dos decimales: 2.5 → "2,5 hs".
+export const horas = valor => `${Number(valor || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })} hs`
+
+// Suma de horas-hombre redondeada a dos decimales (evita 0,1 + 0,2 = 0,30000000000000004).
+export const sumarHoras = lista => Math.round(lista.reduce((total, valor) => total + (Number(valor) || 0), 0) * 100) / 100
+
 export const porcentaje = (parte, total) => (total ? Math.round((parte / total) * 100) : 0)
 
 export const etiquetaEstado = estado => String(estado || '').replace(/_/g, ' ').toLowerCase()

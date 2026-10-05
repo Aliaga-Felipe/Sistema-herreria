@@ -131,24 +131,9 @@ export async function leerConfiguracion(cliente = pool) {
   return { ...configuracionPorDefecto, ...Object.fromEntries(rows.map(fila => [fila.clave, fila.valor])) }
 }
 
-// ---------------------------------------------------------------------
-// SEMÁFORO DE RENDIMIENTO
-// Compara el tiempo real contra el estimado por el admin. Verde si terminó
-// antes de (1 - tolerancia), amarillo dentro del margen, rojo si se pasó.
-// Es solo un indicador: ya no genera plata. La recompensa es por equipo
-// (ver server/recompensa-equipo.js).
-// ---------------------------------------------------------------------
-export function calcularSemaforo(minutosEstimados, minutosReales, config = configuracionPorDefecto) {
-  const estimado = Number(minutosEstimados)
-  const real = Number(minutosReales)
-  const base = { minutos_estimados: estimado || null, minutos_reales: Number.isFinite(real) ? real : null }
-  if (!estimado || !Number.isFinite(real) || real <= 0) return { ...base, semaforo: null, minutos_ahorrados: 0, ratio: null }
-
-  const tolerancia = Math.max(0, Number(config.semaforo_tolerancia) || 0)
-  const ratio = real / estimado
-  const semaforo = ratio <= 1 - tolerancia ? 'VERDE' : ratio <= 1 + tolerancia ? 'AMARILLO' : 'ROJO'
-  return { ...base, semaforo, minutos_ahorrados: Math.max(0, estimado - real), ratio }
-}
+// El semáforo de rendimiento (tiempo real contra estimado) se dejó de
+// calcular: el empleado ya no informa cuánto tardó, solo completa la etapa.
+// Las etapas cerradas antes conservan su semáforo como historial.
 
 // Recalcula el estado de un pedido según el avance de sus etapas.
 export async function sincronizarPedido(cliente, pedidoId) {

@@ -64,7 +64,7 @@ const BadgeWhatsapp = ({ producto }) => {
   return <span className="badge-inactivo" title="Todavía no se sincronizó con WhatsApp">WhatsApp —</span>
 }
 
-export default function PanelProductos({ intencion, limpiarIntencion }) {
+export default function PanelProductos({ intencion, limpiarIntencion, ir }) {
   const productos = useData('/productos')
   const categorias = useData('/categorias')
   const configuracion = useData('/configuracion/valores', {})
@@ -164,7 +164,7 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
   return (
     <>
-      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, costos, categoría y fotos. Las tareas de fabricación se definen en cada pedido. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
+      <Heading kicker="Catálogo de fabricación" title="Productos" text="Cada producto define su precio de venta, costos, horas-hombre estimadas, categoría y fotos. Con “Crear pedido” se arma un pedido del producto, con sus etapas y empleados. En la web pública sólo se ven los productos marcados como “Publicar en la web”.">
         <button className="primary" onClick={nuevoProducto}>+ Nuevo producto</button>
       </Heading>
 
@@ -236,7 +236,11 @@ export default function PanelProductos({ intencion, limpiarIntencion }) {
 
               <div className="card-buttons">
                 <button onClick={() => editarProducto(producto)}>Editar</button>
-                {producto.estado !== 'VENDIDO' && <button className="btn-vendido" title="Registra la venta: deja de verse en la web y cuenta en las estadísticas" onClick={() => marcarVendido(producto)}>Producto vendido</button>}
+                {/* Producto → pedido: abre el alta de pedido con este producto, sus horas-hombre y sus etapas propuestas. */}
+                {producto.estado === 'ACTIVO' && ir && (
+                  <button title="Armar un pedido de este producto con sus horas-hombre y etapas" onClick={() => ir('Pedidos', { accion: 'nuevo', producto_id: producto.id })}>Crear pedido</button>
+                )}
+                {producto.estado !== 'VENDIDO' &&<button className="btn-vendido" title="Registra la venta: deja de verse en la web y cuenta en las estadísticas" onClick={() => marcarVendido(producto)}>Producto vendido</button>}
                 {producto.estado === 'ACTIVO'
                   ? <button title="Sigue en el panel, pero no se ve en la web y no cuenta como venta" onClick={() => cambiarEstado(producto, 'DESACTIVADO')}>Desactivar</button>
                   : <button className="activar-resaltado" title={producto.estado === 'VENDIDO' ? 'Anula la venta y vuelve a estar disponible' : 'Vuelve a estar disponible'} onClick={() => reactivar(producto)}>Reactivar</button>}
@@ -378,7 +382,7 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
             </select>
           </label>
 
-          <label>Horas-hombre (opcional)
+          <label title="Horas de trabajo para terminar una unidad. Se proponen al crear un pedido, donde se reparten en etapas.">Horas-hombre estimadas (opcional)
             <CampoNumero min="0" step="0.25" value={horasHombre} onChange={setHorasHombre} placeholder="0" />
           </label>
 
