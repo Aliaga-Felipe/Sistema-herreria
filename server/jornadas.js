@@ -1,5 +1,5 @@
 import { pool } from './db.js'
-import { fallo } from './comun.js'
+import { empleadosEtapaSql, fallo, nombresEtapaSql } from './comun.js'
 import { calcularRecompensaEquipo, redondear } from './recompensa-equipo.js'
 
 // =====================================================================
@@ -51,12 +51,16 @@ const leerJornada = async (db, fecha, bloquear = false) => (await db.query(
    FROM jornadas_equipo j LEFT JOIN usuarios u ON u.id = j.terminada_por
    WHERE j.fecha = $1::date${bloquear ? ' FOR UPDATE OF j' : ''}`, [fecha])).rows[0] || null
 
-// Etapas propuestas para un día, con su pedido, producto y responsable.
-// Es también la forma en que se guardan en la copia de un día terminado.
+// Etapas propuestas para un día, con su pedido, producto y empleados
+// ("empleados" [{ id, nombre }], "responsable" sus nombres separados por
+// coma y "empleados_necesarios"). Es también la forma en que se guardan en
+// la copia de un día terminado (las copias anteriores solo tienen
+// "responsable", con un único nombre).
 async function etapasDeJornada(db, fecha) {
   const { rows } = await db.query(
     `SELECT e.id, e.nombre, e.orden, e.estado::text AS estado, e.horas_hombre::float8 AS horas_hombre,
-       e.responsable_id, u.nombre AS responsable, e.iniciado_en, e.completado_en, e.observaciones,
+       e.responsable_id, ${nombresEtapaSql('e')} AS responsable, ${empleadosEtapaSql('e')} AS empleados,
+       e.empleados_necesarios, e.iniciado_en, e.completado_en, e.observaciones,
        e.pedido_id, p.codigo AS pedido, p.estado::text AS pedido_estado, p.prioridad,
        e.pedido_item_id, i.producto_id, pr.nombre AS producto, i.cantidad
      FROM jornada_etapas je
@@ -64,7 +68,6 @@ async function etapasDeJornada(db, fecha) {
      JOIN pedidos p ON p.id = e.pedido_id
      LEFT JOIN pedido_items i ON i.id = e.pedido_item_id
      LEFT JOIN productos pr ON pr.id = i.producto_id
-     LEFT JOIN usuarios u ON u.id = e.responsable_id
      WHERE je.fecha = $1::date
      ORDER BY p.prioridad DESC, p.codigo, e.pedido_item_id, e.orden, e.id`, [fecha])
   return rows

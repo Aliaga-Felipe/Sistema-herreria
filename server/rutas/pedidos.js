@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, esAdmin, fallo, leerConfiguracion, sincronizarPedido } from '../comun.js'
+import {
+  asignadaASql, asyncRoute, auth, decimal, empleadosEtapaSql, empleadosNecesarios, entero, esAdmin, fallo, guardarEmpleadosEtapa,
+  leerConfiguracion, listaEmpleados, nombresEtapaSql, sincronizarPedido, validarEmpleados
+} from '../comun.js'
 import { validarRepartoHoras } from '../recompensa-equipo.js'
 
 const router = Router()
@@ -23,15 +26,18 @@ const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_e
       ) ORDER BY i.id), '[]')
       FROM pedido_items i JOIN productos pr ON pr.id = i.producto_id WHERE i.pedido_id = p.id) AS items,
     -- "jornada": fecha de la producción diaria abierta en la que está
-    -- propuesta la etapa (null si no está en ninguna).
+    -- propuesta la etapa (null si no está en ninguna). "empleados": todos
+    -- los asignados ({ id, nombre }); "responsable": sus nombres separados
+    -- por coma; "empleados_necesarios": cuántos necesita la etapa.
     (SELECT COALESCE(json_agg(json_build_object('id', e.id, 'pedido_item_id', e.pedido_item_id, 'nombre', e.nombre,
         'orden', e.orden, 'estado', e.estado, 'horas_hombre', e.horas_hombre::float8,
         'minutos_estimados', e.minutos_estimados, 'minutos_reales', e.minutos_reales, 'semaforo', e.semaforo,
-        'responsable_id', e.responsable_id, 'responsable', u.nombre, 'completado_en', e.completado_en,
+        'responsable_id', e.responsable_id, 'responsable', ${nombresEtapaSql('e')},
+        'empleados', ${empleadosEtapaSql('e')}, 'empleados_necesarios', e.empleados_necesarios, 'completado_en', e.completado_en,
         'observaciones', e.observaciones,
         'jornada', (SELECT je.fecha::text FROM jornada_etapas je JOIN jornadas_equipo j ON j.fecha = je.fecha
                     WHERE je.pedido_etapa_id = e.id AND j.estado = 'ABIERTA' ORDER BY je.fecha LIMIT 1)) ORDER BY e.pedido_item_id, e.orden), '[]')
-      FROM pedido_etapas e LEFT JOIN usuarios u ON u.id = e.responsable_id WHERE e.pedido_id = p.id) AS etapas,
+      FROM pedido_etapas e WHERE e.pedido_id = p.id) AS etapas,
     COALESCE((SELECT SUM(e.horas_hombre) FROM pedido_etapas e WHERE e.pedido_id = p.id), 0)::float8 AS horas_hombre,
     COALESCE((SELECT SUM(i.cantidad * i.precio_unitario) FROM pedido_items i WHERE i.pedido_id = p.id), 0)::float8 AS total,
     -- Costo de producción del pedido = materiales + mano de obra, copiados del
@@ -47,8 +53,9 @@ const consultaPedidos = `SELECT p.id, p.codigo, p.estado, p.prioridad, p.fecha_e
       FROM pedido_etapas e WHERE e.pedido_id = p.id), 0)::int AS avance
   FROM pedidos p`
 
-// El empleado solo ve los pedidos donde tiene alguna etapa a cargo.
-const filtroEmpleado = ' WHERE EXISTS (SELECT 1 FROM pedido_etapas e WHERE e.pedido_id = p.id AND e.responsable_id = $1)'
+// El empleado solo ve los pedidos donde tiene alguna etapa a cargo (sola
+// o junto con otros empleados).
+const filtroEmpleado = ` WHERE EXISTS (SELECT 1 FROM pedido_etapas e WHERE e.pedido_id = p.id AND ${asignadaASql('e', '$1::bigint')})`
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const admin = esAdmin(req.user.rol)
@@ -61,9 +68,11 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
 // Las etapas pertenecen al PEDIDO, no al producto: se definen al crear el
 // pedido, una lista por cada producto, y se guardan en pedido_etapas. Para
 // cada producto el admin estima sus horas-hombre (se propone las del
-// producto) y las reparte entre sus etapas, cada una con su empleado: la
-// suma de las etapas tiene que ser igual a la estimación. Las horas se
-// cargan POR UNIDAD y se multiplican por la cantidad del producto.
+// producto) y las reparte entre sus etapas: la suma de las etapas tiene que
+// ser igual a la estimación. Las horas se cargan POR UNIDAD y se
+// multiplican por la cantidad del producto. Cada etapa indica cuántos
+// empleados necesita y se asigna a todos ellos; sus horas-hombre son el
+// total de la etapa (2 empleados × 3 hs = 6 hs-hombre).
 //
 // Desde ahí la etapa es la unidad de trabajo de todo el sistema: el
 // empleado la ve en Mis tareas y la completa, se propone en la Producción
@@ -73,13 +82,15 @@ router.get('/', auth(), asyncRoute(async (req, res) => {
 // Horas con dos decimales a minutos (para las pantallas que muestran duraciones).
 const aMinutos = horas => Math.round((Number(horas) || 0) * 60)
 
-// Todos los responsables tienen que ser empleados activos.
-async function validarEmpleados(db, ids) {
-  const unicos = [...new Set(ids.map(String))]
-  if (!unicos.length) return
-  const { rows } = await db.query(
-    "SELECT id FROM usuarios WHERE id = ANY($1::bigint[]) AND LOWER(rol::text) = 'empleado' AND activo", [unicos])
-  if (rows.length !== unicos.length) throw fallo('Cada etapa tiene que quedar asignada a un empleado activo.')
+// Empleados de una etapa nueva: tantos como necesita, sin repetir.
+function empleadosDeEtapaNueva(etapa, nombre) {
+  const necesarios = empleadosNecesarios(etapa?.empleados_necesarios)
+  const empleados = listaEmpleados(etapa)
+  if (!empleados.length) throw fallo(`Asigná un empleado a la etapa ${nombre}.`)
+  if (empleados.length !== necesarios) {
+    throw fallo(`La etapa ${nombre} necesita ${necesarios} empleados y tiene ${empleados.length} asignados: tienen que coincidir.`)
+  }
+  return { empleados_necesarios: necesarios, empleados }
 }
 
 // Valida las etapas de un producto del pedido contra sus horas-hombre
@@ -92,8 +103,7 @@ const normalizarEtapas = (etapas, nombreProducto, horasEstimadas) => {
     if (nombre.length > 120) throw fallo('El nombre de una etapa no puede superar los 120 caracteres.')
     const horas = decimal(etapa?.horas_hombre)
     if (!(horas > 0)) throw fallo(`La etapa "${nombre}" de "${nombreProducto}" necesita sus horas-hombre (mayores a cero).`)
-    if (!/^\d+$/.test(String(etapa?.responsable_id ?? ''))) throw fallo(`Asigná un empleado a la etapa "${nombre}" de "${nombreProducto}".`)
-    return { nombre, orden: indice + 1, horas_por_unidad: horas, responsable_id: String(etapa.responsable_id) }
+    return { nombre, orden: indice + 1, horas_por_unidad: horas, ...empleadosDeEtapaNueva(etapa, `"${nombre}" de "${nombreProducto}"`) }
   })
   const reparto = validarRepartoHoras(horasEstimadas, normalizadas.map(etapa => etapa.horas_por_unidad))
   if (!(reparto.estimadas > 0)) throw fallo(`Indicá las horas-hombre estimadas para terminar "${nombreProducto}".`)
@@ -104,9 +114,10 @@ const normalizarEtapas = (etapas, nombreProducto, horasEstimadas) => {
 }
 
 // Etapas sugeridas para un producto al armar un pedido nuevo: las del
-// último pedido de ese producto (horas por unidad y empleado, si sigue
-// activo) o, si nunca se pidió, las etapas que tenía cargadas antes de que
-// pasaran al pedido (tabla etapas_producto, sólo lectura). Es una ayuda
+// último pedido de ese producto (horas por unidad, cantidad de empleados y
+// los empleados que siguen activos) o, si nunca se pidió, las etapas que
+// tenía cargadas antes de que pasaran al pedido (tabla etapas_producto,
+// sólo lectura). Es una ayuda
 // para no tipear de nuevo: el admin las puede cambiar libremente.
 router.get('/tareas-sugeridas', auth(['admin']), asyncRoute(async (req, res) => {
   const productoId = req.query.producto_id
@@ -117,21 +128,24 @@ router.get('/tareas-sugeridas', auth(['admin']), asyncRoute(async (req, res) => 
      ORDER BY p.creado_en DESC, i.id DESC LIMIT 1`, [productoId])
   if (ultimo.rows[0]) {
     const { rows } = await pool.query(
-      `SELECT e.nombre, ROUND(e.horas_hombre / $2, 2)::float8 AS horas_hombre,
-         CASE WHEN u.activo AND LOWER(u.rol::text) = 'empleado' THEN e.responsable_id END AS responsable_id
-       FROM pedido_etapas e LEFT JOIN usuarios u ON u.id = e.responsable_id
+      `SELECT e.nombre, ROUND(e.horas_hombre / $2, 2)::float8 AS horas_hombre, e.empleados_necesarios,
+         ARRAY(SELECT pee.usuario_id::text FROM pedido_etapa_empleados pee JOIN usuarios u ON u.id = pee.usuario_id
+               WHERE pee.pedido_etapa_id = e.id AND u.activo AND LOWER(u.rol::text) = 'empleado'
+               ORDER BY pee.orden, pee.usuario_id) AS empleados
+       FROM pedido_etapas e
        WHERE e.pedido_item_id = $1 ORDER BY e.orden, e.id`, [ultimo.rows[0].id, Math.max(1, ultimo.rows[0].cantidad)])
     return res.json({ origen: 'ultimo_pedido', tareas: rows })
   }
   const { rows } = await pool.query(
-    'SELECT nombre, ROUND(minutos_estimados / 60.0, 2)::float8 AS horas_hombre, NULL AS responsable_id FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [productoId])
+    'SELECT nombre, ROUND(minutos_estimados / 60.0, 2)::float8 AS horas_hombre, 1 AS empleados_necesarios, ARRAY[]::text[] AS empleados FROM etapas_producto WHERE producto_id = $1 ORDER BY orden', [productoId])
   res.json({ origen: rows.length ? 'producto_anterior' : 'ninguno', tareas: rows })
 }))
 
 router.get('/:id', auth(), asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`${consultaPedidos} WHERE p.id = $1`, [req.params.id])
   if (!rows[0]) throw fallo('Pedido no encontrado.', 404)
-  if (!esAdmin(req.user.rol) && !rows[0].etapas.some(etapa => String(etapa.responsable_id) === String(req.user.id))) throw fallo('No tenés permisos sobre este pedido.', 403)
+  const suya = etapa => etapa.empleados.some(empleado => String(empleado.id) === String(req.user.id))
+  if (!esAdmin(req.user.rol) && !rows[0].etapas.some(suya)) throw fallo('No tenés permisos sobre este pedido.', 403)
   res.json(rows[0])
 }))
 
@@ -147,8 +161,8 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 // pedido_items.costo_materiales_unitario / costo_mano_obra_unitario.
 //
 // ETAPAS: items[].horas_hombre es la estimación por unidad e items[].tareas
-// sus etapas ({ nombre, horas_hombre, responsable_id }, ver
-// normalizarEtapas). Se guardan en pedido_etapas para ESTE pedido, ya
+// sus etapas ({ nombre, horas_hombre, empleados_necesarios, empleados: [ids] },
+// ver normalizarEtapas). Se guardan en pedido_etapas para ESTE pedido, ya
 // asignadas; el producto no se toca.
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const { items = [], fecha_entrega = null, prioridad = 0, notas = '' } = req.body
@@ -181,7 +195,7 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
       const etapas = normalizarEtapas(item?.tareas, producto.nombre, horasEstimadas)
       preparados.push({ producto, cantidad, horasEstimadas, etapas })
     }
-    await validarEmpleados(conexion, preparados.flatMap(item => item.etapas.map(etapa => etapa.responsable_id)))
+    await validarEmpleados(conexion, preparados.flatMap(item => item.etapas.flatMap(etapa => etapa.empleados)))
 
     for (const { producto, cantidad, horasEstimadas, etapas } of preparados) {
       const costoMaterialesUnitario = decimal(producto.costo_materiales)
@@ -192,14 +206,15 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
         [pedido.id, producto.id, cantidad, decimal(producto.precio_venta), costoMaterialesUnitario, costoManoObraUnitario])).rows[0].id
 
-      // Cada etapa nace asignada a su empleado, con sus horas-hombre totales
-      // (por unidad × cantidad).
+      // Cada etapa nace asignada a sus empleados, con sus horas-hombre
+      // totales (por unidad × cantidad).
       for (const etapa of etapas) {
         const horas = decimal(etapa.horas_por_unidad * cantidad)
-        await conexion.query(
-          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, horas_hombre, minutos_estimados, responsable_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [pedido.id, itemId, etapa.nombre, etapa.orden, horas, aMinutos(horas), etapa.responsable_id])
+        const etapaId = (await conexion.query(
+          `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, horas_hombre, minutos_estimados, empleados_necesarios)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [pedido.id, itemId, etapa.nombre, etapa.orden, horas, aMinutos(horas), etapa.empleados_necesarios])).rows[0].id
+        await guardarEmpleadosEtapa(conexion, etapaId, etapa.empleados)
       }
     }
 
@@ -225,9 +240,9 @@ router.patch('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   res.json(actualizado.rows[0])
 }))
 
-// Cada etapa se asigna al crear el pedido. Para reasignarla después se usa
-// la sección Tareas (PATCH /api/tareas/asignadas/:origen/:id/asignar, ver
-// rutas/tareas.js).
+// Cada etapa se asigna al crear el pedido. Para reasignarla después (o
+// cambiar cuántos empleados necesita) se usa la sección Tareas
+// (PATCH /api/tareas/asignadas/:origen/:id/asignar, ver rutas/tareas.js).
 
 // ---------------------------------------------------------------------
 // EDITAR LAS ETAPAS DE UN PEDIDO YA CREADO
@@ -244,27 +259,27 @@ const responderPedido = async (res, id) => {
   res.json(rows[0])
 }
 
-// Nueva etapa: { nombre, horas_hombre (por unidad), responsable_id }.
+// Nueva etapa: { nombre, horas_hombre (por unidad), empleados_necesarios, empleados: [ids] }.
 router.post('/:id/items/:itemId/tareas', auth(['admin']), asyncRoute(async (req, res) => {
   const nombre = req.body?.nombre?.toString().trim()
   if (!nombre) throw fallo('Indicá el nombre de la etapa.')
   if (nombre.length > 120) throw fallo('El nombre de una etapa no puede superar los 120 caracteres.')
   const horasPorUnidad = decimal(req.body?.horas_hombre)
   if (!(horasPorUnidad > 0)) throw fallo('Indicá las horas-hombre de la etapa (mayores a cero).')
-  const responsable = String(req.body?.responsable_id ?? '')
-  if (!/^\d+$/.test(responsable)) throw fallo('Asigná un empleado a la etapa.')
+  const { empleados_necesarios: necesarios, empleados } = empleadosDeEtapaNueva(req.body, `"${nombre}"`)
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
     const item = (await conexion.query('SELECT i.id, i.cantidad FROM pedido_items i JOIN pedidos p ON p.id = i.pedido_id WHERE i.id = $1 AND i.pedido_id = $2 FOR UPDATE OF p',
       [req.params.itemId, req.params.id])).rows[0]
     if (!item) throw fallo('Producto del pedido no encontrado.', 404)
-    await validarEmpleados(conexion, [responsable])
+    await validarEmpleados(conexion, empleados)
     const horas = decimal(horasPorUnidad * (Number(item.cantidad) || 1))
-    await conexion.query(
-      `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, horas_hombre, minutos_estimados, responsable_id)
-       VALUES ($1, $2, $3, (SELECT COALESCE(MAX(orden), 0) + 1 FROM pedido_etapas WHERE pedido_item_id = $2), $4, $5, $6)`,
-      [req.params.id, item.id, nombre, horas, aMinutos(horas), responsable])
+    const etapaId = (await conexion.query(
+      `INSERT INTO pedido_etapas (pedido_id, pedido_item_id, nombre, orden, horas_hombre, minutos_estimados, empleados_necesarios)
+       VALUES ($1, $2, $3, (SELECT COALESCE(MAX(orden), 0) + 1 FROM pedido_etapas WHERE pedido_item_id = $2), $4, $5, $6) RETURNING id`,
+      [req.params.id, item.id, nombre, horas, aMinutos(horas), necesarios])).rows[0].id
+    await guardarEmpleadosEtapa(conexion, etapaId, empleados)
     await sincronizarPedido(conexion, req.params.id)
     await conexion.query('COMMIT')
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }

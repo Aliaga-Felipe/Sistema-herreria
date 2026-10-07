@@ -153,3 +153,66 @@ export async function sincronizarPedido(cliente, pedidoId) {
      WHERE id = $2`, [estado, pedidoId])
   return estado
 }
+
+// ---------------------------------------------------------------------
+// EMPLEADOS DE UNA ETAPA DE PEDIDO
+// Una etapa puede necesitar varios empleados (empleados_necesarios) y se
+// asigna a todos ellos (tabla pedido_etapa_empleados): le aparece a cada
+// uno en Mis tareas y cualquiera la completa. Sus horas-hombre son el
+// total de la etapa. responsable_id queda como el primer asignado, por
+// compatibilidad.
+// ---------------------------------------------------------------------
+export const MAX_EMPLEADOS_ETAPA = 10
+
+// Subconsultas para leer los empleados de una etapa (alias = la tabla
+// pedido_etapas en la consulta): lista [{ id, nombre }] y nombres separados
+// por coma.
+export const empleadosEtapaSql = alias => `(SELECT COALESCE(json_agg(json_build_object('id', u.id, 'nombre', u.nombre) ORDER BY pee.orden, pee.usuario_id), '[]'::json)
+    FROM pedido_etapa_empleados pee JOIN usuarios u ON u.id = pee.usuario_id WHERE pee.pedido_etapa_id = ${alias}.id)`
+export const nombresEtapaSql = alias => `(SELECT string_agg(u.nombre, ', ' ORDER BY pee.orden, pee.usuario_id)
+    FROM pedido_etapa_empleados pee JOIN usuarios u ON u.id = pee.usuario_id WHERE pee.pedido_etapa_id = ${alias}.id)`
+// ¿La etapa (alias) está asignada al usuario del parámetro indicado?
+export const asignadaASql = (alias, parametro) =>
+  `EXISTS (SELECT 1 FROM pedido_etapa_empleados pee WHERE pee.pedido_etapa_id = ${alias}.id AND pee.usuario_id = ${parametro})`
+
+// Cantidad de empleados que necesita una etapa (1 si no se indica).
+export function empleadosNecesarios(valor) {
+  if (valor === undefined || valor === null || valor === '') return 1
+  const cantidad = Number(valor)
+  if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_EMPLEADOS_ETAPA) {
+    throw fallo(`La cantidad de empleados de una etapa tiene que ser un número entero entre 1 y ${MAX_EMPLEADOS_ETAPA}.`)
+  }
+  return cantidad
+}
+
+// Lista de empleados enviada para una etapa: `empleados` (ids) o, como en
+// versiones anteriores, un único `responsable_id`. Devuelve ids sin
+// vacíos; un mismo empleado no puede estar dos veces.
+export function listaEmpleados(datos = {}) {
+  const crudos = Array.isArray(datos.empleados) ? datos.empleados : datos.responsable_id ? [datos.responsable_id] : []
+  const ids = crudos.map(id => String(id ?? '').trim()).filter(Boolean)
+  if (ids.some(id => !/^\d+$/.test(id))) throw fallo('Empleado inválido.')
+  if (new Set(ids).size !== ids.length) throw fallo('Un mismo empleado no puede estar dos veces en la misma etapa.')
+  return ids
+}
+
+// Todos tienen que ser empleados activos.
+export async function validarEmpleados(db, ids) {
+  const unicos = [...new Set(ids.map(String))]
+  if (!unicos.length) return
+  const { rows } = await db.query(
+    "SELECT id FROM usuarios WHERE id = ANY($1::bigint[]) AND LOWER(rol::text) = 'empleado' AND activo", [unicos])
+  if (rows.length !== unicos.length) throw fallo('Cada etapa tiene que quedar asignada a empleados activos.')
+}
+
+// Reemplaza los empleados de una etapa (en el orden recibido) y deja
+// responsable_id = el primero (o null si quedó sin asignar).
+export async function guardarEmpleadosEtapa(db, etapaId, ids) {
+  await db.query('DELETE FROM pedido_etapa_empleados WHERE pedido_etapa_id = $1', [etapaId])
+  if (ids.length) {
+    await db.query(
+      `INSERT INTO pedido_etapa_empleados (pedido_etapa_id, usuario_id, orden)
+       SELECT $1, x.id, x.n FROM UNNEST($2::bigint[]) WITH ORDINALITY AS x(id, n)`, [etapaId, ids])
+  }
+  await db.query('UPDATE pedido_etapas SET responsable_id = $2 WHERE id = $1', [etapaId, ids[0] ?? null])
+}

@@ -27,11 +27,13 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
       COUNT(*) FILTER (WHERE fecha_entrega < CURRENT_DATE AND estado NOT IN ('TERMINADO', 'CANCELADO'))::int AS atrasados
     FROM pedidos`)
 
+  // sin_asignar: etapas pendientes a las que les falta algún empleado
+  // (ninguno o menos de los que necesitan).
   const trabajo = await unaFila(`SELECT
       COUNT(*)::int AS etapas_totales,
       COUNT(*) FILTER (WHERE estado = 'COMPLETADA')::int AS completadas,
       COUNT(*) FILTER (WHERE estado <> 'COMPLETADA')::int AS pendientes,
-      COUNT(*) FILTER (WHERE estado <> 'COMPLETADA' AND asignado_a IS NULL)::int AS sin_asignar,
+      COUNT(*) FILTER (WHERE estado <> 'COMPLETADA' AND cardinality(asignados) < empleados_necesarios)::int AS sin_asignar,
       COALESCE(SUM(horas_hombre) FILTER (WHERE estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes
     FROM vista_tareas_empleado`)
 
@@ -61,7 +63,7 @@ router.get('/resumen', auth(['admin']), asyncRoute(async (_, res) => {
   const empleadosPendientes = await filas(`SELECT u.id, u.nombre,
       COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA')::int AS pendientes,
       COUNT(v.id) FILTER (WHERE v.estado = 'COMPLETADA')::int AS completadas
-    FROM usuarios u LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
+    FROM usuarios u LEFT JOIN vista_tareas_empleado v ON u.id = ANY(v.asignados)
     WHERE LOWER(u.rol::text) = 'empleado' AND u.activo
     GROUP BY u.id HAVING COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA') > 0
     ORDER BY pendientes DESC LIMIT 6`)
@@ -93,18 +95,23 @@ router.get('/generales', auth(['admin']), asyncRoute(async (req, res) => {
   // completadas en el período (por completado_en), cuántas de esas horas
   // fueron parte de producciones diarias cumplidas (las que pagaron
   // recompensa al equipo) y lo que tiene pendiente hoy. Ya no hay tiempos
-  // reales: el empleado no informa cuánto tardó.
+  // reales: el empleado no informa cuánto tardó. Una etapa con varios
+  // empleados cuenta para cada uno, y sus horas-hombre se reparten en
+  // partes iguales entre ellos (así la suma de todos sigue siendo el total).
+  const parte = 'v.horas_hombre / GREATEST(cardinality(v.asignados), 1)'
   const rendimiento = await filas(`SELECT u.id, u.nombre, u.email, u.activo,
       COUNT(v.id) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')})::int AS completadas,
       COUNT(v.id) FILTER (WHERE v.estado <> 'COMPLETADA')::int AS pendientes,
-      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0)::float8 AS horas_completadas,
-      COALESCE(SUM(v.horas_hombre) FILTER (WHERE v.estado <> 'COMPLETADA'), 0)::float8 AS horas_pendientes,
-      COALESCE((SELECT SUM(pe.horas_hombre) FROM pedido_etapas pe
+      ROUND(COALESCE(SUM(${parte}) FILTER (WHERE v.estado = 'COMPLETADA' AND ${enRango('v.completado_en')}), 0), 2)::float8 AS horas_completadas,
+      ROUND(COALESCE(SUM(${parte}) FILTER (WHERE v.estado <> 'COMPLETADA'), 0), 2)::float8 AS horas_pendientes,
+      ROUND(COALESCE((SELECT SUM(pe.horas_hombre / (SELECT COUNT(*) FROM pedido_etapa_empleados x WHERE x.pedido_etapa_id = pe.id))
+          FROM pedido_etapas pe
+          JOIN pedido_etapa_empleados pee ON pee.pedido_etapa_id = pe.id AND pee.usuario_id = u.id
           JOIN jornada_etapas je ON je.pedido_etapa_id = pe.id
           JOIN jornadas_equipo j ON j.fecha = je.fecha AND j.estado = 'TERMINADA' AND j.cumplido
-        WHERE pe.responsable_id = u.id AND ${enRango('j.fecha')}), 0)::float8 AS horas_premiadas
+        WHERE ${enRango('j.fecha')}), 0), 2)::float8 AS horas_premiadas
     FROM usuarios u
-    LEFT JOIN vista_tareas_empleado v ON v.asignado_a = u.id
+    LEFT JOIN vista_tareas_empleado v ON u.id = ANY(v.asignados)
     WHERE LOWER(u.rol::text) = 'empleado'
     GROUP BY u.id
     ORDER BY horas_completadas DESC, completadas DESC, u.nombre`, parametros)

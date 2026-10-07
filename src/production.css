@@ -1430,14 +1430,58 @@
    → producción diaria → recompensa. Ver panel-pedidos.jsx,
    panel-produccion.jsx y mis-tareas.jsx.
 */
-/* Etapas del alta de pedido: número, nombre, horas por unidad, empleado y quitar. */
+/* Etapas del alta de pedido: número, nombre, horas por unidad, empleados y quitar. */
 .etapa-hh-grid-head,
 .etapa-hh-grid-row {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) 80px 150px 26px;
+    grid-template-columns: 20px minmax(0, 1fr) 80px 170px 26px;
     gap: 8px;
     align-items: center;
     margin-bottom: 6px;
+}
+
+/* Con varios empleados la fila crece hacia abajo: todo arriba. */
+.etapa-hh-grid-row {
+    align-items: start;
+}
+
+.etapa-hh-grid-row > small {
+    padding-top: 8px;
+}
+
+/* Empleados de una etapa: cuántos necesita y un selector por cada uno. */
+.selector-empleados {
+    display: grid;
+    gap: 4px;
+}
+
+.reparto-empleados {
+    display: block;
+    margin-top: 3px;
+    font-size: 10px;
+}
+
+/* Tarjetas de Tareas: con varios empleados los nombres pasan a otra línea
+   en vez de cortarse. */
+.etapa-item-responsable {
+    white-space: normal;
+    text-align: right;
+}
+
+/* Asignación de empleados en el detalle de una etapa (Tareas). */
+.detalle-bloque .selector-empleados {
+    margin: 4px 0 12px;
+}
+
+.detalle-bloque .selector-empleados select {
+    margin: 0;
+}
+
+/* Etapa sin empleados o con menos de los que necesita: en rojo, aunque
+   sea un texto secundario. */
+.etapa-responsable.negativo,
+.etapa-item-responsable.negativo {
+    color: #e79a8c;
 }
 
 .etapa-hh-grid-head small {
@@ -1613,8 +1657,8 @@
         grid-template-columns: 20px minmax(0, 1fr) 70px 30px;
     }
 
-    /* El empleado pasa a una segunda línea, debajo del nombre y las horas. */
-    .modal .etapa-hh-grid-row select {
+    /* Los empleados pasan a una segunda línea, debajo del nombre y las horas. */
+    .etapa-hh-grid-row > div {
         grid-column: 2 / 4;
         grid-row: 2;
     }

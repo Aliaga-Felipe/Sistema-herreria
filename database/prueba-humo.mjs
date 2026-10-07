@@ -55,6 +55,11 @@ try {
   const tokenEmpleado = sesionEmpleado.token
   ok('el empleado puede iniciar sesión', Boolean(tokenEmpleado))
 
+  // Un segundo empleado, para las etapas que hacen varios juntos.
+  const empleado2 = await llamar('/usuarios', { method: 'POST', cuerpo: { nombre: 'Segundo empleado', email: `${marca}_emp2@prueba.local`, contrasena: 'ClaveDePrueba123' } }, token)
+  creados.usuarios.push(empleado2.id)
+  const tokenEmpleado2 = (await llamar('/auth/iniciar-sesion', { method: 'POST', cuerpo: { email: `${marca}_emp2@prueba.local`, contrasena: 'ClaveDePrueba123' } })).token
+
   let prohibido = false
   try { await llamar('/usuarios', {}, tokenEmpleado) } catch (error) { prohibido = error.message.includes('403') }
   ok('el empleado no accede a la gestión de usuarios', prohibido)
@@ -112,7 +117,7 @@ try {
   const sinEmpleado = await rechazo({ items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 4, tareas: [{ nombre: 'Corte', horas_hombre: 4 }] }] })
   ok('cada etapa necesita un empleado', /asigná un empleado/i.test(sinEmpleado || ''), sinEmpleado)
   const conAdmin = await rechazo({ items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 4, tareas: [{ nombre: 'Corte', horas_hombre: 4, responsable_id: admin.id }] }] })
-  ok('el responsable tiene que ser un empleado activo', /empleado activo/i.test(conAdmin || ''), conAdmin)
+  ok('el responsable tiene que ser un empleado activo', /empleados? activos?/i.test(conAdmin || ''), conAdmin)
 
   const pedido = await llamar('/pedidos', { method: 'POST', cuerpo: {
     fecha_entrega: '2026-12-01', prioridad: 1, notas: 'Pedido de prueba',
@@ -142,8 +147,8 @@ try {
   ok('dos pedidos del mismo producto tienen etapas distintas', otro.etapas.map(etapa => etapa.nombre).join() === 'Diseño,Instalación'
     && (await llamar(`/pedidos/${pedido.id}`, {}, token)).etapas.length === 3)
   const sugeridas = await llamar(`/pedidos/tareas-sugeridas?producto_id=${producto.id}`, {}, token)
-  ok('las etapas sugeridas salen del último pedido (horas por unidad y empleado)',
-    sugeridas.tareas.map(tarea => `${tarea.nombre}:${tarea.horas_hombre}:${tarea.responsable_id}`).join() === `Diseño:0.5:${empleado.id},Instalación:1.5:${empleado.id}`,
+  ok('las etapas sugeridas salen del último pedido (horas por unidad y empleados)',
+    sugeridas.tareas.map(tarea => `${tarea.nombre}:${tarea.horas_hombre}:${tarea.empleados_necesarios}:${tarea.empleados.join('+')}`).join() === `Diseño:0.5:1:${empleado.id},Instalación:1.5:1:${empleado.id}`,
     JSON.stringify(sugeridas.tareas))
   const conExtra = await llamar(`/pedidos/${otro.id}/items/${otro.items[0].id}/tareas`, { method: 'POST', cuerpo: { nombre: 'Embalaje', horas_hombre: 0.25, responsable_id: empleado.id } }, token)
   ok('se agrega una etapa a un pedido ya creado', conExtra.etapas.length === 3 && conExtra.etapas[2].nombre === 'Embalaje' && conExtra.etapas[2].orden === 3)
@@ -303,6 +308,73 @@ try {
   const conPedidos = await fallaCon(llamar(`/productos/${producto.id}`, { method: 'DELETE' }, token))
   ok('un producto con pedidos no se puede eliminar', /409/.test(conPedidos || ''), conPedidos)
 
+  // --- varios empleados por etapa -----------------------------------------
+  // Una etapa puede necesitar varios empleados: se asignan todos, le
+  // aparece a cada uno y cualquiera la completa. Sus horas-hombre son el
+  // total de la etapa; en las estadísticas se reparten entre ellos.
+  const rendimientoDe = (lista, persona) => lista.find(fila => String(fila.id) === String(persona.id))
+  const faltaUno = await rechazo({ items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 6, tareas: [{ nombre: 'Armado', horas_hombre: 6, empleados_necesarios: 2, empleados: [empleado.id] }] }] })
+  ok('una etapa que necesita 2 empleados tiene que tener los 2 asignados', /necesita 2 empleados y tiene 1/i.test(faltaUno || ''), faltaUno)
+  const duplicado = await rechazo({ items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 6, tareas: [{ nombre: 'Armado', horas_hombre: 6, empleados_necesarios: 2, empleados: [empleado.id, empleado.id] }] }] })
+  ok('un empleado no puede estar dos veces en la misma etapa', /dos veces/i.test(duplicado || ''), duplicado)
+  const demasiados = await rechazo({ items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 6, tareas: [{ nombre: 'Armado', horas_hombre: 6, empleados_necesarios: 11, empleados: [empleado.id] }] }] })
+  ok('la cantidad de empleados tiene un límite', /entre 1 y 10/i.test(demasiados || ''), demasiados)
+
+  const enEquipo = await llamar('/pedidos', { method: 'POST', cuerpo: { items: [{ producto_id: producto.id, cantidad: 1, horas_hombre: 7, tareas: [
+    { nombre: 'Armado', horas_hombre: 6, empleados_necesarios: 2, empleados: [empleado.id, empleado2.id] },
+    { nombre: 'Control', horas_hombre: 1, empleados: [empleado2.id] }
+  ] }] } }, token)
+  creados.pedidos.push(enEquipo.id)
+  const armado = enEquipo.etapas.find(etapa => etapa.nombre === 'Armado')
+  const control = enEquipo.etapas.find(etapa => etapa.nombre === 'Control')
+  ok('la etapa guarda cuántos empleados necesita y quiénes son', armado.empleados_necesarios === 2 && control.empleados_necesarios === 1
+    && armado.empleados.map(persona => String(persona.id)).join() === `${empleado.id},${empleado2.id}` && armado.responsable === 'Empleado de prueba, Segundo empleado',
+    JSON.stringify(armado))
+  ok('las horas-hombre de la etapa son el total entre todos', armado.horas_hombre === 6 && enEquipo.horas_hombre === 7)
+  const bandejaDe = async conToken => (await llamar('/tareas/asignadas/mias', {}, conToken)).filter(tarea => String(tarea.contenedor_id) === String(enEquipo.id))
+  ok('la etapa le aparece a cada uno de sus empleados en Mis tareas', (await bandejaDe(tokenEmpleado)).map(tarea => tarea.etapa).join() === 'Armado'
+    && (await bandejaDe(tokenEmpleado2)).map(tarea => tarea.etapa).join() === 'Armado,Control')
+  ok('cada empleado de la etapa puede ver el pedido', (await llamar(`/pedidos/${enEquipo.id}`, {}, tokenEmpleado)).id === enEquipo.id)
+  ok('la bandeja trae todos los empleados de la etapa', (await bandejaDe(tokenEmpleado))[0].empleados.length === 2)
+
+  const quinto = '2001-01-05'
+  await agregar(quinto, { pedido_id: enEquipo.id })
+  const conUnoMenos = await llamar(`/tareas/asignadas/PEDIDO/${armado.id}/asignar`, { method: 'PATCH', cuerpo: { empleados: [empleado2.id] } }, token)
+  ok('en Tareas una etapa puede quedar con menos empleados de los necesarios', conUnoMenos.empleados.length === 1 && conUnoMenos.empleados_necesarios === 2)
+  ok('el empleado que se quitó ya no ve la etapa', !(await bandejaDe(tokenEmpleado)).length)
+  ok('la producción del día avisa si a una etapa le faltan empleados', (await llamar(rutaDia(quinto), {}, token)).advertencias.some(texto => /menos empleados/i.test(texto)))
+  ok('el panel cuenta las etapas a las que les falta algún empleado', (await llamar('/estadisticas/resumen', {}, token)).trabajo.sin_asignar >= 1)
+  const deMas = await fallaCon(llamar(`/tareas/asignadas/PEDIDO/${control.id}/asignar`, { method: 'PATCH', cuerpo: { empleados: [empleado.id, empleado2.id] } }, token))
+  ok('no se asignan más empleados de los que necesita la etapa', /necesita 1 empleado/i.test(deMas || ''), deMas)
+  const ampliada = await llamar(`/tareas/asignadas/PEDIDO/${control.id}/asignar`, { method: 'PATCH', cuerpo: { empleados_necesarios: 2, empleados: [empleado2.id, empleado.id] } }, token)
+  ok('en Tareas se cambia cuántos empleados necesita una etapa', ampliada.empleados_necesarios === 2 && ampliada.responsable === 'Segundo empleado, Empleado de prueba')
+  await llamar(`/tareas/asignadas/PEDIDO/${control.id}/asignar`, { method: 'PATCH', cuerpo: { empleados_necesarios: 1, empleados: [empleado2.id] } }, token)
+  await llamar(`/tareas/asignadas/PEDIDO/${armado.id}/asignar`, { method: 'PATCH', cuerpo: { empleados: [empleado.id, empleado2.id] } }, token)
+  ok('sin faltantes, la producción del día ya no avisa', !(await llamar(rutaDia(quinto), {}, token)).advertencias.some(texto => /empleado/i.test(texto)))
+
+  const ajena = await fallaCon(llamar(`/tareas/asignadas/PEDIDO/${control.id}/completar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado))
+  ok('un empleado que no está en la etapa no la puede completar', /404/.test(ajena || ''), ajena)
+  const rendimientoAntes = (await llamar('/estadisticas/generales', {}, token)).rendimiento
+  await llamar(`/tareas/asignadas/PEDIDO/${armado.id}/iniciar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado)
+  const porUno = await llamar(`/tareas/asignadas/PEDIDO/${armado.id}/completar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado2)
+  ok('cualquiera de sus empleados completa la etapa para todos', porUno.estado === 'COMPLETADA'
+    && (await llamar('/tareas/asignadas/mias', {}, tokenEmpleado)).find(tarea => String(tarea.id) === String(armado.id))?.estado === 'COMPLETADA')
+  await llamar(`/tareas/asignadas/PEDIDO/${control.id}/completar`, { method: 'PATCH', cuerpo: {} }, tokenEmpleado2)
+  const diaEquipo = await llamar(`${rutaDia(quinto)}/terminar`, { method: 'POST', cuerpo: {} }, token)
+  ok('la recompensa paga las horas-hombre totales de la etapa', diaEquipo.cumplido && diaEquipo.objetivo_horas === 7
+    && diaEquipo.recompensa === Math.round(7 * diaEquipo.valor_hora * (diaEquipo.porcentaje_premio / 100) * 100) / 100, `${diaEquipo.recompensa}`)
+  ok('el día terminado guarda los empleados de cada etapa', diaEquipo.etapas.find(etapa => etapa.nombre === 'Armado').empleados.length === 2)
+  const generalesDia = (await llamar(`/estadisticas/generales?desde=${quinto}&hasta=${quinto}`, {}, token)).rendimiento
+  ok('en estadísticas las horas de una etapa compartida se reparten entre sus empleados', rendimientoDe(generalesDia, empleado).horas_premiadas === 3
+    && rendimientoDe(generalesDia, empleado2).horas_premiadas === 4, JSON.stringify(generalesDia.filter(fila => [empleado.id, empleado2.id].map(String).includes(String(fila.id)))))
+  const generalesTodo = (await llamar('/estadisticas/generales', {}, token)).rendimiento
+  const uno = rendimientoDe(generalesTodo, empleado)
+  const dos = rendimientoDe(generalesTodo, empleado2)
+  ok('cada empleado suma la etapa compartida a sus completadas (y su parte de horas)',
+    uno.completadas === rendimientoDe(rendimientoAntes, empleado).completadas + 1 && uno.horas_completadas === rendimientoDe(rendimientoAntes, empleado).horas_completadas + 3
+    && dos.horas_completadas === rendimientoDe(rendimientoAntes, empleado2).horas_completadas + 4,
+    JSON.stringify({ uno, dos }))
+
   // --- baja lógica de usuarios -------------------------------------------
   const desactivado = await llamar(`/usuarios/${empleado.id}/activo`, { method: 'PATCH', cuerpo: { activo: false } }, token)
   ok('el admin desactiva una cuenta', desactivado.activo === false)
@@ -317,7 +389,7 @@ try {
   for (const id of creados.pedidos) await pool.query('DELETE FROM pedidos WHERE id = $1', [id])
   for (const id of creados.productos) await pool.query('DELETE FROM productos WHERE id = $1', [id])
   await pool.query('DELETE FROM recompensas WHERE usuario_id = ANY($1)', [creados.usuarios])
-  await pool.query("DELETE FROM jornadas_equipo WHERE fecha BETWEEN '2001-01-01' AND '2001-01-04'")
+  await pool.query("DELETE FROM jornadas_equipo WHERE fecha BETWEEN '2001-01-01' AND '2001-01-05'")
   await pool.query('DELETE FROM historial_ventas_productos WHERE producto_id_original = ANY($1)', [creados.productos])
   await pool.query('DELETE FROM parametros_recompensa_historial WHERE creado_por = ANY($1)', [creados.usuarios])
   for (const id of creados.usuarios) await pool.query('DELETE FROM usuarios WHERE id = $1', [id])

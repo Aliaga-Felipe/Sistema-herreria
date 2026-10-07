@@ -5,7 +5,9 @@ import { Actions, Badge, Empty, EtiquetaJornada, Heading, Modal, Stat, useAviso 
 // ---------------------------------------------------------------------
 // MIS TAREAS (empleados)
 // Las etapas de pedidos que el admin le asignó a la persona al crear cada
-// pedido. Arriba, las que están en la producción de hoy. Al terminar una
+// pedido (sola o junto con otros empleados: en ese caso cualquiera de ellos
+// la marca como terminada para todos). Arriba, las que están en la
+// producción de hoy. Al terminar una
 // etapa solo se la marca como terminada (no se informa cuánto se tardó):
 // el admin la verifica al cerrar la producción del día, y si se completó
 // todo lo propuesto el equipo cobra la recompensa.
@@ -108,8 +110,13 @@ export default function MisTareas() {
   )
 }
 
+// Los otros empleados de la etapa (si la hacen varios).
+const companeros = (tarea, usuarioId) => (tarea.empleados || []).filter(empleado => String(empleado.id) !== String(usuarioId))
+
 function TarjetaTarea({ tarea, hoy, onIniciar, onCerrar }) {
+  const { session } = useSession()
   const completada = tarea.estado === 'COMPLETADA'
+  const otros = companeros(tarea, session.usuario.id)
   return (
     <article className={`task-card tarea-asignada ${completada ? 'completada' : ''}`}>
       <div className="task-card-head">
@@ -117,12 +124,13 @@ function TarjetaTarea({ tarea, hoy, onIniciar, onCerrar }) {
           <Badge estado={tarea.estado} /> <EtiquetaJornada fecha={tarea.jornada} hoy={hoy} />
           <h3>{tarea.etapa}</h3>
           <p>{tarea.titulo} · {tarea.referencia}</p>
+          {otros.length > 0 && <p className="muted">Junto con {otros.map(empleado => empleado.nombre).join(', ')}</p>}
         </div>
         {completada && <span className="sello-completada">✓ Completada</span>}
       </div>
 
       <div className="tarea-tiempos">
-        <span><small>Horas-hombre estimadas</small><b>{horas(tarea.horas_hombre)}</b></span>
+        <span><small>Horas-hombre estimadas{otros.length ? ' (entre todos)' : ''}</small><b>{horas(tarea.horas_hombre)}</b></span>
         <span><small>Entrega del pedido</small><b>{fecha(tarea.fecha_entrega)}</b></span>
         <span><small>{completada ? 'Terminada' : 'Empezada'}</small><b>{fecha(completada ? tarea.completado_en : tarea.iniciado_en)}</b></span>
       </div>
@@ -144,6 +152,8 @@ function TarjetaTarea({ tarea, hoy, onIniciar, onCerrar }) {
 // Confirmación para no cerrar una etapa por error. Las observaciones son
 // opcionales; no se pide el tiempo que llevó.
 function CierreModal({ tarea, close, save }) {
+  const { session } = useSession()
+  const otros = companeros(tarea, session.usuario.id)
   const [observaciones, setObservaciones] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -158,7 +168,7 @@ function CierreModal({ tarea, close, save }) {
   return (
     <Modal title="Terminar etapa" subtitle={`${tarea.etapa} · ${tarea.titulo}`} close={close}>
       <form onSubmit={enviar}>
-        <p className="form-note">¿Terminaste <b>{tarea.etapa}</b>? Al confirmar queda como completada{tarea.jornada ? ' y el administrador la revisa al cerrar la producción del día' : ''}.</p>
+        <p className="form-note">¿Terminaste <b>{tarea.etapa}</b>? Al confirmar queda como completada{otros.length ? ` también para ${otros.map(empleado => empleado.nombre).join(', ')}` : ''}{tarea.jornada ? ' y el administrador la revisa al cerrar la producción del día' : ''}.</p>
 
         <label>Observaciones (opcional)
           <textarea value={observaciones} onChange={event => setObservaciones(event.target.value)} placeholder="Materiales usados, inconvenientes, detalles del trabajo" />

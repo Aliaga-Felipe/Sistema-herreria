@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api, dinero, etiquetaPrioridad, fecha, fechaDia, horas, hoyLocal as hoy, sumarHoras, useData } from './api.js'
-import { Badge, Empty, Heading, Progress, Stat, useAviso } from './ui.jsx'
+import { Badge, EmpleadosEtapa, Empty, Heading, Progress, Stat, useAviso } from './ui.jsx'
 
 // ---------------------------------------------------------------------
 // PRODUCCIÓN DIARIA
@@ -291,7 +291,7 @@ function JornadaPropuesta({ jornada, editable, ocupado, onQuitar, onReabrir }) {
                     <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
                     <Badge estado={etapa.estado} />
                     <span className="etapa-tiempo">{horas(etapa.horas_hombre)}</span>
-                    <span className={etapa.responsable ? 'etapa-responsable' : 'etapa-responsable negativo'}>{etapa.responsable || 'Sin asignar'}</span>
+                    <EmpleadosEtapa etapa={etapa} className="etapa-responsable" />
                     <span className="muted" title={etapa.observaciones || ''}>
                       {etapa.completado_en ? `✓ ${new Date(etapa.completado_en).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '—'}
                       {etapa.observaciones ? ' · 📝' : ''}
@@ -384,7 +384,7 @@ function AgregarTrabajo({ dia, pedidos, ocupado, onAgregar }) {
                         <input type="checkbox" disabled={!libre(etapa) || ocupado} checked={elegidas.has(String(etapa.id))} onChange={() => alternar(etapa)} />
                         <span className="etapa-nombre">{etapa.orden}. {etapa.nombre}</span>
                         <span>{horas(etapa.horas_hombre)}</span>
-                        <span className={etapa.responsable ? 'muted' : 'negativo'}>{etapa.responsable || 'Sin asignar'}</span>
+                        <EmpleadosEtapa etapa={etapa} className="muted" claseFalta="negativo" />
                         <span className="muted">
                           {etapa.estado === 'COMPLETADA' ? 'Completada' : etapa.jornada ? (etapa.jornada === dia ? 'Ya está en este día' : `En la producción del ${fechaDia(etapa.jornada)}`) : ''}
                         </span>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { etiquetaEstado } from './api.js'
 
 export const Stat = ({ label, value, hint, tone = '' }) => (
@@ -43,6 +43,75 @@ export const EtiquetaJornada = ({ fecha, hoy }) => {
   if (!fecha) return null
   const texto = fecha === hoy ? 'Producción de hoy' : `Producción ${String(fecha).slice(0, 10).split('-').reverse().slice(0, 2).join('/')}`
   return <span className={`jornada-tag${fecha === hoy ? ' hoy' : ''}`} title="Propuesta en la producción diaria">{texto}</span>
+}
+
+// ---------------------------------------------------------------------
+// EMPLEADOS DE UNA ETAPA
+// Una etapa de pedido puede necesitar varios empleados
+// (empleados_necesarios) y se asigna a todos ellos (empleados: [{ id,
+// nombre }]). Las copias de días terminados antes de este cambio solo
+// traen "responsable" (un nombre).
+// ---------------------------------------------------------------------
+export const MAX_EMPLEADOS_ETAPA = 10
+
+export const empleadosDe = etapa => (Array.isArray(etapa.empleados)
+  ? etapa.empleados
+  : etapa.responsable ? [{ id: etapa.responsable_id ?? etapa.asignado_a, nombre: etapa.responsable }] : [])
+
+// Cuántos empleados le faltan asignar a una etapa pendiente (0 si está
+// completa o ya tiene todos).
+export const faltanEmpleados = etapa => (etapa.estado === 'COMPLETADA'
+  ? 0
+  : Math.max(0, (Number(etapa.empleados_necesarios) || 1) - empleadosDe(etapa).length))
+
+// Nombres de los empleados de la etapa; en rojo si le falta alguno.
+export function EmpleadosEtapa({ etapa, className = '', claseFalta, title }) {
+  const asignados = empleadosDe(etapa)
+  const faltan = faltanEmpleados(etapa)
+  const necesarios = Number(etapa.empleados_necesarios) || 1
+  const clase = faltan ? (claseFalta ?? `${className} negativo`) : className
+  return (
+    <span className={clase} title={[title, necesarios > 1 && `La etapa necesita ${necesarios} empleados`].filter(Boolean).join('. ') || undefined}>
+      {asignados.length ? asignados.map(empleado => empleado.nombre).join(', ') : 'Sin asignar'}
+      {asignados.length > 0 && faltan > 0 && ` · falta${faltan === 1 ? '' : 'n'} ${faltan}`}
+    </span>
+  )
+}
+
+// Editor de la asignación: cuántos empleados necesita la etapa y un
+// selector por cada uno (un mismo empleado no se puede elegir dos veces).
+// `valor` es { empleados_necesarios, empleados: [ids o ''] } y onCambiar
+// recibe el nuevo valor (la lista siempre tiene un lugar por empleado).
+// `conocidos` suma opciones que ya no están en `empleados` (por ejemplo,
+// un empleado dado de baja que sigue asignado), para mostrar su nombre.
+export function SelectorEmpleados({ valor, empleados, onCambiar, disabled = false, conocidos = [] }) {
+  const cantidad = Number(valor.empleados_necesarios) || 1
+  const elegidos = Array.from({ length: cantidad }, (_, indice) => (valor.empleados[indice] ?? '').toString())
+  const opciones = [...empleados, ...conocidos.filter(otro => !empleados.some(empleado => String(empleado.id) === String(otro.id)))]
+  const cambiarCantidad = nueva => onCambiar({
+    empleados_necesarios: nueva,
+    empleados: Array.from({ length: nueva }, (_, indice) => elegidos[indice] ?? '')
+  })
+  const cambiarEmpleado = (posicion, id) => onCambiar({ empleados_necesarios: cantidad, empleados: elegidos.map((actual, indice) => (indice === posicion ? id : actual)) })
+  return (
+    <div className="selector-empleados">
+      <select value={cantidad} disabled={disabled} onChange={event => cambiarCantidad(Number(event.target.value))} title="Cuántos empleados necesita la etapa">
+        {Array.from({ length: MAX_EMPLEADOS_ETAPA }, (_, indice) => indice + 1).map(numero => (
+          <option key={numero} value={numero}>{numero === 1 ? '1 empleado' : `${numero} empleados`}</option>
+        ))}
+      </select>
+      {elegidos.map((elegido, posicion) => (
+        <select key={posicion} value={elegido} disabled={disabled} onChange={event => cambiarEmpleado(posicion, event.target.value)} title={`Empleado ${posicion + 1} de la etapa`}>
+          <option value="">{cantidad > 1 ? `Empleado ${posicion + 1}…` : 'Empleado…'}</option>
+          {opciones.map(empleado => (
+            <option key={empleado.id} value={empleado.id} disabled={elegidos.some((otro, indice) => indice !== posicion && otro === String(empleado.id))}>
+              {empleado.nombre}
+            </option>
+          ))}
+        </select>
+      ))}
+    </div>
+  )
 }
 
 export function Modal({ title, subtitle, close, children, ancho, icono }) {
@@ -102,12 +171,15 @@ export const Actions = ({ close, label, busy }) => (
   </div>
 )
 
-// Aviso efímero reutilizado por todos los paneles.
+// Aviso efímero reutilizado por todos los paneles. Los errores quedan más
+// tiempo para que se alcancen a leer; un aviso nuevo reinicia el temporizador.
 export function useAviso() {
   const [aviso, setAviso] = useState(null)
+  const temporizador = useRef(null)
   const mostrar = (texto, tipo = 'ok') => {
     setAviso({ texto, tipo })
-    window.setTimeout(() => setAviso(null), 3200)
+    window.clearTimeout(temporizador.current)
+    temporizador.current = window.setTimeout(() => setAviso(null), tipo === 'error' ? 8000 : 3200)
   }
   const nodo = aviso && <p className={aviso.tipo === 'error' ? 'form-error' : 'notice'}>{aviso.texto}</p>
   return { mostrar, nodo }

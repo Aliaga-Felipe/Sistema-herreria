@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { pool } from '../db.js'
-import { asyncRoute, auth, decimal, entero, esAdmin, fallo, sincronizarPedido } from '../comun.js'
+import {
+  asignadaASql, asyncRoute, auth, decimal, empleadosNecesarios, entero, esAdmin, fallo, guardarEmpleadosEtapa, listaEmpleados,
+  sincronizarPedido, validarEmpleados
+} from '../comun.js'
 
 const router = Router()
 const etapasFijas = [{ nombre: 'Preparación', minutos: 30 }, { nombre: 'Ejecución', minutos: 120 }, { nombre: 'Control de calidad', minutos: 20 }]
@@ -16,11 +19,16 @@ const agrupadoTareas = ' GROUP BY t.id, u.id ORDER BY t.creado_en DESC'
 
 // Etapas de la bandeja de trabajo (pedidos + tareas libres). "jornada" es
 // la fecha de la producción diaria abierta en la que está propuesta la
-// etapa (null si no está en ninguna).
-const consultaBandeja = `SELECT v.*, v.horas_hombre::float8 AS horas_hombre, u.nombre AS responsable,
+// etapa (null si no está en ninguna). "empleados" son todos los asignados
+// ({ id, nombre }) y "responsable" sus nombres separados por coma.
+const consultaBandeja = `SELECT v.*, v.horas_hombre::float8 AS horas_hombre,
+    (SELECT string_agg(u.nombre, ', ' ORDER BY x.n) FROM UNNEST(v.asignados) WITH ORDINALITY AS x(id, n)
+      JOIN usuarios u ON u.id = x.id) AS responsable,
+    (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'nombre', u.nombre) ORDER BY x.n), '[]'::json)
+      FROM UNNEST(v.asignados) WITH ORDINALITY AS x(id, n) JOIN usuarios u ON u.id = x.id) AS empleados,
     (SELECT je.fecha::text FROM jornada_etapas je JOIN jornadas_equipo j ON j.fecha = je.fecha
       WHERE v.origen = 'PEDIDO' AND je.pedido_etapa_id = v.id AND j.estado = 'ABIERTA' ORDER BY je.fecha LIMIT 1) AS jornada
-  FROM vista_tareas_empleado v LEFT JOIN usuarios u ON u.id = v.asignado_a`
+  FROM vista_tareas_empleado v`
 
 router.get('/', auth(), asyncRoute(async (req, res) => {
   const admin = esAdmin(req.user.rol)
@@ -49,8 +57,8 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
 }))
 
-// La asignación de empleados vive SOLO en la sección "Tareas": los pedidos
-// son informativos y ya no asignan responsables (ver rutas/pedidos.js).
+// Reasignaciones desde la sección "Tareas" (las etapas de pedido nacen
+// asignadas al crear el pedido, ver rutas/pedidos.js).
 const validarEmpleadoActivo = async empleadoId => {
   if (!empleadoId) return null
   const empleado = await pool.query("SELECT id FROM usuarios WHERE id = $1 AND LOWER(rol::text) = 'empleado' AND activo", [empleadoId])
@@ -68,23 +76,36 @@ router.patch('/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
   res.json({ mensaje: 'Responsable actualizado.' })
 }))
 
-// Asigna (o libera) el empleado de UNA etapa concreta de un producto, desde
-// la sección Tareas. Mismos identificadores que devuelve /asignadas/mias
-// (origen + id de la etapa):
+// Asigna (o libera) los empleados de UNA etapa concreta de un producto,
+// desde la sección Tareas. Mismos identificadores que devuelve
+// /asignadas/mias (origen + id de la etapa):
 // - PEDIDO: etapa de un producto dentro de un pedido (pedido_etapas).
+//   Cuerpo: { empleados: [ids], empleados_necesarios? }. Se pueden asignar
+//   menos empleados de los necesarios (o ninguno): la etapa queda marcada
+//   como "falta asignar" hasta completarla. Más de los necesarios, no.
 // - TAREA: etapa de una tarea libre; las tareas libres tienen un único
-//   responsable, así que se reasigna la tarea a la que pertenece la etapa.
+//   responsable ({ responsable_id }), así que se reasigna la tarea a la
+//   que pertenece la etapa.
 // Una etapa ya completada no se reasigna, para no alterar el historial de
-// semáforo de quien la hizo.
+// quien la hizo.
 router.patch('/asignadas/:origen/:id/asignar', auth(['admin']), asyncRoute(async (req, res) => {
-  const responsable = await validarEmpleadoActivo(req.body.responsable_id)
-
   if (req.params.origen === 'PEDIDO') {
-    const actual = (await pool.query('SELECT id, estado FROM pedido_etapas WHERE id = $1', [req.params.id])).rows[0]
-    if (!actual) throw fallo('Etapa no encontrada.', 404)
-    if (actual.estado === 'COMPLETADA') throw fallo('La etapa ya está completada: no se puede reasignar.')
-    await pool.query('UPDATE pedido_etapas SET responsable_id = $1 WHERE id = $2', [responsable, req.params.id])
+    const empleados = listaEmpleados(req.body)
+    const conexion = await pool.connect()
+    try {
+      await conexion.query('BEGIN')
+      const actual = (await conexion.query('SELECT id, estado, empleados_necesarios FROM pedido_etapas WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0]
+      if (!actual) throw fallo('Etapa no encontrada.', 404)
+      if (actual.estado === 'COMPLETADA') throw fallo('La etapa ya está completada: no se puede reasignar.')
+      const necesarios = req.body.empleados_necesarios === undefined ? actual.empleados_necesarios : empleadosNecesarios(req.body.empleados_necesarios)
+      if (empleados.length > necesarios) throw fallo(`La etapa necesita ${necesarios} ${necesarios === 1 ? 'empleado' : 'empleados'}: quitá alguno o aumentá la cantidad.`)
+      await validarEmpleados(conexion, empleados)
+      await conexion.query('UPDATE pedido_etapas SET empleados_necesarios = $2 WHERE id = $1', [actual.id, necesarios])
+      await guardarEmpleadosEtapa(conexion, actual.id, empleados)
+      await conexion.query('COMMIT')
+    } catch (error) { await conexion.query('ROLLBACK'); throw error } finally { conexion.release() }
   } else if (req.params.origen === 'TAREA') {
+    const responsable = await validarEmpleadoActivo(req.body.responsable_id ?? req.body.empleados?.[0])
     const etapa = (await pool.query('SELECT tarea_id, realizada FROM tarea_etapas WHERE id = $1', [req.params.id])).rows[0]
     if (!etapa) throw fallo('Etapa no encontrada.', 404)
     if (etapa.realizada) throw fallo('La etapa ya está completada: no se puede reasignar.')
@@ -137,7 +158,7 @@ router.get('/asignadas/mias', auth(), asyncRoute(async (req, res) => {
   const empleadoId = esAdmin(req.user.rol) && req.query.empleado_id ? req.query.empleado_id : req.user.id
   const admin = esAdmin(req.user.rol) && req.query.todas === 'true'
   const { rows } = await pool.query(`${consultaBandeja}
-    ${admin ? '' : 'WHERE v.asignado_a = $1'}
+    ${admin ? '' : 'WHERE $1::bigint = ANY(v.asignados)'}
     ORDER BY (v.estado = 'COMPLETADA'), v.contenedor_id, v.orden`, admin ? [] : [empleadoId])
   res.json(rows)
 }))
@@ -145,7 +166,7 @@ router.get('/asignadas/mias', auth(), asyncRoute(async (req, res) => {
 // Marca una etapa como iniciada (sirve para medir el tiempo transcurrido).
 router.patch('/asignadas/:origen/:id/iniciar', auth(), asyncRoute(async (req, res) => {
   if (req.params.origen !== 'PEDIDO') return res.json({ mensaje: 'Las tareas libres no registran inicio.' })
-  const propia = esAdmin(req.user.rol) ? '' : ' AND responsable_id = $2'
+  const propia = esAdmin(req.user.rol) ? '' : ` AND ${asignadaASql('pedido_etapas', '$2')}`
   const valores = esAdmin(req.user.rol) ? [req.params.id] : [req.params.id, req.user.id]
   const { rows } = await pool.query(`UPDATE pedido_etapas SET estado = 'EN_PROGRESO', iniciado_en = COALESCE(iniciado_en, NOW())
     WHERE id = $1 AND estado <> 'COMPLETADA'${propia} RETURNING id, iniciado_en, estado`, valores)
@@ -155,7 +176,8 @@ router.patch('/asignadas/:origen/:id/iniciar', auth(), asyncRoute(async (req, re
 }))
 
 // Cierre de la etapa: el empleado solo la marca como completada (ya no
-// informa cuánto tardó). Puede dejar observaciones. Si la etapa está en la
+// informa cuánto tardó). Puede dejar observaciones. Si la etapa tiene
+// varios empleados, cualquiera de ellos la completa para todos. Si la etapa está en la
 // producción del día, cuenta para la recompensa cuando el admin la verifica
 // y da por terminada esa producción (ver rutas/produccion.js).
 router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, res) => {
@@ -169,7 +191,7 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
   const conexion = await pool.connect()
   try {
     await conexion.query('BEGIN')
-    const propia = esAdmin(req.user.rol) ? '' : ' AND responsable_id = $2'
+    const propia = esAdmin(req.user.rol) ? '' : ` AND ${asignadaASql('pedido_etapas', '$2')}`
     const etapa = (await conexion.query(`SELECT id, pedido_id, nombre, estado FROM pedido_etapas WHERE id = $1${propia} FOR UPDATE`,
       esAdmin(req.user.rol) ? [req.params.id] : [req.params.id, req.user.id])).rows[0]
     if (!etapa) throw fallo('Etapa no encontrada o sin permisos.', 404)
@@ -186,7 +208,7 @@ router.patch('/asignadas/:origen/:id/completar', auth(), asyncRoute(async (req, 
 
 // Verificación del admin: vuelve a abrir una etapa de pedido que se marcó
 // como completada pero no quedó bien (o se marcó por error). Vuelve a
-// "pendiente" con el mismo responsable. No se permite si la etapa ya se
+// "pendiente" con los mismos empleados. No se permite si la etapa ya se
 // pagó en una producción diaria terminada y cumplida.
 router.patch('/asignadas/PEDIDO/:id/reabrir', auth(['admin']), asyncRoute(async (req, res) => {
   const conexion = await pool.connect()

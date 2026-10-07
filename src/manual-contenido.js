@@ -97,8 +97,8 @@ export const manual = {
             ['Panel de control', 'Resumen del taller de un vistazo y accesos directos.'],
             ['Productos', 'Catálogo: precios, costos, fotos, estados y publicación en la web.'],
             ['Categorías', 'Grupos para ordenar los productos.'],
-            ['Tareas', 'Todas las etapas de los pedidos con su empleado: reasignar o reabrir una etapa.'],
-            ['Pedidos', 'Trabajos comprometidos: productos, horas-hombre, etapas con su empleado, fechas y avance.'],
+            ['Tareas', 'Todas las etapas de los pedidos con sus empleados: reasignarlas, cambiar cuántos empleados necesitan o reabrirlas.'],
+            ['Pedidos', 'Trabajos comprometidos: productos, horas-hombre, etapas con sus empleados, fechas y avance.'],
             ['Producción diaria', 'Qué se propone terminar cada día, su avance, la verificación, el cierre del día y el historial de días.'],
             ['Estadísticas', 'Ventas, gastos, ganancias y rendimiento del equipo.'],
             ['Recompensas', 'Cuánto cobró el equipo (hoy, en el mes y en total) y el valor de la hora-hombre.'],
@@ -121,7 +121,7 @@ export const manual = {
           t: 'ol',
           x: [
             '**Producto.** Lo cargás en Productos con sus **horas-hombre estimadas**: las horas de trabajo que lleva fabricar una unidad.',
-            '**Pedido.** Le asignás un pedido al producto (botón **“Crear pedido”** en la tarjeta del producto, o desde Pedidos). Ahí repartís esas horas-hombre en **etapas** (Corte, Soldadura, Pintura…) y elegís **qué empleado** hace cada una. La suma de las etapas tiene que dar las horas-hombre estimadas.',
+            '**Pedido.** Le asignás un pedido al producto (botón **“Crear pedido”** en la tarjeta del producto, o desde Pedidos). Ahí repartís esas horas-hombre en **etapas** (Corte, Soldadura, Pintura…) y elegís **cuántos empleados** necesita cada una y **quiénes** son. La suma de las etapas tiene que dar las horas-hombre estimadas.',
             '**Producción diaria.** Cada día proponés qué se va a terminar: **un pedido completo**, **un producto** del pedido o **etapas sueltas**.',
             '**Mis tareas.** Cada empleado ve sus etapas, primero las de hoy. Cuando termina una, la marca como terminada. **No tiene que decir cuánto tardó.**',
             '**Verificación.** Revisás el trabajo. Si algo no quedó bien, reabrís esa etapa. Cuando está todo en orden, marcás la **producción diaria como terminada**.',
@@ -237,7 +237,7 @@ export const manual = {
       titulo: 'Pedidos',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'Un pedido es un trabajo comprometido. Puede incluir uno o más productos. Para cada producto se estiman sus **horas-hombre** y se reparten en **etapas**, cada una con el **empleado** que la hace. El avance del pedido se calcula solo a partir de esas etapas.' },
+        { t: 'p', x: 'Un pedido es un trabajo comprometido. Puede incluir uno o más productos. Para cada producto se estiman sus **horas-hombre** y se reparten en **etapas**, cada una con los **empleados** que la hacen (uno o varios). El avance del pedido se calcula solo a partir de esas etapas.' },
         { t: 'img', src: 'pedidos.png', pie: 'Listado de pedidos con sus etapas, horas-hombre, prioridad, entrega y cumplimiento.' },
         { t: 'h', x: 'Crear un pedido' },
         {
@@ -246,23 +246,24 @@ export const manual = {
             'En **Pedidos** tocá **“+ Nuevo pedido”** (también está en el Panel de control), o tocá **“Crear pedido”** en la tarjeta de un producto.',
             'Elegí el producto y la **cantidad**. Con **“+ Agregar producto”** sumás más. Si el producto todavía no existe, usá **“+ Crear producto nuevo”**.',
             'Revisá las **horas-hombre estimadas para terminar una unidad**. Se completan solas con las del producto; podés cambiarlas para este pedido.',
-            'Cargá las **etapas** (por ejemplo: Corte, Soldadura, Pintura): para cada una, el nombre, sus **horas por unidad** y el **empleado** que la hace. Si el producto ya se pidió antes, se proponen las etapas y los empleados de la última vez.',
+            'Cargá las **etapas** (por ejemplo: Corte, Soldadura, Pintura): para cada una, el nombre, sus **horas por unidad** y los **empleados** que la hacen. Si una etapa la hacen varios juntos, cambiá **“1 empleado”** por la cantidad que necesita (por ejemplo, **“2 empleados”**) y aparece un selector para cada uno. Si el producto ya se pidió antes, se proponen las etapas y los empleados de la última vez.',
             'Debajo de las etapas, el sistema te dice si **la suma coincide** con las horas-hombre estimadas (✓) o cuántas horas faltan repartir o sobran. Con **“Usar X hs como estimación”** ajustás la estimación a lo que suman las etapas.',
             'Elegí la **prioridad** (Normal, Alta o Urgente), la **fecha de entrega** y, si querés, agregá **notas**.',
             'Tocá **“Crear pedido”**. Las etapas quedan asignadas: cada empleado ya las ve en su pantalla “Mis tareas”.'
           ]
         },
-        { t: 'img', src: 'pedido-nuevo.png', pie: 'Formulario “Nuevo pedido”: horas-hombre estimadas repartidas en etapas, cada una con su empleado.' },
-        { t: 'aviso', x: 'El pedido no se guarda si alguna etapa no tiene empleado o si las etapas no suman exactamente las horas-hombre estimadas. Las horas se cargan **por unidad**: si pedís 4 sillas, cada etapa vale 4 veces lo que cargaste.' },
+        { t: 'img', src: 'pedido-nuevo.png', pie: 'Formulario “Nuevo pedido”: horas-hombre estimadas repartidas en etapas, cada una con sus empleados (la soldadura la hacen dos).' },
+        { t: 'nota', x: 'Las horas de una etapa son el **total entre todos** sus empleados: si dos personas sueldan juntas 3 horas cada una, la etapa lleva **6 horas-hombre**. Debajo de los empleados se ve cuánto le toca a cada uno (“≈ 3 hs cada uno”). Ese total es el que cuenta para la producción diaria y la recompensa del equipo.' },
+        { t: 'aviso', x: 'El pedido no se guarda si a alguna etapa le falta alguno de los empleados que necesita, si un mismo empleado está dos veces en la misma etapa o si las etapas no suman exactamente las horas-hombre estimadas. Las horas se cargan **por unidad**: si pedís 4 sillas, cada etapa vale 4 veces lo que cargaste.' },
         { t: 'h', x: 'Revisar y cambiar un pedido' },
-        { t: 'p', x: 'Tocá un pedido en el listado para ver su detalle: precio, costos y ganancia, y cada producto con sus etapas, horas-hombre, estado y empleado. Las etapas propuestas en la producción diaria muestran la marca **“Producción de hoy”** (o la fecha del día).' },
+        { t: 'p', x: 'Tocá un pedido en el listado para ver su detalle: precio, costos y ganancia, y cada producto con sus etapas, horas-hombre, estado y empleados. Las etapas propuestas en la producción diaria muestran la marca **“Producción de hoy”** (o la fecha del día).' },
         {
           t: 'ul',
           x: [
-            'Para **agregar una etapa** a un producto, completá la fila de abajo (nombre, horas por unidad y empleado) y tocá **“+ Agregar esta etapa”**. Sus horas se suman a la estimación del producto.',
+            'Para **agregar una etapa** a un producto, completá la fila de abajo (nombre, horas por unidad y empleados) y tocá **“+ Agregar esta etapa”**. Sus horas se suman a la estimación del producto.',
             'Con la **×** quitás una etapa que todavía no se completó (sus horas se restan de la estimación).',
             'Con **“Pedido completo a la producción de hoy”** (o **“+ A la producción de hoy”** en un producto) proponés ese trabajo para hoy sin ir a Producción diaria.',
-            'Para cambiar el empleado de una etapa, usá la sección **Tareas**.'
+            'Para cambiar los empleados de una etapa (o cuántos necesita), usá la sección **Tareas**.'
           ]
         },
         { t: 'h', x: 'Estados de un pedido' },
@@ -277,23 +278,24 @@ export const manual = {
       titulo: 'Tareas: el trabajo de cada empleado',
       para: GESTION,
       bloques: [
-        { t: 'p', x: 'La sección **Tareas** muestra todas las etapas de los pedidos en un solo lugar, agrupadas por producto, con su empleado y sus horas-hombre. Las etapas se asignan **al crear el pedido**; acá se **cambia el responsable** cuando hace falta (por ejemplo, si alguien falta) y se **reabre** una etapa que no quedó bien.' },
+        { t: 'p', x: 'La sección **Tareas** muestra todas las etapas de los pedidos en un solo lugar, agrupadas por producto, con sus empleados y sus horas-hombre. Las etapas se asignan **al crear el pedido**; acá se **cambian los empleados** cuando hace falta (por ejemplo, si alguien falta) y se **reabre** una etapa que no quedó bien.' },
         { t: 'img', src: 'tareas.png', pie: 'Tareas de producción agrupadas por producto y pedido.' },
         {
           t: 'ol',
           x: [
-            'Entrá a **Tareas**. Con el filtro de arriba elegís ver todas, las pendientes, las sin asignar o las completadas.',
-            'Hacé clic en una etapa para ver su detalle: estado, responsable, horas-hombre, si está en la producción diaria y sus fechas.',
-            'Para cambiar quién la hace, elegí otro empleado en **“Responsable de esta etapa”**. El cambio se guarda solo y la etapa pasa a “Mis tareas” de esa persona.'
+            'Entrá a **Tareas**. Con el filtro de arriba elegís ver todas, las pendientes, las que les **falta asignar** o las completadas.',
+            'Hacé clic en una etapa para ver su detalle: estado, empleados, horas-hombre, si está en la producción diaria y sus fechas.',
+            'Para cambiar quién la hace, en **“Empleados asignados”** elegí cuántos empleados necesita y quiénes son, y tocá **“Guardar asignación”**. La etapa pasa a “Mis tareas” de cada uno.'
           ]
         },
-        { t: 'img', src: 'tarea-asignar.png', pie: 'Detalle de una etapa: en “Responsable de esta etapa” se cambia el empleado.' },
+        { t: 'img', src: 'tarea-asignar.png', pie: 'Detalle de una etapa: en “Empleados asignados” se elige cuántos necesita y quiénes son.' },
         {
           t: 'ul',
           x: [
             'Una etapa **ya completada no se puede reasignar**.',
             'Si una etapa completada no quedó bien, tocá **“Reabrir etapa”**: vuelve a pendiente y el empleado la ve de nuevo en “Mis tareas”. No se puede reabrir una etapa que ya se pagó en una producción diaria terminada (primero hay que reabrir ese día).',
-            'Si se elimina la cuenta de un empleado, sus etapas pendientes quedan **sin asignar**: el filtro “Sin asignar” te ayuda a encontrarlas y reasignarlas.'
+            'Se puede guardar una etapa con **menos empleados** de los que necesita (por ejemplo, si alguien falta): queda marcada en rojo con **“falta 1”** y la Producción diaria lo avisa.',
+            'Si se elimina la cuenta de un empleado, sus etapas pendientes quedan **sin asignar** (o con un empleado menos, si la hacían varios): el filtro **“Falta asignar”** te ayuda a encontrarlas y completarlas.'
           ]
         }
       ]
@@ -305,7 +307,7 @@ export const manual = {
       bloques: [
         { t: 'p', x: 'Acá se decide **qué se propone terminar cada día**, se sigue cómo avanza y, al final, se **verifica y se cierra** el día. Con eso el sistema calcula la recompensa del equipo.' },
         { t: 'p', x: 'Arriba elegís el **Día** (por defecto, hoy; con **“Hoy”** volvés al día actual). También podés abrir cualquier día desde el **Historial de días**, al final de la pantalla. Las tarjetas muestran lo **propuesto** y lo **completado** (en horas-hombre), el **estado** del día y la **recompensa** que cobra el equipo si se completa todo.' },
-        { t: 'img', src: 'produccion.png', pie: 'Producción del día en curso: lo propuesto, lo completado y cada etapa con su empleado.' },
+        { t: 'img', src: 'produccion.png', pie: 'Producción del día en curso: lo propuesto, lo completado y cada etapa con sus empleados.' },
         { t: 'h', x: 'Proponer el trabajo del día' },
         { t: 'p', x: 'En **“Agregar trabajo”** aparecen los pedidos en curso con sus etapas pendientes. Podés agregar:' },
         {
@@ -319,7 +321,7 @@ export const manual = {
         { t: 'img', src: 'produccion-agregar.png', pie: 'Agregar trabajo al día: un pedido completo, un producto o etapas sueltas.' },
         { t: 'nota', x: 'Una etapa pendiente solo puede estar en **una** producción abierta: si ya la propusiste para otro día, aparece como “En la producción del…”. Las etapas completadas y las de pedidos pausados, cancelados o terminados no se pueden agregar. También podés proponer trabajo desde el detalle de un pedido.' },
         { t: 'h', x: 'Seguir el avance' },
-        { t: 'p', x: 'En **“Propuesto para el día”** se ven las etapas agrupadas por pedido y producto, con su estado, sus horas, el empleado y cuándo se completaron (📝 indica que el empleado dejó observaciones: pasá el mouse para leerlas). Con **“Quitar”** sacás una etapa del día (no se borra del pedido) y con **“Vaciar el día”** sacás todo.' },
+        { t: 'p', x: 'En **“Propuesto para el día”** se ven las etapas agrupadas por pedido y producto, con su estado, sus horas, sus empleados y cuándo se completaron (📝 indica que se dejaron observaciones: pasá el mouse para leerlas). Con **“Quitar”** sacás una etapa del día (no se borra del pedido) y con **“Vaciar el día”** sacás todo.' },
         { t: 'h', x: 'Verificar y terminar el día' },
         {
           t: 'ol',
@@ -372,6 +374,7 @@ export const manual = {
         },
         { t: 'img', src: 'mis-tareas-terminar.png', pie: 'Al terminar una etapa solo se confirma; las observaciones son opcionales.' },
         { t: 'nota', x: 'Cada etapa muestra sus **horas-hombre estimadas**: es lo que vale esa etapa para el equipo. Si el equipo completa todo lo propuesto para el día, el administrador lo verifica y **el equipo cobra la recompensa del día**.' },
+        { t: 'nota', x: 'Si una etapa la hacen **varios empleados juntos**, la tarjeta dice **“Junto con …”** y les aparece a todos. Cualquiera de ellos la marca como terminada y queda **completada para todos**. Sus horas-hombre son el total entre todos.' },
         { t: 'p', x: 'Si marcaste una etapa por error, o el administrador ve que algo no quedó bien, la puede **reabrir**: vuelve a aparecer como pendiente en tu lista.' }
       ]
     },
@@ -428,7 +431,7 @@ export const manual = {
             '**Producción diaria**: días con producción, cuántos de los terminados se cumplieron, horas-hombre propuestas y completadas y el **promedio por día**.',
             '**Horas-hombre por día**: un gráfico con una columna por día (los últimos 14 del período). La parte clara es lo completado y la oscura lo propuesto; ✓ marca los días cumplidos. Pasando el mouse por una columna se ve su detalle, y con **“Ver los datos como tabla”** se ven los mismos números en una tabla.',
             '**Trabajo pendiente**: las horas-hombre que faltan completar en los pedidos abiertos y cuántos días de producción llevarían al ritmo del período.',
-            '**Rendimiento de empleados**: horas-hombre que completó cada uno en el período, cuántas fueron parte de días cumplidos (los que pagaron recompensa al equipo) y lo que tiene pendiente.'
+            '**Rendimiento de empleados**: horas-hombre que completó cada uno en el período, cuántas fueron parte de días cumplidos (los que pagaron recompensa al equipo) y lo que tiene pendiente. Una etapa que hicieron varios cuenta para cada uno, con sus horas repartidas en partes iguales.'
           ]
         },
         { t: 'img', src: 'estadisticas-produccion.png', pie: 'Producción diaria en Estadísticas: días cumplidos, horas-hombre por día y trabajo pendiente.' },
@@ -574,6 +577,7 @@ export const manual = {
             ['Marqué como vendido por error', 'Tocá “Reactivar”: la venta se anula y el producto vuelve a estar disponible.'],
             ['No puedo publicar un producto en la web', 'Faltan datos obligatorios: nombre, ID, descripción técnica, historia o categoría. El aviso te dice cuál.'],
             ['No puedo crear un pedido: dice que las etapas tienen que coincidir', 'La suma de las horas de las etapas tiene que ser igual a las horas-hombre estimadas por unidad. Ajustá las horas de alguna etapa o tocá “Usar X hs como estimación”.'],
+            ['¿Cómo asigno una etapa a varios empleados?', 'Al crear el pedido, en la columna **Empleados** de la etapa elegí cuántos necesita (por ejemplo, “2 empleados”) y quiénes son. En un pedido ya creado, hacelo desde **Tareas**.'],
             ['Un empleado no ve una etapa en “Mis tareas”', 'Revisá en Tareas a quién está asignada. Si se eliminó la cuenta de un empleado, sus etapas quedan sin asignar.'],
             ['No puedo agregar una etapa a la producción del día', 'Ya está completada, ya está propuesta en otra producción abierta o el pedido está pausado, cancelado o terminado. El mensaje te dice cuál.'],
             ['¿Cómo veo o reabro un día anterior?', 'En **Producción diaria**, tocá el día en el **Historial de días** (al final de la pantalla) o elegí su fecha arriba. Si ya está terminado, el botón **“Reabrir producción”** está junto al título “Propuesto para el…”.'],
@@ -595,7 +599,7 @@ export const manual = {
           cab: ['Término', 'Significado'],
           filas: [
             ['Chapita / ID de producto', 'Número visible que identifica cada pieza. Se libera si el producto se elimina.'],
-            ['Etapa / tarea', 'Cada paso de la fabricación de un producto dentro de un pedido (corte, soldadura, pintura…). Tiene sus horas-hombre y su empleado.'],
+            ['Etapa / tarea', 'Cada paso de la fabricación de un producto dentro de un pedido (corte, soldadura, pintura…). Tiene sus horas-hombre (el total entre todos los que la hacen) y uno o más empleados.'],
             ['Horas-hombre', 'Horas de trabajo de una persona. Cada producto tiene una estimación por unidad; en cada pedido se reparten entre sus etapas y son lo que vale cada etapa para la recompensa.'],
             ['Producción diaria', 'Lista de etapas que el taller se propone terminar en un día. El administrador la verifica y la marca como terminada.'],
             ['Recompensa del equipo', 'Premio en dinero, uno por día para todo el taller: las horas-hombre de la producción del día × el valor de la hora, cuando se completa todo lo propuesto.'],

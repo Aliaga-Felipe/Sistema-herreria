@@ -93,6 +93,17 @@ describe('casos borde', () => {
     assert.ok(resultado.advertencias.some(texto => texto.includes('sin empleado')))
   })
 
+  it('etapas con varios empleados: avisa si faltan asignar y no cambia las horas', () => {
+    const conEquipo = (empleados, necesarios, estado = 'PENDIENTE') =>
+      ({ horas_hombre: 6, estado, empleados: empleados.map(id => ({ id })), empleados_necesarios: necesarios })
+    const completa = calcularRecompensaEquipo({ etapas: [conEquipo([1, 2], 2, 'COMPLETADA')], valorHora: VALOR_HORA })
+    assert.equal(completa.recompensa, 6 * VALOR_HORA)
+    assert.deepEqual(completa.advertencias, [])
+    const faltan = calcularRecompensaEquipo({ etapas: [conEquipo([1], 2), conEquipo([], 2)], valorHora: VALOR_HORA })
+    assert.ok(faltan.advertencias.some(texto => texto.includes('1 etapa propuesta con menos empleados')))
+    assert.ok(faltan.advertencias.some(texto => texto.includes('1 etapa propuesta sin empleado')))
+  })
+
   it('ignora horas negativas o inválidas', () => {
     const resultado = calcularRecompensaEquipo({ etapas: [hecha(-3), hecha('x'), hecha(null), hecha('2')], valorHora: VALOR_HORA })
     assert.equal(resultado.objetivo_horas, 2)

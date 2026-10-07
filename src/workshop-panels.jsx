@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './features.css'
 import { api, dinero, fecha, horas, hoyLocal, iniciales, precioVenta, useAutoRefresco, useData } from './api.js'
-import { Badge, Empty, EtiquetaJornada, Heading, Modal, Progress, QuickActions, Stat, useAviso } from './ui.jsx'
+import { Badge, EmpleadosEtapa, Empty, EtiquetaJornada, Heading, Modal, Progress, QuickActions, SelectorEmpleados, Stat, empleadosDe, faltanEmpleados, useAviso } from './ui.jsx'
 import PanelProductos, { ConfiguracionCosteo } from './panel-productos.jsx'
 import PanelPedidos from './panel-pedidos.jsx'
 import PanelRecompensas from './panel-recompensas.jsx'
@@ -123,7 +123,7 @@ function Dashboard({ ir }) {
           // "admin" y "super_admin" pueden crear cuentas (ver PanelUsuarios).
           { icono: '♙', label: 'Nuevo empleado', texto: 'Alta de cuenta', onClick: () => ir('Usuarios', 'nuevo') },
           { icono: '◈', label: 'Producción diaria', texto: hoy.estado === 'SIN_PLANIFICAR' ? 'Proponer el trabajo de hoy' : `Hoy: ${estadoHoy}`, onClick: () => ir('Producción diaria') },
-          { icono: '✓', label: 'Tareas', texto: trabajo.sin_asignar ? `${trabajo.sin_asignar} etapas sin dueño` : 'Reasignar etapas', onClick: () => ir('Tareas') },
+          { icono: '✓', label: 'Tareas', texto: trabajo.sin_asignar ? `${trabajo.sin_asignar} etapas por asignar` : 'Reasignar etapas', onClick: () => ir('Tareas') },
           { icono: '♛', label: 'Recompensas', texto: 'Premio del equipo', onClick: () => ir('Recompensas') }
         ]}
       />
@@ -131,7 +131,7 @@ function Dashboard({ ir }) {
       <section className="stats-grid dashboard-stats">
         <Stat label="Pedidos abiertos" value={pedidos.abiertos} hint={`${pedidos.terminados} terminados${pedidos.pausados ? ` · ${pedidos.pausados} pausados` : ''}`} />
         <Stat label="Pedidos atrasados" value={pedidos.atrasados} tone={pedidos.atrasados ? 'danger' : ''} hint="Pasaron su fecha de entrega" />
-        <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${horas(trabajo.horas_pendientes)}${trabajo.sin_asignar ? ` · ${trabajo.sin_asignar} sin asignar` : ''}`} />
+        <Stat label="Etapas pendientes" value={trabajo.pendientes} hint={`${horas(trabajo.horas_pendientes)}${trabajo.sin_asignar ? ` · ${trabajo.sin_asignar} por asignar` : ''}`} />
         <Stat label="Ingresos en curso" value={dinero(enCurso.ingresos, moneda)} hint={`Pedidos abiertos · faltan ${dinero(enCurso.gastos_pendientes, moneda)} de costo`} />
         <Stat
           label="Producción de hoy"
@@ -484,8 +484,9 @@ function GestorImagenNosotros({ imagenInicial, token, onCambiar }) {
 // ---------------------------------------------------------------------
 // TAREAS (vista de producción del administrador)
 // Todas las etapas del taller. Cada etapa se asigna al crear el pedido;
-// desde acá se reasigna (por ejemplo, si un empleado falta o se dio de
-// baja) y el admin puede reabrir una etapa completada que no quedó bien.
+// desde acá se reasigna o se cambia cuántos empleados necesita (por
+// ejemplo, si un empleado falta o se dio de baja) y el admin puede reabrir
+// una etapa completada que no quedó bien.
 // ---------------------------------------------------------------------
 function PanelTareas() {
   const tareas = useData('/tareas/asignadas/mias?todas=true')
@@ -499,17 +500,23 @@ function PanelTareas() {
   const visibles = tareas.data.filter(tarea =>
     filtro === 'TODAS' ? true
       : filtro === 'PENDIENTES' ? tarea.estado !== 'COMPLETADA'
-      : filtro === 'SIN_ASIGNAR' ? tarea.estado !== 'COMPLETADA' && !tarea.asignado_a
+      : filtro === 'SIN_ASIGNAR' ? faltanEmpleados(tarea) > 0
       : tarea.estado === 'COMPLETADA')
 
-  // Asigna (o libera) el empleado de una etapa puntual del producto.
-  const asignar = async (tarea, responsableId) => {
+  // Asigna (o libera) los empleados de una etapa puntual del producto.
+  // Etapa de pedido: { empleados_necesarios, empleados }; tarea libre: un
+  // único responsable.
+  const asignar = async (tarea, asignacion) => {
+    const cuerpo = tarea.origen === 'PEDIDO'
+      ? { empleados_necesarios: asignacion.empleados_necesarios, empleados: asignacion.empleados.filter(Boolean) }
+      : { responsable_id: asignacion.empleados[0] || null }
     try {
-      const actualizada = await api.patch(`/tareas/asignadas/${tarea.origen}/${tarea.id}/asignar`, { responsable_id: responsableId || null }, tareas.token)
+      const actualizada = await api.patch(`/tareas/asignadas/${tarea.origen}/${tarea.id}/asignar`, cuerpo, tareas.token)
       await tareas.load()
       setSeleccionada(actualizada)
-      mostrar(responsableId ? `Etapa "${tarea.etapa}" asignada a ${actualizada.responsable}.` : `Etapa "${tarea.etapa}" sin asignar.`)
-    } catch (error) { mostrar(error.message, 'error') }
+      mostrar(actualizada.responsable ? `Etapa "${tarea.etapa}" asignada a ${actualizada.responsable}.` : `Etapa "${tarea.etapa}" sin asignar.`)
+      return true
+    } catch (error) { mostrar(error.message, 'error'); return false }
   }
 
   // Verificación: una etapa completada que no quedó bien vuelve a pendiente.
@@ -530,11 +537,11 @@ function PanelTareas() {
 
   return (
     <>
-      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller, con su empleado y sus horas-hombre. Cada etapa se asigna al crear el pedido: hacé clic en una para reasignarla o ver su detalle.">
+      <Heading kicker="Flujo de trabajo" title="Tareas de producción" text="Todas las etapas del taller, con sus empleados y sus horas-hombre. Cada etapa se asigna al crear el pedido: hacé clic en una para reasignarla o ver su detalle.">
         <select className="filter" value={filtro} onChange={event => setFiltro(event.target.value)}>
           <option value="TODAS">Todas</option>
           <option value="PENDIENTES">Pendientes</option>
-          <option value="SIN_ASIGNAR">Sin asignar</option>
+          <option value="SIN_ASIGNAR">Falta asignar</option>
           <option value="COMPLETADA">Completadas</option>
         </select>
       </Heading>
@@ -566,7 +573,7 @@ function PanelTareas() {
                   >
                     <span className="etapa-item-nombre">{tarea.estado === 'COMPLETADA' && <span className="etapa-check" aria-hidden="true">✓ </span>}{tarea.etapa}</span>
                     {tarea.estado === 'COMPLETADA' && <span className="task-status completada">Completada</span>}
-                    <span className="etapa-item-responsable">{tarea.responsable || 'Sin asignar'}</span>
+                    <EmpleadosEtapa etapa={tarea} className="etapa-item-responsable" />
                     <span className="etapa-item-tiempo">{horas(tarea.horas_hombre)}</span>
                   </button>
                 ))}
@@ -608,14 +615,24 @@ function agruparPorProducto(lista) {
 
 // Ventana de detalle: se abre al hacer click en una tarjeta y muestra todos
 // los datos de esa etapa sin abandonar la grilla que queda detrás, oscurecida.
-// Desde acá se reasigna el empleado de la etapa o se la reabre si ya estaba
-// completada pero no quedó bien.
+// Desde acá se reasignan los empleados de la etapa (y cuántos necesita) o
+// se la reabre si ya estaba completada pero no quedó bien.
+const asignacionDe = tarea => {
+  const cantidad = Number(tarea.empleados_necesarios) || 1
+  const ids = empleadosDe(tarea).map(empleado => String(empleado.id))
+  return { empleados_necesarios: cantidad, empleados: Array.from({ length: cantidad }, (_, posicion) => ids[posicion] || '') }
+}
+
 function DetalleTarea({ tarea, empleados, onAsignar, onReabrir, close }) {
   const [busy, setBusy] = useState(false)
   const completada = tarea.estado === 'COMPLETADA'
-  const cambiarResponsable = async event => {
+  const deTareaLibre = tarea.origen === 'TAREA'
+  const [asignacion, setAsignacion] = useState(() => asignacionDe(tarea))
+  useEffect(() => { setAsignacion(asignacionDe(tarea)) }, [tarea])
+  const cambiada = JSON.stringify(asignacion) !== JSON.stringify(asignacionDe(tarea))
+  const guardar = async nueva => {
     setBusy(true)
-    try { await onAsignar(tarea, event.target.value) } finally { setBusy(false) }
+    try { await onAsignar(tarea, nueva) } finally { setBusy(false) }
   }
 
   return (
@@ -627,7 +644,7 @@ function DetalleTarea({ tarea, empleados, onAsignar, onReabrir, close }) {
     >
       <div className="tarea-detalle-grid">
         <span><small>Estado</small><Badge estado={tarea.estado} /></span>
-        <span><small>Responsable</small><b>{tarea.responsable || 'Sin asignar'}</b></span>
+        <span><small>{(Number(tarea.empleados_necesarios) || 1) > 1 ? `Empleados (necesita ${tarea.empleados_necesarios})` : 'Empleado'}</small><b><EmpleadosEtapa etapa={tarea} /></b></span>
         <span><small>Horas-hombre</small><b>{horas(tarea.horas_hombre)}</b></span>
         <span><small>Producción diaria</small><b>{tarea.jornada ? <EtiquetaJornada fecha={tarea.jornada} hoy={hoyLocal()} /> : '—'}</b></span>
         {tarea.costo > 0 && <span><small>Costo estimado</small><b>{dinero(tarea.costo)}</b></span>}
@@ -638,14 +655,26 @@ function DetalleTarea({ tarea, empleados, onAsignar, onReabrir, close }) {
       </div>
 
       <div className="detalle-bloque">
-        <b>Empleado asignado</b>
-        <label className="status-control">
-          Responsable de esta etapa
-          <select value={tarea.asignado_a || ''} disabled={completada || busy} onChange={cambiarResponsable}>
-            <option value="">Sin asignar</option>
-            {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
-          </select>
-        </label>
+        <b>{deTareaLibre ? 'Empleado asignado' : 'Empleados asignados'}</b>
+        {deTareaLibre ? (
+          <label className="status-control">
+            Responsable de esta etapa
+            <select value={asignacion.empleados[0]} disabled={completada || busy} onChange={event => guardar({ empleados_necesarios: 1, empleados: [event.target.value] })}>
+              <option value="">Sin asignar</option>
+              {empleados.map(empleado => <option key={empleado.id} value={empleado.id}>{empleado.nombre}</option>)}
+            </select>
+          </label>
+        ) : (
+          <>
+            <small className="muted">Cuántos empleados necesita la etapa y quiénes son. Cualquiera de ellos la puede marcar como terminada; sus {horas(tarea.horas_hombre)} son el total entre todos.</small>
+            <SelectorEmpleados valor={asignacion} empleados={empleados} conocidos={empleadosDe(tarea)} disabled={completada || busy} onCambiar={setAsignacion} />
+            {!completada && (
+              <button type="button" className="secondary" disabled={!cambiada || busy} onClick={() => guardar(asignacion)}>
+                {busy ? 'Guardando...' : 'Guardar asignación'}
+              </button>
+            )}
+          </>
+        )}
         {completada && <small className="muted">La etapa ya está completada: no se puede reasignar.</small>}
         {completada && tarea.origen === 'PEDIDO' && (
           <button type="button" className="secondary" onClick={() => onReabrir(tarea)}>Reabrir etapa (no quedó bien)</button>

@@ -33,7 +33,8 @@ export function validarRepartoHoras(horasEstimadas, horasEtapas = []) {
 }
 
 // Resultado de una producción diaria.
-//   etapas            [{ horas_hombre, estado, responsable_id? }]
+//   etapas            [{ horas_hombre, estado, empleados?: [{ id }], empleados_necesarios?, responsable_id? }]
+//                     (sin "empleados", se toma responsable_id como único asignado)
 //   valorHora         valor monetario de una hora-hombre
 //   porcentajePremio  0 a 100 (100 = se paga todo el valor del objetivo)
 export function calcularRecompensaEquipo({ etapas = [], valorHora = 0, porcentajePremio = 100 } = {}) {
@@ -42,12 +43,16 @@ export function calcularRecompensaEquipo({ etapas = [], valorHora = 0, porcentaj
   const hechas = redondear(completadas.reduce((total, etapa) => total + positivo(etapa.horas_hombre), 0))
   const valor = positivo(valorHora)
   const porcentaje = positivo(porcentajePremio)
-  const sinAsignar = etapas.filter(etapa => etapa.estado !== 'COMPLETADA' && !etapa.responsable_id).length
+  const asignados = etapa => (Array.isArray(etapa.empleados) ? etapa.empleados.length : etapa.responsable_id ? 1 : 0)
+  const pendientes = etapas.filter(etapa => etapa.estado !== 'COMPLETADA')
+  const sinAsignar = pendientes.filter(etapa => !asignados(etapa)).length
+  const conFaltantes = pendientes.filter(etapa => asignados(etapa) && asignados(etapa) < (Number(etapa.empleados_necesarios) || 1)).length
 
   const advertencias = []
   if (!etapas.length) advertencias.push('No hay etapas propuestas para este día: agregá pedidos, productos o etapas en Producción diaria.')
   else if (!objetivo) advertencias.push('Las etapas propuestas no tienen horas-hombre estimadas: la recompensa sería 0.')
   if (sinAsignar) advertencias.push(`${sinAsignar === 1 ? 'Hay 1 etapa propuesta' : `Hay ${sinAsignar} etapas propuestas`} sin empleado asignado: nadie la va a ver en Mis tareas.`)
+  if (conFaltantes) advertencias.push(`${conFaltantes === 1 ? 'Hay 1 etapa propuesta' : `Hay ${conFaltantes} etapas propuestas`} con menos empleados asignados de los que necesita: completá la asignación en Tareas.`)
   if (!valor) advertencias.push('El valor de la hora-hombre es 0.')
 
   // Sin etapas no hay nada que completar: nunca se paga.
