@@ -19,15 +19,15 @@ import PanelManual from './panel-manual.jsx'
 // falta volver a mostrarlos: alcanza con agregar de nuevo la línea
 // ['Presupuestos', '⎙'] acá abajo.
 //
-// Orden pedido: Panel de control, Productos, Categorías, Tareas, Pedidos,
+// Orden pedido: Panel de control, Productos, Categorías, Pedidos, Tareas,
 // Producción diaria, Estadísticas, Recompensas, Usuarios y, al final, Configuración.
 // La sección "Materiales" se eliminó de la app por completo.
 export const seccionesAdmin = [
   ['Panel de control', '▦'],
   ['Productos', '▱'],
   ['Categorías', '▤'],
-  ['Tareas', '✓'],
   ['Pedidos', '⌁'],
+  ['Tareas', '✓'],
   ['Producción diaria', '◈'],
   ['Estadísticas', '◫'],
   ['Recompensas', '♛'],
