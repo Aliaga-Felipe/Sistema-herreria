@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
 import { pool } from '../db.js'
-import { asyncRoute, auth, fallo, secret, sign } from '../comun.js'
+import { asyncRoute, auth, enProduccion, fallo, secret, sign } from '../comun.js'
 import { crearLimitador, generarCodigo, generarIdDesafio, generarSal, hashCodigo, igualesSeguro, validarContrasenaNueva } from '../seguridad.js'
 import { enviarCodigoAcceso } from '../correo.js'
 
@@ -56,6 +57,31 @@ const enmascarar = email => {
 const CODIGO_INVALIDO = 'El código venció o ya no es válido. Volvé a iniciar sesión.'
 const sesionPara = usuario => ({ token: sign(usuario), usuario: { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol } })
 
+// -----------------------------------------------------------------------
+// DISPOSITIVO CONFIABLE
+// Después de un código correcto, el navegador recibe una cookie httpOnly
+// (30 días) y en los ingresos siguientes desde ahí se pide sólo la
+// contraseña. Se firma con un secreto distinto al de la sesión para que no
+// sirva como token de acceso, y lleva una huella de la contraseña: si la
+// contraseña cambia, la cookie deja de valer.
+// -----------------------------------------------------------------------
+const COOKIE_DISPOSITIVO = 'atelier_dispositivo'
+const VIDA_DISPOSITIVO_DIAS = 30
+const secretoDispositivo = `${secret}:dispositivo-confiable`
+const huellaClave = usuario => hashCodigo(usuario.contrasena_hash, String(usuario.id), secret)
+const leerCookie = (req, nombre) => (req.headers.cookie || '').split(';').map(parte => parte.trim()).find(parte => parte.startsWith(`${nombre}=`))?.slice(nombre.length + 1)
+
+function dispositivoConfiable(req, usuario) {
+  try {
+    const datos = jwt.verify(leerCookie(req, COOKIE_DISPOSITIVO) || '', secretoDispositivo, { algorithms: ['HS256'] })
+    return String(datos.id) === String(usuario.id) && igualesSeguro(datos.huella, huellaClave(usuario))
+  } catch { return false }
+}
+
+const recordarDispositivo = (res, usuario) => res.cookie(COOKIE_DISPOSITIVO,
+  jwt.sign({ id: usuario.id, huella: huellaClave(usuario) }, secretoDispositivo, { expiresIn: `${VIDA_DISPOSITIVO_DIAS}d` }),
+  { httpOnly: true, secure: enProduccion, sameSite: 'strict', path: '/api/auth', maxAge: VIDA_DISPOSITIVO_DIAS * 24 * 60 * 60 * 1000 })
+
 router.post('/iniciar-sesion', limiteLoginIp.middleware(), asyncRoute(async (req, res) => {
   const email = texto(req.body?.email, 254).trim().toLowerCase()
   const contrasena = texto(req.body?.contrasena, 200)
@@ -66,7 +92,7 @@ router.post('/iniciar-sesion', limiteLoginIp.middleware(), asyncRoute(async (req
   const coincide = await bcrypt.compare(contrasena, usuario?.contrasena_hash || HASH_FALSO)
   if (!usuario?.activo || !coincide) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' })
 
-  if (!dosPasosActivo()) { limiteLoginCorreo.limpiar(email); return res.json(sesionPara(usuario)) }
+  if (!dosPasosActivo() || dispositivoConfiable(req, usuario)) { limiteLoginCorreo.limpiar(email); return res.json(sesionPara(usuario)) }
 
   // Tope de códigos pedidos por cuenta: evita usar el sistema para llenar de
   // mails el correo de alguien.
@@ -117,9 +143,10 @@ router.post('/verificar-codigo', limiteCodigoIp.middleware(), asyncRoute(async (
   // Cualquier otro código pendiente de esa cuenta queda anulado.
   await pool.query('UPDATE codigos_acceso SET usado_en = NOW() WHERE usuario_id = $1 AND usado_en IS NULL', [intento.usuario_id])
 
-  const { rows: [usuario] } = await pool.query('SELECT id, nombre, email, LOWER(rol::text) AS rol, activo FROM usuarios WHERE id = $1', [intento.usuario_id])
+  const { rows: [usuario] } = await pool.query('SELECT id, nombre, email, contrasena_hash, LOWER(rol::text) AS rol, activo FROM usuarios WHERE id = $1', [intento.usuario_id])
   if (!usuario?.activo) throw fallo(CODIGO_INVALIDO, 401)
   limiteLoginCorreo.limpiar(usuario.email.toLowerCase())
+  recordarDispositivo(res, usuario)
   res.json(sesionPara(usuario))
 }))
 
