@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api, dinero, fecha, precioVenta, useData } from './api.js'
 import { Actions, CampoNumero, Empty, Heading, Modal, useAviso } from './ui.jsx'
 
 // Fila vacía de la sección "Materiales utilizados" (ver ProductoModal):
 // nombre libre, sin catálogo compartido entre productos.
+// Texto para el buscador: sin acentos, en minúsculas y con los espacios colapsados.
+const normalizarBusqueda = texto => String(texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+
 const materialVacio = () => ({ nombre: '', precio_unitario: '', cantidad: '' })
 
 // Genera automáticamente el próximo ID de producto (chapita) libre para
@@ -84,7 +87,15 @@ export default function PanelProductos({ intencion, limpiarIntencion, ir }) {
     ['AMBOS', 'Cargado en ambos', producto => Boolean(producto.publicado) && producto.whatsapp_sync_estado === 'SINCRONIZADO']
   ]
   const filtroActual = FILTROS.find(([valor]) => valor === filtro) || FILTROS[0]
-  const visibles = (productos.data || []).filter(filtroActual[2])
+  // Buscador: índice en memoria (nombre + chapita + categoría normalizados),
+  // recalculado solo cuando cambia el listado. Coincide si contiene todas
+  // las palabras buscadas y se combina con el filtro activo.
+  const [busqueda, setBusqueda] = useState('')
+  const indice = useMemo(() => new Map((productos.data || []).map(producto =>
+    [producto.id, normalizarBusqueda(`${producto.nombre || ''} ${producto.chapita_id || ''} ${producto.categoria_nombre || ''}`)])), [productos.data])
+  const palabras = normalizarBusqueda(busqueda).split(' ').filter(Boolean)
+  const encontrados = (productos.data || []).filter(producto => palabras.every(palabra => indice.get(producto.id).includes(palabra)))
+  const visibles = encontrados.filter(filtroActual[2])
   // Cartel "Último ID cargado": la chapita del producto creado más recientemente
   // (cualquier estado), para saber por dónde sigue la numeración.
   const ultimoCargado = (productos.data || []).reduce((ultimo, producto) => (!ultimo || Number(producto.id) > Number(ultimo.id) ? producto : ultimo), null)
@@ -177,10 +188,23 @@ export default function PanelProductos({ intencion, limpiarIntencion, ir }) {
       )}
 
       {!productos.loading && !productos.error && productos.data.length > 0 && (
+        <div className="buscador-productos">
+          <input
+            type="search"
+            value={busqueda}
+            onChange={event => setBusqueda(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Escape') setBusqueda('') }}
+            placeholder="Buscar por nombre, ID de chapita o categoría"
+            aria-label="Buscar productos"
+          />
+        </div>
+      )}
+
+      {!productos.loading && !productos.error && productos.data.length > 0 && (
         <div className="filtro-estado" role="group" aria-label="Filtrar productos">
           {FILTROS.map(([valor, etiqueta, coincide]) => (
             <button key={valor} type="button" className={filtro === valor ? 'activo' : ''} aria-pressed={filtro === valor} onClick={() => setFiltro(valor)}>
-              {etiqueta} ({productos.data.filter(coincide).length})
+              {etiqueta} ({encontrados.filter(coincide).length})
             </button>
           ))}
         </div>
@@ -188,7 +212,14 @@ export default function PanelProductos({ intencion, limpiarIntencion, ir }) {
 
       {productos.loading ? <p>Cargando productos...</p> : productos.error ? <p className="form-error">{productos.error}</p> : productos.data.length ? (
         visibles.length === 0 ? (
-          <p className="muted">No hay productos con este filtro. Probá con otro filtro o con “Todos”.</p>
+          palabras.length ? (
+            <div className="muted">
+              <p>No hay productos que coincidan con '{busqueda.trim()}'</p>
+              <button type="button" className="filter" onClick={() => setBusqueda('')}>Limpiar búsqueda</button>
+            </div>
+          ) : (
+            <p className="muted">No hay productos con este filtro. Probá con otro filtro o con “Todos”.</p>
+          )
         ) : (
         <section className="product-grid">
           {visibles.map(producto => (
