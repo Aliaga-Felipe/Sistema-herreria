@@ -1315,6 +1315,12 @@
     color: #f0d9c9 !important;
 }
 
+/* Buscador del listado de productos (mismo estilo que el del manual). */
+.buscador-productos { margin: 0 0 10px; }
+.buscador-productos input { width: 100%; box-sizing: border-box; background: #12100f; border: 1px solid #3d3733; border-radius: 10px; color: var(--text, inherit); padding: 11px 13px; font: inherit; font-size: 14px; }
+.buscador-productos input::placeholder { color: inherit; opacity: .55; }
+.buscador-productos input:focus-visible { outline: 2px solid #b06a3b; outline-offset: 1px; }
+
 /* Filtro de estado del listado de productos. */
 .filtro-estado {
     display: flex;

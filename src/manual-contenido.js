@@ -171,7 +171,8 @@ export const manual = {
         { t: 'h', x: 'WhatsApp' },
         { t: 'p', x: 'Cada producto muestra una marca de sincronización con el catálogo de WhatsApp: ✓ sincronizado, ✗ con error (al pasar el mouse se ve el motivo), … sincronizando y — todavía sin sincronizar. Es informativa; el sistema la actualiza solo.' },
         { t: 'h', x: 'Buscar y filtrar' },
-        { t: 'p', x: 'Sobre el listado hay filtros por estado: **Todos, Activos, Vendidos y Desactivados**, cada uno con su cantidad.' }
+        { t: 'p', x: 'Sobre el listado hay filtros por estado: **Todos, Activos, Vendidos y Desactivados**, cada uno con su cantidad.' },
+        { t: 'p', x: 'Arriba de los filtros está el **buscador**: escribí parte del nombre, el ID de chapita o la categoría (no importan los acentos ni las mayúsculas; por ejemplo, “rej col” encuentra “Reja colonial”). Se combina con el filtro elegido y las cantidades de cada filtro cuentan solo lo encontrado. Con **Escape** o **“Limpiar búsqueda”** se vacía.' }
       ]
     },
     {
