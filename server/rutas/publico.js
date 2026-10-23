@@ -16,7 +16,7 @@ const router = Router()
 // -----------------------------------------------------------------------
 
 const columnasPublicas = `p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.slug, p.destacado, p.creado_en, p.chapita_id,
-    p.medidas, p.historia,
+    p.medidas, p.historia, p.disponibilidad,
     c.id AS categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug,
     (SELECT pi.url FROM producto_imagenes pi WHERE pi.producto_id = p.id ORDER BY pi.es_principal DESC, pi.orden LIMIT 1) AS imagen_principal`
 

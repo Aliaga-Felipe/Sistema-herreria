@@ -45,6 +45,7 @@ export const construirCuerpoProducto = producto => ({
   horas_hombre: Number(producto.horas_hombre) || 0,
   chapita_id: producto.chapita_id?.trim() || null,
   medidas: producto.medidas?.trim() || '',
+  disponibilidad: producto.disponibilidad?.trim() || '',
   costo_producto: Number(producto.costo_producto) || 0,
   historia: producto.historia?.trim() || '',
   materiales: (producto.materiales || []).map(material => ({
@@ -319,6 +320,9 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
   const [horasHombre, setHorasHombre] = useState(producto.horas_hombre ? producto.horas_hombre : '')
   const [chapitaId, setChapitaId] = useState(producto.chapita_id || '')
   const [medidas, setMedidas] = useState(producto.medidas || '')
+  // Disponibilidad: texto corto opcional que la web muestra en la tarjeta y
+  // en el detalle. Vacío = no se muestra nada.
+  const [disponibilidad, setDisponibilidad] = useState(producto.disponibilidad || '')
   // El campo "Costo del producto" se sacó del formulario a pedido: se sigue
   // guardando el valor que ya tenía el producto (0 en uno nuevo), sólo que
   // ya no se puede editar desde acá. El costo total del producto se sigue
@@ -380,6 +384,7 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
     if (precio !== '' && Number(precio) < 0) return setError('El precio de venta no puede ser negativo.')
     if (horasHombre !== '' && !(Number(horasHombre) >= 0)) return setError('Las horas-hombre no pueden ser negativas.')
     if (medidas.trim().length > 200) return setError('Las medidas no pueden superar los 200 caracteres.')
+    if (disponibilidad.trim().length > 40) return setError('La disponibilidad no puede superar los 40 caracteres.')
     if (materiales.some(material => !material.nombre.trim())) return setError('Cada material necesita un nombre.')
     if (materiales.some(material => !(Number(material.precio_unitario) >= 0))) return setError('El precio unitario de cada material no puede ser negativo.')
     if (materiales.some(material => !(Number(material.cantidad) > 0))) return setError('La cantidad de cada material debe ser mayor a cero.')
@@ -387,7 +392,7 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
     try {
       await save({
         id: producto.id, nombre, descripcion, precio_venta: precio, categoria_id: categoriaId || null, destacado, publicado,
-        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, costo_producto: costoProducto, historia, materiales
+        horas_hombre: horasHombre, chapita_id: chapitaTrim, medidas, disponibilidad, costo_producto: costoProducto, historia, materiales
       })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -425,6 +430,10 @@ export function ProductoModal({ producto, productosExistentes, categorias, costo
         <div className="form-grid config-grid">
           <label>Precio de venta (opcional)
             <CampoNumero min="0" step="0.01" value={precio} onChange={setPrecio} placeholder='Vacío = "Consultar precio"' />
+          </label>
+
+          <label title="Texto corto que la web muestra en la tarjeta del catálogo y en el detalle del producto. Vacío = no se muestra.">Disponibilidad (opcional)
+            <input maxLength={40} value={disponibilidad} onChange={event => setDisponibilidad(event.target.value)} placeholder="Ej. Disponible, Próximamente, Consultar" />
           </label>
         </div>
 

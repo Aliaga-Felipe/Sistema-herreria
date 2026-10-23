@@ -19,6 +19,10 @@ export default function ProductCard({ producto, moneda }) {
               distancia en todas las tarjetas. */}
           <p className="tarjeta-producto-cat" aria-hidden={producto.categoria_nombre ? undefined : true}>{producto.categoria_nombre || '\u00a0'}</p>
           <h3 className="tarjeta-producto-nombre">{producto.nombre}</h3>
+          {/* Igual que la categoría: siempre presente (vacía si no hay
+              disponibilidad) para que todas las tarjetas tengan la misma
+              altura. Texto plano, en una sola línea. */}
+          <p className="tarjeta-producto-disponibilidad" aria-hidden={producto.disponibilidad ? undefined : true}>{producto.disponibilidad || '\u00a0'}</p>
           <p className="tarjeta-producto-precio">{precioPublico(producto.precio_venta, moneda)}</p>
         </div>
       </Link>

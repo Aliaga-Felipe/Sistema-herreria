@@ -203,9 +203,13 @@ export default function ProductoDetalle() {
 
             {producto.historia && <p className="detalle-historia">{producto.historia}</p>}
 
-            {producto.medidas && (
+            {/* Medidas y Disponibilidad van juntas, con el mismo estilo. La
+                disponibilidad la carga el admin y se muestra siempre como
+                texto plano (React lo escapa); vacía, no se muestra. */}
+            {(producto.medidas || producto.disponibilidad) && (
               <div className="detalle-especificaciones">
-                <span className="detalle-medidas"><b>Medidas</b> {producto.medidas}</span>
+                {producto.medidas && <span className="detalle-medidas"><b>Medidas</b> {producto.medidas}</span>}
+                {producto.disponibilidad && <span className="detalle-medidas"><b>Disponibilidad</b> {producto.disponibilidad}</span>}
               </div>
             )}
 
@@ -217,7 +221,9 @@ export default function ProductoDetalle() {
             </div>
 
             <div className="detalle-meta">
-              <span><b>Disponibilidad</b> — Fabricado a pedido en nuestro taller.</span>
+              {/* El texto genérico queda sólo si el producto no tiene su
+                  propia disponibilidad (así no se repite el título). */}
+              {!producto.disponibilidad && <span><b>Disponibilidad</b> — Fabricado a pedido en nuestro taller.</span>}
               {producto.categoria_nombre && <span><b>Categoría</b> — {producto.categoria_nombre}</span>}
             </div>
           </div>

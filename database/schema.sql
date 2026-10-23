@@ -204,6 +204,12 @@ ALTER TABLE productos ADD CONSTRAINT productos_chapita_id_key UNIQUE (chapita_id
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS medidas VARCHAR(200);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_producto NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS historia TEXT;
+-- Disponibilidad (migracion_024): texto corto y opcional que carga el admin
+-- (ej. "Disponible", "Próximamente", "Consultar") y la web muestra en la
+-- tarjeta del catálogo y en el detalle del producto (ver ProductCard.jsx y
+-- ProductoDetalle.jsx). Nullable a propósito: vacío = NULL y la web no
+-- muestra nada, así los productos existentes no cambian.
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS disponibilidad VARCHAR(40);
 
 -- Integracion con el catalogo de WhatsApp Business (ver server/meta-whatsapp.js
 -- e INTEGRACION_WHATSAPP.md). whatsapp_retailer_id es un identificador propio

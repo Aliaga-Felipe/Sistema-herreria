@@ -571,7 +571,10 @@
 @media (min-width: 720px) { .grilla-productos { grid-template-columns: repeat(3, 1fr); gap: 32px; } }
 @media (min-width: 1200px) { .grilla-productos { grid-template-columns: repeat(4, 1fr); gap: 40px; } }
 
-.tarjeta-producto { display: block; }
+/* min-width: 0 para que un texto en una sola línea (la disponibilidad,
+   white-space: nowrap) no ensanche la columna de la grilla en celular: se
+   recorta con "…" en vez de empujar a las demás tarjetas. */
+.tarjeta-producto { display: block; min-width: 0; }
 .tarjeta-producto-media {
   position: relative;
   aspect-ratio: 4 / 5;
@@ -603,6 +606,13 @@
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .tarjeta-producto-precio { font-size: 0.92rem; opacity: 0.82; }
+/* Disponibilidad ("Disponible", "Próximamente"...): más chica que el nombre
+   y siempre en una sola línea (se recorta con "…"). Se renderiza aunque
+   esté vacía, con su alto fijo, para que el precio quede alineado. */
+.tarjeta-producto-disponibilidad {
+  font-size: 0.78rem; line-height: 1.3; min-height: 1.3em; margin: 0 0 6px; color: var(--arena);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* Grilla compacta usada dentro de la sección "destacados" en fondo claro */
 .seccion-clara .tarjeta-producto-media { background: rgba(26,26,26,0.06); }

@@ -12,7 +12,7 @@ const router = Router()
 
 const consultaProductos = `SELECT p.id, p.nombre, p.descripcion, p.precio_venta::float8 AS precio_venta, p.activo, p.estado, p.destacado, p.publicado, p.slug, p.creado_en,
     p.categoria_id, c.nombre AS categoria_nombre, c.slug AS categoria_slug, p.horas_hombre::float8 AS horas_hombre, p.chapita_id,
-    p.medidas, p.costo_producto::float8 AS costo_producto, p.historia,
+    p.medidas, p.disponibilidad, p.costo_producto::float8 AS costo_producto, p.historia,
     p.whatsapp_sync_estado, p.whatsapp_sync_error, p.whatsapp_sync_actualizado_en,
     p.vendido_en, p.precio_vendido::float8 AS precio_vendido, p.costo_vendido::float8 AS costo_vendido,
     COALESCE((SELECT json_agg(jsonb_build_object('id', pi.id, 'url', pi.url, 'orden', pi.orden, 'es_principal', pi.es_principal) ORDER BY pi.orden)
@@ -133,6 +133,15 @@ const normalizarMedidas = medidas => {
   return valor
 }
 const normalizarHistoria = historia => historia?.toString().trim() || null
+// Disponibilidad: texto corto y opcional ("Disponible", "Próximamente",
+// "Consultar"). Mismo criterio que medidas, con los espacios internos
+// colapsados porque se muestra en una sola línea en la tarjeta de la web.
+const normalizarDisponibilidad = disponibilidad => {
+  const valor = disponibilidad?.toString().trim().replace(/\s+/g, ' ') || ''
+  if (!valor) return null
+  if (valor.length > 40) throw fallo('La disponibilidad no puede superar los 40 caracteres.')
+  return valor
+}
 
 // Genera un slug único a partir del nombre. Si ya existe (por ejemplo dos
 // productos "Mesa ratona") agrega un sufijo numérico hasta que sea único.
@@ -226,13 +235,14 @@ router.get('/:id', auth(), asyncRoute(async (req, res) => {
 
 router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
   const { nombre, descripcion = '', precio_venta, materiales, categoria_id = null, destacado = false, publicado = false, horas_hombre = 0,
-    chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
+    chapita_id = null, medidas = '', disponibilidad = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
   const horasHombre = Math.max(0, decimal(horas_hombre))
   let chapitaId = normalizarChapita(chapita_id)
   const costoProducto = Math.max(0, decimal(costo_producto))
   const medidasNormalizadas = normalizarMedidas(medidas)
+  const disponibilidadNormalizada = normalizarDisponibilidad(disponibilidad)
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
   const materialesNormalizados = normalizarMateriales(materiales)
@@ -246,9 +256,9 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
     if (!chapitaId) chapitaId = await generarChapitaId(cliente)
     const slug = await generarSlugUnico(cliente, nombre.trim())
     const { rows } = await cliente.query(
-      `INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre, chapita_id, medidas, costo_producto, historia, publicado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, publicado === true]
+      `INSERT INTO productos (nombre, descripcion, precio_venta, categoria_id, slug, destacado, horas_hombre, chapita_id, medidas, costo_producto, historia, publicado, disponibilidad)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+      [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre, chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, publicado === true, disponibilidadNormalizada]
     )
     await guardarMateriales(cliente, rows[0].id, materialesNormalizados)
     await cliente.query('COMMIT')
@@ -265,13 +275,14 @@ router.post('/', auth(['admin']), asyncRoute(async (req, res) => {
 
 router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
   const { nombre, descripcion = '', precio_venta, materiales, categoria_id = null, destacado = false, publicado, horas_hombre = 0,
-    chapita_id = null, medidas = '', costo_producto = 0, historia = '' } = req.body
+    chapita_id = null, medidas = '', disponibilidad = '', costo_producto = 0, historia = '' } = req.body
   if (!nombre?.trim()) throw fallo('Indicá el nombre del producto.')
   const precio = normalizarPrecio(precio_venta)
   const horasHombre = Math.max(0, decimal(horas_hombre))
   let chapitaId = normalizarChapita(chapita_id)
   const costoProducto = Math.max(0, decimal(costo_producto))
   const medidasNormalizadas = normalizarMedidas(medidas)
+  const disponibilidadNormalizada = normalizarDisponibilidad(disponibilidad)
   const descripcionNormalizada = descripcion?.toString().trim() || null
   const historiaNormalizada = normalizarHistoria(historia)
   const materialesNormalizados = normalizarMateriales(materiales)
@@ -298,11 +309,11 @@ router.put('/:id', auth(['admin']), asyncRoute(async (req, res) => {
     const { rows } = await cliente.query(
       `UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, categoria_id = $4, slug = $5, destacado = $6, horas_hombre = $7,
          chapita_id = $8, medidas = $9, costo_producto = $10, historia = $11,
-         publicado = COALESCE($13::boolean, publicado), actualizado_en = NOW() WHERE id = $12 RETURNING id`,
+         publicado = COALESCE($13::boolean, publicado), disponibilidad = $14, actualizado_en = NOW() WHERE id = $12 RETURNING id`,
       [nombre.trim(), descripcionNormalizada, precio, categoriaValida, slug, Boolean(destacado), horasHombre,
         chapitaId, medidasNormalizadas, costoProducto, historiaNormalizada, req.params.id,
         // "Publicar en la web": si no viene en el cuerpo se conserva el valor actual.
-        typeof publicado === 'boolean' ? publicado : null]
+        typeof publicado === 'boolean' ? publicado : null, disponibilidadNormalizada]
     )
     if (!rows[0]) throw fallo('Producto no encontrado.', 404)
     // Los pedidos ya generados guardan copia del precio, del costo de mano
