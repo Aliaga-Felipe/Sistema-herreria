@@ -554,7 +554,13 @@
 
 .csq-info { margin-top: 22px; display: grid; }
 .csq-info-item { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 14px; }
-.csq-info-texto { font-size: 0.95rem; }
+.csq-info-texto { font-size: 0.95rem; min-width: 0; }
+/* Disponibilidad debajo del nombre y el precio: misma letra chica y una
+   sola línea que .tarjeta-producto-disponibilidad. */
+.csq-info-disponibilidad {
+  display: block; margin-top: 4px; font-size: 0.78rem; line-height: 1.3; color: var(--arena);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .csq-info-nombre { font-family: var(--fuente-display); font-size: 1.18rem; margin-right: 8px; }
 .csq-info-precio { color: var(--arena); }
 .csq-accion { align-self: flex-start; }

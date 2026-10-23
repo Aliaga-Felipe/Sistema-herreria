@@ -318,6 +318,9 @@ export default function CarruselSqueeze({
               <p className="csq-info-texto">
                 <span className="csq-info-nombre">{producto.nombre}</span>{' '}
                 <span className="csq-info-precio">{precioPublico(producto.precio_venta, moneda)}</span>
+                {/* Disponibilidad cargada por el admin (igual que en
+                    ProductCard): texto plano, una sola línea. */}
+                {producto.disponibilidad && <span className="csq-info-disponibilidad">{producto.disponibilidad}</span>}
               </p>
               <Link to={`/productos/${producto.slug}`} tabIndex={mostrado ? 0 : -1} className="csq-accion btn-public btn-madera">
                 Ver producto
