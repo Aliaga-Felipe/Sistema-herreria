@@ -147,6 +147,7 @@ export const manual = {
             'Completá el **nombre**. El **ID de producto (chapita)** se genera solo; podés cambiarlo. Es el número que aparece en la chapita de la pieza y en la web.',
             'Elegí la **categoría** y, si querés, cargá las **horas-hombre estimadas** (las horas de trabajo para fabricar una unidad), las medidas y el precio de venta. Si dejás el precio vacío, la web muestra “Consultar precio”.',
             'Escribí la **descripción técnica** (medidas, materiales, notas) y la **historia del producto** (el relato detrás de la pieza). Se muestran en la web pública.',
+            'Opcional: escribí la **disponibilidad**, un texto corto de hasta 40 caracteres (por ejemplo “Disponible”, “Próximamente” o “Consultar”). La web lo muestra debajo del nombre en la tarjeta del catálogo y en el detalle del producto. Para sacarlo, dejá el campo vacío.',
             'Si querés que se vea en la web, marcá **“Publicar en la web”**. Para publicar son obligatorios: nombre, ID, descripción técnica, historia y categoría. Sin esa marca, el producto queda como **borrador**, visible solo en el panel.',
             'Opcional: marcá **“Producto destacado”** para que aparezca en la portada de la web.',
             'Tocá guardar. Recién con el producto guardado podés **cargarle fotos**.'
