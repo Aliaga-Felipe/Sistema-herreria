@@ -35,7 +35,8 @@ trap 'rm -f "$archivo_db.tmp" "$archivo_fotos.tmp"' EXIT
 pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip > "$archivo_db.tmp"
 gzip -t "$archivo_db.tmp"
 # Un dump vacío también es un gzip válido: confirmar que tenga contenido real.
-if ! gzip -dc "$archivo_db.tmp" | head -n 5 | grep -q 'PostgreSQL database dump'; then
+# (sin pipefail: head corta antes y gzip termina con SIGPIPE aunque esté bien)
+if ! (set +o pipefail; gzip -dc "$archivo_db.tmp" | head -n 5 | grep -q 'PostgreSQL database dump'); then
   echo "El respaldo de la base salió vacío. Revisar DATABASE_URL y pg_dump." >&2
   exit 1
 fi
