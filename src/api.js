@@ -20,7 +20,7 @@ export const api = {
   post: (path, body, token) => request(path, { method: 'POST', body: JSON.stringify(body) }, token),
   put: (path, body, token) => request(path, { method: 'PUT', body: JSON.stringify(body) }, token),
   patch: (path, body, token) => request(path, { method: 'PATCH', body: JSON.stringify(body) }, token),
-  del: (path, token) => request(path, { method: 'DELETE' }, token),
+  del: (path, token, body) => request(path, { method: 'DELETE', ...(body ? { body: JSON.stringify(body) } : {}) }, token),
   // Subida de archivos (multipart/form-data): no fija Content-Type para
   // que el navegador agregue el boundary automáticamente.
   async subir(path, formData, token) {

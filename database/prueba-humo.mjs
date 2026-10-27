@@ -1,6 +1,7 @@
 /**
  * Prueba de humo del flujo completo contra la API.
- * Crea un admin temporal, un empleado y productos; arma un pedido con sus
+ * Crea un admin temporal, un empleado y productos; renombra una categoría y
+ * la elimina pasando su producto a otra; arma un pedido con sus
  * horas-hombre repartidas en etapas asignadas, propone el trabajo en la
  * producción diaria, el empleado completa las etapas, el admin verifica y
  * termina el día, y revisa la recompensa del equipo y las estadísticas. Al
@@ -30,7 +31,7 @@ async function llamar(ruta, opciones = {}, token) {
   return datos
 }
 
-const creados = { usuarios: [], productos: [], pedidos: [] }
+const creados = { usuarios: [], productos: [], pedidos: [], categorias: [] }
 
 try {
   // --- admin temporal -------------------------------------------------
@@ -87,14 +88,38 @@ try {
   catch (error) { reintentoSinHabilitar = error.message }
   ok('reintentar sin la integración habilitada da un error claro (no crashea)', Boolean(reintentoSinHabilitar) && /habilitada|400/i.test(reintentoSinHabilitar), reintentoSinHabilitar)
 
-  const categoriaMesas = (await pool.query("SELECT id FROM categorias WHERE slug = 'mesas' LIMIT 1")).rows[0]
+  // Cualquier categoría sirve (las base se pueden renombrar o eliminar).
+  const categoriaExistente = (await pool.query('SELECT id FROM categorias ORDER BY orden, id LIMIT 1')).rows[0]
   const productoPublicado = await llamar('/productos', { method: 'POST', cuerpo: {
     nombre: `Mesa publicada ${marca}`, descripcion: 'Mesa de prueba', historia: 'Historia de prueba', precio_venta: 250000,
-    categoria_id: categoriaMesas?.id || null, chapita_id: `H${Date.now()}`.slice(0, 20), publicado: true
+    categoria_id: categoriaExistente?.id || null, chapita_id: `H${Date.now()}`.slice(0, 20), publicado: true
   } }, token)
   creados.productos.push(productoPublicado.id)
   ok('producto publicado se guarda igual aunque WhatsApp esté apagado', productoPublicado.publicado === true)
   ok('el guardado no se rompe por la sincronización en segundo plano', productoPublicado.whatsapp_sync_estado === 'NO_SINCRONIZADO', productoPublicado.whatsapp_sync_estado)
+
+  // --- categorías: renombrar y eliminar moviendo sus productos ------------
+  const categoriaA = await llamar('/categorias', { method: 'POST', cuerpo: { nombre: `Cat A ${marca}` } }, token)
+  const categoriaB = await llamar('/categorias', { method: 'POST', cuerpo: { nombre: `Cat B ${marca}` } }, token)
+  creados.categorias.push(categoriaA.id, categoriaB.id)
+  const renombrada = await llamar(`/categorias/${categoriaA.id}`, { method: 'PUT', cuerpo: { nombre: `  Cat   renombrada ${marca} ` } }, token)
+  ok('renombrar una categoría normaliza el nombre y recalcula el slug', renombrada.nombre === `Cat renombrada ${marca}` && renombrada.slug === `cat-renombrada-${marca.replace('_', '-')}`, `${renombrada.nombre} / ${renombrada.slug}`)
+  let repetidaAlRenombrar = null
+  try { await llamar(`/categorias/${categoriaA.id}`, { method: 'PUT', cuerpo: { nombre: categoriaB.nombre.toUpperCase() } }, token) } catch (error) { repetidaAlRenombrar = error.message }
+  ok('no se puede renombrar con el nombre de otra categoría', /409/.test(repetidaAlRenombrar || ''), repetidaAlRenombrar)
+  const productoCategoria = await llamar('/productos', { method: 'POST', cuerpo: {
+    nombre: `Banco ${marca}`, descripcion: 'Banco de prueba', historia: 'Historia de prueba',
+    categoria_id: categoriaA.id, chapita_id: `C${Date.now()}`.slice(0, 20), publicado: true
+  } }, token)
+  creados.productos.push(productoCategoria.id)
+  let sinReasignar = null
+  try { await llamar(`/categorias/${categoriaA.id}`, { method: 'DELETE', cuerpo: {} }, token) } catch (error) { sinReasignar = error.message }
+  ok('eliminar una categoría con productos exige elegir a cuál pasan', /400/.test(sinReasignar || ''), sinReasignar)
+  const borrado = await llamar(`/categorias/${categoriaA.id}`, { method: 'DELETE', cuerpo: { reasignar_a: categoriaB.id } }, token)
+  ok('eliminar moviendo los productos informa cuántos se movieron', /1 producto/.test(borrado.mensaje), borrado.mensaje)
+  const productoMovido = (await pool.query('SELECT categoria_id, publicado FROM productos WHERE id = $1', [productoCategoria.id])).rows[0]
+  ok('el producto quedó en la nueva categoría (y sigue publicado)', String(productoMovido.categoria_id) === String(categoriaB.id) && productoMovido.publicado)
+  ok('la categoría eliminada ya no existe', !(await pool.query('SELECT 1 FROM categorias WHERE id = $1', [categoriaA.id])).rows[0])
 
   // --- pedido: horas-hombre estimadas repartidas en etapas con empleado ----
   // El precio NO se manda: sale del producto (si viene, se ignora). Para
@@ -388,6 +413,7 @@ try {
   // --- limpieza ----------------------------------------------------------
   for (const id of creados.pedidos) await pool.query('DELETE FROM pedidos WHERE id = $1', [id])
   for (const id of creados.productos) await pool.query('DELETE FROM productos WHERE id = $1', [id])
+  await pool.query('DELETE FROM categorias WHERE id = ANY($1)', [creados.categorias])
   await pool.query('DELETE FROM recompensas WHERE usuario_id = ANY($1)', [creados.usuarios])
   await pool.query("DELETE FROM jornadas_equipo WHERE fecha BETWEEN '2001-01-01' AND '2001-01-05'")
   await pool.query('DELETE FROM historial_ventas_productos WHERE producto_id_original = ANY($1)', [creados.productos])
