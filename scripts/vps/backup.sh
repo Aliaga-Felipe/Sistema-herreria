@@ -30,9 +30,15 @@ umask 077
 fecha="$(date +%F_%H%M)"
 archivo_db="$BACKUP_DIR/diarios/db-$fecha.sql.gz"
 archivo_fotos="$BACKUP_DIR/diarios/uploads-$fecha.tar.gz"
+trap 'rm -f "$archivo_db.tmp" "$archivo_fotos.tmp"' EXIT
 
 pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip > "$archivo_db.tmp"
 gzip -t "$archivo_db.tmp"
+# Un dump vacío también es un gzip válido: confirmar que tenga contenido real.
+if ! gzip -dc "$archivo_db.tmp" | head -n 5 | grep -q 'PostgreSQL database dump'; then
+  echo "El respaldo de la base salió vacío. Revisar DATABASE_URL y pg_dump." >&2
+  exit 1
+fi
 mv "$archivo_db.tmp" "$archivo_db"
 
 tar -czf "$archivo_fotos.tmp" -C "$APP_DIR/server" uploads
