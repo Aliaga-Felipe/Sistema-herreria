@@ -264,12 +264,16 @@ Si antes se había cargado la línea vieja con `pg_dump` y la contraseña,
 borrarla.
 
 **Copia fuera del servidor.** Si el VPS se pierde, los respaldos de adentro
-también. Desde PowerShell en la PC, bajar la carpeta a un lugar sincronizado
-(por ejemplo OneDrive):
+también. Una vez por semana, desde PowerShell en la PC (parado en la carpeta
+del proyecto):
 
 ```powershell
-scp -r atelier@IP_DEL_VPS:~/backups/semanales "$env:OneDrive\Respaldos herreria"
+powershell -ExecutionPolicy Bypass -File scripts\vps\copiar-respaldo.ps1
 ```
+
+Baja la última base y las últimas fotos a `OneDrive\Respaldos herreria`,
+guarda las 4 copias más recientes y nunca pasa de 1 GB. Necesita el alias
+`herreria` de la sección 14.
 
 Los snapshots del VPS (hPanel → VPS → Snapshots y copias de seguridad) suman
 otra capa, pero no reemplazan esta copia.
@@ -294,6 +298,18 @@ crearla de nuevo como en el paso 5).
   root@IP_DEL_VPS` entra sin pedir contraseña **antes** de desactivar el
   acceso con contraseña (`PasswordAuthentication no` en
   `/etc/ssh/sshd_config` y `systemctl restart ssh`).
+- **Alias para el servidor:** en la PC, con la llave ya cargada en el
+  usuario `atelier` (`type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh
+  atelier@IP_DEL_VPS "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`),
+  agregar a `C:\Users\<tu usuario>\.ssh\config`:
+
+  ```
+  Host herreria
+    HostName IP_DEL_VPS
+    User atelier
+  ```
+
+  Con eso `ssh herreria` entra directo como `atelier`.
 - **Actualizaciones de seguridad automáticas:** Ubuntu 24.04 las trae
   activadas. Verificar con `systemctl status unattended-upgrades`.
 
