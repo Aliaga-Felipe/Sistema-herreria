@@ -1275,6 +1275,17 @@
     font-size: 13px;
 }
 
+/* Edición del nombre en línea: el formulario ocupa el lugar del nombre y
+   de los botones Editar/Eliminar. */
+.categoria-edicion {
+    flex: 1;
+    min-width: 0;
+}
+
+.categoria-edicion .form-error {
+    margin: 8px 0 0;
+}
+
 @media (max-width: 480px) {
     .categoria-alta-fila {
         flex-direction: column;

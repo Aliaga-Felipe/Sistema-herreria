@@ -707,9 +707,11 @@ GROUP BY u.id;
 -- ---------------------------------------------------------------------
 -- CATEGORIAS DE PRODUCTO
 -- Mesas, Mesitas ratoneras y Fogoneros son las categorías base (mismos
--- slugs que CATEGORIAS_PRODUCTO en server/comun.js) y siempre existen. Además,
--- el administrador puede crear categorías nuevas desde el panel
--- (Categorías), que se conservan: este script ya NO borra ninguna otra
+-- slugs que CATEGORIAS_PRODUCTO en server/comun.js): se insertan solo en
+-- una base nueva (ON CONFLICT DO NOTHING), así que si el administrador las
+-- renombra, las oculta o las elimina desde el panel (Categorías), volver a
+-- aplicar este script no deshace el cambio. Además, el administrador puede
+-- crear categorías nuevas, que se conservan: este script NO borra ninguna
 -- categoría ni les quita la categoría a sus productos. La categoría es
 -- opcional en un borrador y obligatoria para publicar en la web. Las
 -- variantes anteriores (Tables / Coffee Tables / Fire Pits, Mesas ratonas)
@@ -725,11 +727,17 @@ UPDATE categorias SET slug = 'fogoneros'
 WHERE id = (SELECT id FROM categorias WHERE slug IN ('fire-pits') ORDER BY id LIMIT 1)
   AND NOT EXISTS (SELECT 1 FROM categorias WHERE slug = 'fogoneros');
 
-INSERT INTO categorias (nombre, slug, descripcion, orden, activo) VALUES
+-- Solo en una base sin categorías (instalación nueva): si ya hay alguna, no
+-- se inserta nada. Sin esta condición, una categoría base renombrada (el
+-- nombre nuevo cambia el slug) o eliminada volvería a aparecer.
+INSERT INTO categorias (nombre, slug, descripcion, orden, activo)
+SELECT nombre, slug, descripcion, orden, activo FROM (VALUES
   ('Mesas', 'mesas', 'Mesas de hierro y madera para comedor y exterior.', 1, TRUE),
   ('Mesitas ratoneras', 'mesitas-ratoneras', 'Mesitas ratoneras y de centro en hierro y madera.', 2, TRUE),
   ('Fogoneros', 'fogoneros', 'Fogoneros de hierro para exterior.', 3, TRUE)
-ON CONFLICT (slug) DO UPDATE SET nombre = EXCLUDED.nombre, orden = EXCLUDED.orden, activo = TRUE;
+) AS base (nombre, slug, descripcion, orden, activo)
+WHERE NOT EXISTS (SELECT 1 FROM categorias)
+ON CONFLICT (slug) DO NOTHING;
 
 
 -- ---------------------------------------------------------------------

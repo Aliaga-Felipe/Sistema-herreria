@@ -231,7 +231,27 @@ export const manual = {
             'Para publicar un producto en la web tiene que tener categoría.'
           ]
         },
-        { t: 'img', src: 'categorias.png', pie: 'Sección Categorías.' }
+        { t: 'h', x: 'Cambiar el nombre' },
+        {
+          t: 'ol',
+          x: [
+            'Tocá **“Editar”** en la categoría.',
+            'Escribí el nombre nuevo y tocá **“Guardar”** (o apretá Enter). Con **“Cancelar”** (o Escape) se deja como estaba.',
+            'Tampoco se puede usar el nombre de otra categoría que ya exista. Los productos siguen en la categoría y la web pública muestra el nombre nuevo.'
+          ]
+        },
+        { t: 'h', x: 'Eliminar una categoría' },
+        {
+          t: 'ul',
+          x: [
+            'Tocá **“Eliminar”** en la categoría.',
+            'Si no tiene productos, confirmá y se borra.',
+            'Si tiene productos, elegí a qué otra categoría pasan y tocá **“Mover y eliminar”**: los productos se mueven y después se borra la categoría. Así ningún producto publicado queda sin categoría.',
+            'No se puede eliminar la única categoría que queda.'
+          ]
+        },
+        { t: 'nota', x: 'Mesas, Mesitas ratoneras y Fogoneros vienen cargadas de fábrica, pero se pueden renombrar o eliminar como cualquier otra: los cambios se mantienen aunque se actualice el sistema.' },
+        { t: 'img', src: 'categorias.png', pie: 'Sección Categorías, con los botones Editar y Eliminar.' }
       ]
     },
     {
