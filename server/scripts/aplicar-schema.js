@@ -28,5 +28,8 @@ async function main() {
 }
 
 main()
-  .catch(error => console.error('\nError al aplicar el esquema:', error.message))
+  .catch(error => {
+    console.error('\nError al aplicar el esquema:', error.message)
+    process.exitCode = 1
+  })
   .finally(() => pool.end())

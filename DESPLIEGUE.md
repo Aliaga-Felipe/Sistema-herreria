@@ -237,27 +237,58 @@ certificado se renueva solo.
 Listo: `https://TU_DOMINIO` es la web pública y `https://TU_DOMINIO/login`
 el panel.
 
-## 13. Respaldos de la base
+## 13. Respaldos (base y fotos)
 
-Como usuario `atelier` (`su - atelier`):
+El script `scripts/vps/backup.sh` guarda la base y las fotos subidas
+(`server/uploads`, que no están en GitHub) en `~/backups`:
+
+- `~/backups/diarios`: un respaldo por noche, se guardan 14 días.
+- `~/backups/semanales`: la copia del domingo, se guarda 8 semanas.
+
+Lee `DATABASE_URL` del `.env`, así que no hace falta escribir la contraseña
+de la base en ningún otro lado. Como usuario `atelier` (`su - atelier`),
+probarlo una vez a mano:
 
 ```bash
-mkdir -p ~/backups
-crontab -e
+bash ~/app/scripts/vps/backup.sh
 ```
 
-(Si pregunta qué editor usar, elegir `nano`.) Agregar al final esta línea,
-reemplazando `CLAVE_DB`:
+Y programarlo todas las noches a las 3 AM con `crontab -e` (si pregunta qué
+editor usar, elegir `nano`), agregando al final:
 
 ```
-0 3 * * * pg_dump "postgresql://atelier:CLAVE_DB@localhost:5432/atelier_herreria" | gzip > ~/backups/db-$(date +\%F).sql.gz && find ~/backups -name 'db-*.sql.gz' -mtime +14 -delete
+0 3 * * * bash $HOME/app/scripts/vps/backup.sh >> $HOME/backups/backup.log 2>&1
 ```
 
-Hace un respaldo por día a las 3 AM y guarda los últimos 14 días. Las
-fotos (`~/app/server/uploads`) no están en GitHub: quedan cubiertas por los
-snapshots del VPS (hPanel → VPS → Snapshots y copias de seguridad).
-Conviene además bajar de vez en cuando una copia de `~/backups` a otra
-computadora.
+Si antes se había cargado la línea vieja con `pg_dump` y la contraseña,
+borrarla.
+
+**Copia fuera del servidor.** Si el VPS se pierde, los respaldos de adentro
+también. Una vez por semana, desde PowerShell en la PC (parado en la carpeta
+del proyecto):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\vps\copiar-respaldo.ps1
+```
+
+Baja la última base y las últimas fotos a `OneDrive\Respaldos herreria`,
+guarda las 4 copias más recientes y nunca pasa de 1 GB. Necesita el alias
+`herreria` de la sección 14.
+
+Los snapshots del VPS (hPanel → VPS → Snapshots y copias de seguridad) suman
+otra capa, pero no reemplazan esta copia.
+
+**Restaurar** (pisa los datos actuales, usar sólo si hace falta):
+
+```bash
+pm2 stop atelier
+gunzip -c ~/backups/diarios/db-FECHA.sql.gz | psql "$(grep ^DATABASE_URL= ~/app/.env | cut -d= -f2-)"
+tar -xzf ~/backups/diarios/uploads-FECHA.tar.gz -C ~/app/server
+pm2 start atelier
+```
+
+Para restaurar la base conviene hacerlo sobre una base vacía (borrarla y
+crearla de nuevo como en el paso 5).
 
 ## 14. Seguridad extra (recomendado)
 
@@ -267,6 +298,18 @@ computadora.
   root@IP_DEL_VPS` entra sin pedir contraseña **antes** de desactivar el
   acceso con contraseña (`PasswordAuthentication no` en
   `/etc/ssh/sshd_config` y `systemctl restart ssh`).
+- **Alias para el servidor:** en la PC, con la llave ya cargada en el
+  usuario `atelier` (`type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh
+  atelier@IP_DEL_VPS "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`),
+  agregar a `C:\Users\<tu usuario>\.ssh\config`:
+
+  ```
+  Host herreria
+    HostName IP_DEL_VPS
+    User atelier
+  ```
+
+  Con eso `ssh herreria` entra directo como `atelier`.
 - **Actualizaciones de seguridad automáticas:** Ubuntu 24.04 las trae
   activadas. Verificar con `systemctl status unattended-upgrades`.
 
@@ -274,17 +317,17 @@ computadora.
 
 ## Actualizar el sistema después de un cambio
 
-Cada vez que se sube una versión nueva a GitHub:
+Cada vez que se sube una versión nueva a `main` en GitHub:
 
 ```bash
 su - atelier
-cd app
-git pull
-npm ci
-npm run build
-node server/scripts/aplicar-schema.js
-pm2 restart atelier
+bash ~/app/scripts/vps/deploy.sh
 ```
+
+El script hace un respaldo, baja los cambios, instala, compila, aplica el
+esquema y reinicia la app en PM2. Después verifica que responda: si no,
+vuelve solo a la versión anterior del código y muestra los últimos errores.
+Si ya está en la última versión, no hace nada.
 
 ## Comandos útiles
 
