@@ -487,11 +487,17 @@
    la vieja grilla de fotos sueltas). */
 .destacados-fase { width: 100%; will-change: transform, opacity; }
 .destacados-skeleton-carrusel { width: 100%; height: clamp(220px, 40vw, 380px); }
+@media (max-width: 700px) {
+  /* Mismo alto que el carrusel en celular: panel cuadrado al 85 % del ancho. */
+  .destacados-skeleton-carrusel { height: auto; aspect-ratio: 1 / 0.85; }
+}
 
 /* ---------------------------------------------------------------------
    CARRUSEL "SQUEEZE" DE PRODUCTOS DESTACADOS (ver CarruselSqueeze.jsx)
-   Un panel abierto y el resto comprimidos en listones a la derecha; al
-   elegir otro producto la tira se desliza. Misma paleta y tipografía que
+   En computadora, un panel abierto (siempre el más ancho) y el resto
+   comprimidos en columnas y listones a la derecha; en celular, un
+   producto a casi todo el ancho con el siguiente asomando y puntos
+   indicadores debajo. Al elegir otro producto la tira se desliza. Misma paleta y tipografía que
    el resto del sitio, sin nada de la demo original (ni su fuente, ni sus
    colores, ni sus imágenes).
    --------------------------------------------------------------------- */
@@ -514,6 +520,36 @@
 
 .csq-ventana { width: 100%; overflow: hidden; }
 .csq-tira { display: flex; height: 100%; width: max-content; }
+
+/* Modo celular (contenedor de menos de 640 px, medido en
+   CarruselSqueeze.jsx): un producto a casi todo el ancho y el siguiente
+   asomando. La tira se desliza con el dedo; "pan-y" deja el scroll
+   vertical de la página en manos del navegador. */
+.csq-movil .csq-tira { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+
+.csq-puntos { display: flex; justify-content: center; flex-wrap: wrap; gap: 2px; margin-top: 14px; }
+.csq-punto {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.csq-punto::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gris-piedra);
+  opacity: 0.85;
+  transition: background var(--transicion), opacity var(--transicion), transform var(--transicion);
+}
+.csq-punto[aria-current='true']::before { background: var(--arena); opacity: 1; transform: scale(1.25); }
+.csq-punto:focus-visible { outline: 2px solid var(--arena); outline-offset: -4px; border-radius: 50%; }
+.csq-movil .csq-info { margin-top: 12px; }
 
 .csq-panel {
   position: relative;
