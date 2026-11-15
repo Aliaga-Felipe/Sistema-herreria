@@ -279,6 +279,7 @@ export default function CarruselSqueeze({
     '--csq-ms': `${ms}ms`,
     '--csq-ease': 'cubic-bezier(0.16, 1, 0.3, 1)',
     '--csq-relacion': relacionImagen,
+    '--csq-hero': 'calc(var(--csq-alto) * var(--csq-relacion))',
   }
 
   // Cada paso de la tira corre un panel entero, más lo que lleva
@@ -290,7 +291,7 @@ export default function CarruselSqueeze({
     <div
       ref={raiz}
       className={clases('csq', movil && 'csq-movil', className)}
-      style={{ containerType: 'inline-size', maxWidth: numero(anchoMaximo), ...variables, ...style }}
+      style={{ containerType: 'inline-size', maxWidth: movil ? undefined : numero(anchoMaximo), ...variables, ...style }}
       onMouseEnter={() => setPausado(true)}
       onMouseLeave={() => setPausado(false)}
       onFocusCapture={() => setPausado(true)}
@@ -448,7 +449,10 @@ function PanelCarrusel({
   )
 }
 
+// La imagen se dibuja al tamaño del panel principal (--csq-hero) y
+// centrada, igual que en la versión 1.3.1 (así en celular se ve idéntica).
 function FotoPanel({ producto }) {
+  const caja = { width: 'var(--csq-hero)', minWidth: '100%' }
   if (producto.imagen_principal) {
     return (
       <img
@@ -457,11 +461,12 @@ function FotoPanel({ producto }) {
         draggable={false}
         loading="lazy"
         className="csq-imagen"
+        style={caja}
       />
     )
   }
   return (
-    <span aria-hidden="true" className="csq-imagen csq-sin-imagen">▱</span>
+    <span aria-hidden="true" className="csq-imagen csq-sin-imagen" style={caja}>▱</span>
   )
 }
 

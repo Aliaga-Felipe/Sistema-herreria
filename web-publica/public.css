@@ -549,6 +549,7 @@
 }
 .csq-punto[aria-current='true']::before { background: var(--arena); opacity: 1; transform: scale(1.25); }
 .csq-punto:focus-visible { outline: 2px solid var(--arena); outline-offset: -4px; border-radius: 50%; }
+.csq-movil .csq-info,
 .csq-puntos + .csq-info { margin-top: 12px; }
 
 .csq-panel {
@@ -571,9 +572,12 @@
 
 .csq-imagen {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  max-width: none;
   height: 100%;
+  transform: translateX(-50%);
   object-fit: cover;
 }
 .csq-sin-imagen { display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 2rem; }
