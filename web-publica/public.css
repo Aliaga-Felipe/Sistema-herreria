@@ -493,15 +493,14 @@
 }
 
 /* ---------------------------------------------------------------------
-   CARRUSEL "SQUEEZE" DE PRODUCTOS DESTACADOS (ver CarruselSqueeze.jsx)
-   En computadora, un panel abierto (siempre el más ancho) y el resto
-   comprimidos en columnas y listones a la derecha; en celular, un
-   producto a casi todo el ancho con el siguiente asomando y puntos
-   indicadores debajo. Al elegir otro producto la tira se desliza. Misma paleta y tipografía que
-   el resto del sitio, sin nada de la demo original (ni su fuente, ni sus
-   colores, ni sus imágenes).
+   CARRUSEL DE PRODUCTOS DESTACADOS (ver CarruselSqueeze.jsx)
+   Un producto principal grande y un fragmento del siguiente asomando a
+   la derecha, con puntos indicadores debajo; igual en celular y en
+   computadora. Se avanza con clic en el que asoma, las flechas o los
+   puntos; con el dedo también se desliza. Misma paleta y tipografía que
+   el resto del sitio.
    --------------------------------------------------------------------- */
-.csq { width: 100%; }
+.csq { width: 100%; margin-inline: auto; }
 
 .csq-controles { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
 .csq-flecha {
@@ -518,14 +517,15 @@
 .csq-flecha:hover { background: var(--arena); color: var(--negro); }
 .csq-flecha:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
 
-.csq-ventana { width: 100%; overflow: hidden; }
+/* "clip" (y no solo "hidden") impide que el navegador desplace la ventana
+   por dentro al enfocar el panel que asoma: la tira se mueve solo con su
+   transform. */
+.csq-ventana { width: 100%; overflow: hidden; overflow: clip; }
 .csq-tira { display: flex; height: 100%; width: max-content; }
 
-/* Modo celular (contenedor de menos de 640 px, medido en
-   CarruselSqueeze.jsx): un producto a casi todo el ancho y el siguiente
-   asomando. La tira se desliza con el dedo; "pan-y" deja el scroll
-   vertical de la página en manos del navegador. */
-.csq-movil .csq-tira { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+/* La tira se desliza con el dedo (con el mouse no se arrastra); "pan-y"
+   deja el scroll vertical de la página en manos del navegador. */
+.csq-tira { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 
 .csq-puntos { display: flex; justify-content: center; flex-wrap: wrap; gap: 2px; margin-top: 14px; }
 .csq-punto {
@@ -549,7 +549,7 @@
 }
 .csq-punto[aria-current='true']::before { background: var(--arena); opacity: 1; transform: scale(1.25); }
 .csq-punto:focus-visible { outline: 2px solid var(--arena); outline-offset: -4px; border-radius: 50%; }
-.csq-movil .csq-info { margin-top: 12px; }
+.csq-puntos + .csq-info { margin-top: 12px; }
 
 .csq-panel {
   position: relative;
@@ -561,15 +561,19 @@
   background: var(--carbon);
 }
 .csq-panel:focus-visible { outline: 2px solid var(--arena); outline-offset: 2px; }
+/* El que asoma es clickeable: lleva a ese producto. */
+.csq-panel[aria-selected='false'] { cursor: pointer; }
+.csq-panel[aria-selected='true'] { cursor: default; }
+.csq-panel .csq-imagen { transition: filter var(--transicion); }
+@media (hover: hover) and (pointer: fine) {
+  .csq-panel[aria-selected='false']:hover .csq-imagen { filter: brightness(1.12); }
+}
 
 .csq-imagen {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  max-width: none;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  transform: translateX(-50%);
   object-fit: cover;
 }
 .csq-sin-imagen { display: flex; align-items: center; justify-content: center; color: var(--gris-piedra); font-size: 2rem; }
