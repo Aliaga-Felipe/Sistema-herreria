@@ -17,10 +17,11 @@ import { precioPublico } from '../api.js'
 //   indicadores de abajo.
 // - Con el dedo se puede deslizar (celular/tablet). Con el mouse NO se
 //   arrastra: en computadora se avanza haciendo clic en el próximo.
-// - El principal es cuadrado y ocupa el 85 % del ancho del carrusel. En
-//   computadora el carrusel se limita a "anchoMaximo" y se centra, para
-//   que se vea igual que en celular y no ocupe toda la altura de la
-//   pantalla en un monitor ancho.
+// - En celular el principal es cuadrado y ocupa el 85 % del ancho (igual
+//   que en la versión 1.3.1). En computadora ocupa el 70 % del ancho de la
+//   sección, apaisado y con el alto limitado (para no llenar toda la
+//   pantalla en un monitor ancho), y el siguiente asoma en el resto, un
+//   poco más chico (ESCALA_SIGUIENTE).
 //
 // No usa Tailwind/shadcn/TypeScript (este proyecto no los usa). Los
 // estilos viven en public.css (clases "csq-*") y usan la misma paleta y
@@ -39,8 +40,14 @@ const clases = (...partes) => partes.filter(Boolean).join(' ')
 // usa la separación de celular.
 const ANCHO_MOVIL = 640
 // Parte del ancho del carrusel que ocupa el producto principal (el resto
-// es lo que asoma del siguiente).
-const FRACCION_PANEL = 0.85
+// es lo que asoma del siguiente), en celular y en computadora.
+const FRACCION_MOVIL = 0.85
+const FRACCION_ESCRITORIO = 0.7
+// Proporción (ancho / alto) del panel en computadora, antes de limitar el
+// alto con "alturaMaxima".
+const RELACION_ESCRITORIO = 4 / 3
+// Tamaño del que asoma respecto del principal, en computadora.
+const ESCALA_SIGUIENTE = 0.82
 // Separación entre paneles en celular (más chica que la de computadora
 // para que el siguiente asome lo suficiente).
 const SEPARACION_MOVIL = 12
@@ -95,9 +102,8 @@ export default function CarruselSqueeze({
   // fila, y converge al centro). Si no se pasa, los paneles aparecen
   // directamente en su lugar, sin animación de entrada.
   progresoEntrada,
-  // Ancho máximo del carrusel (en computadora). Con el panel al 85 %, deja
-  // la foto principal en unos 490 px de lado.
-  anchoMaximo = 580,
+  // Alto máximo del carrusel en computadora.
+  alturaMaxima = 'min(520px, 66vh)',
   // Los productos de este catálogo se muestran en cuadrado (misma
   // proporción que las fotos del panel de producto).
   relacionImagen = 1,
@@ -121,6 +127,15 @@ export default function CarruselSqueeze({
   const raiz = useRef(null)
   const anchoContenedor = useAnchoContenedor(raiz, total > 0)
   const movil = anchoContenedor !== null && anchoContenedor < ANCHO_MOVIL
+  // Hasta medir el contenedor no se sabe si es celular o computadora: el
+  // tamaño del que asoma se aplica sin animación hasta entonces, para que
+  // no se vea achicarse (o crecer) al cargar la página.
+  const [medido, setMedido] = useState(false)
+  useEffect(() => {
+    if (anchoContenedor === null || medido) return
+    const id = requestAnimationFrame(() => setMedido(true))
+    return () => cancelAnimationFrame(id)
+  }, [anchoContenedor, medido])
   const reducido = usePrefiereMenosMovimiento()
   const ms = reducido ? 0 : duracion
 
@@ -268,12 +283,17 @@ export default function CarruselSqueeze({
 
   if (!total) return null
 
-  // Ancho del panel: con un solo producto, todo el ancho; si no,
-  // FRACCION_PANEL (y el siguiente asoma en lo que sobra). El alto sale del
-  // ancho para que la foto mantenga su proporción.
+  // Ancho del panel: con un solo producto, todo el ancho; si no, la
+  // fracción que corresponda (y el siguiente asoma en lo que sobra). En
+  // celular el alto sale del ancho (panel cuadrado, como en 1.3.1); en
+  // computadora el panel es apaisado y su alto queda limitado por
+  // "alturaMaxima". La foto se recorta centrada (object-fit: cover).
+  const fraccion = total > 1 ? (movil ? FRACCION_MOVIL : FRACCION_ESCRITORIO) : 1
   const variables = {
-    '--csq-panel': total > 1 ? `${FRACCION_PANEL * 100}cqi` : '100cqi',
-    '--csq-alto': 'calc(var(--csq-panel) / var(--csq-relacion))',
+    '--csq-panel': `${fraccion * 100}cqi`,
+    '--csq-alto': movil
+      ? 'calc(var(--csq-panel) / var(--csq-relacion))'
+      : `min(calc(var(--csq-panel) / ${RELACION_ESCRITORIO}), ${numero(alturaMaxima)})`,
     '--csq-gap': numero(movil ? Math.min(separacion, SEPARACION_MOVIL) : separacion),
     '--csq-radio': numero(radio),
     '--csq-ms': `${ms}ms`,
@@ -295,7 +315,7 @@ export default function CarruselSqueeze({
     <div ref={raiz} className="csq-raiz">
       <div
         className={clases('csq', movil && 'csq-movil', className)}
-        style={{ containerType: 'inline-size', maxWidth: movil ? undefined : numero(anchoMaximo), ...variables, ...style }}
+        style={{ containerType: 'inline-size', ...variables, ...style }}
         onMouseEnter={() => setPausado(true)}
         onMouseLeave={() => setPausado(false)}
         onFocusCapture={() => setPausado(true)}
@@ -349,6 +369,8 @@ export default function CarruselSqueeze({
                     reducido={reducido}
                     onClick={() => col > 0 && avanzar(col)}
                     primero={lugar === 0}
+                  escala={movil || col === 0 ? 1 : ESCALA_SIGUIENTE}
+                  ms={medido ? ms : 0}
                   />
                 )
               })
@@ -414,7 +436,7 @@ export default function CarruselSqueeze({
 // opacidad que usa cada letra del título ([0, 0.85, 1] → [0, 0.4, 1]). Al
 // no recibir "progresoEntrada" el panel aparece directo, sin animación.
 function PanelCarrusel({
-  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, primero,
+  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, primero, escala, ms,
 }) {
   const xInicial = distancia * 50
   const x = useTransform(progresoEntrada, [0, 1], [reducido ? 0 : xInicial, 0])
@@ -431,7 +453,13 @@ function PanelCarrusel({
       tabIndex={esAbierto ? 0 : -1}
       onClick={onClick}
       className="csq-panel"
+      // En computadora el que asoma se ve más chico y crece al pasar a ser
+      // el principal (y al revés), con la misma duración que la tira.
+      initial={false}
+      animate={{ scale: escala }}
+      transition={{ duration: ms / 1000, ease: [0.16, 1, 0.3, 1] }}
       style={{
+        originX: 0,
         x,
         opacity: opacidad,
         width: 'var(--csq-panel)',
