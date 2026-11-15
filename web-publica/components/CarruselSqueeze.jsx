@@ -287,112 +287,117 @@ export default function CarruselSqueeze({
   const mover = `translateX(calc(${desplazado} * (var(--csq-panel) + var(--csq-gap)) + ${arrastre}px))`
   const transicionTira = quieto || gesto.current?.arrastrando ? 'none' : `transform var(--csq-ms) var(--csq-ease)`
 
+  // "raiz" ocupa todo el ancho disponible y es lo que se mide; el carrusel
+  // (".csq") va adentro, con el ancho máximo en computadora. Si se midiera
+  // el propio carrusel, al limitarlo a menos de ANCHO_MOVIL pasaría a modo
+  // celular, se soltaría el límite y volvería a cambiar sin parar.
   return (
-    <div
-      ref={raiz}
-      className={clases('csq', movil && 'csq-movil', className)}
-      style={{ containerType: 'inline-size', maxWidth: movil ? undefined : numero(anchoMaximo), ...variables, ...style }}
-      onMouseEnter={() => setPausado(true)}
-      onMouseLeave={() => setPausado(false)}
-      onFocusCapture={() => setPausado(true)}
-      onBlurCapture={() => setPausado(false)}
-    >
-      {controles && total > 1 && (
-        <motion.div className="csq-controles" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
-          <FlechaCarrusel atras etiqueta="Producto anterior" onClick={() => avanzar(-1)} />
-          <FlechaCarrusel etiqueta="Producto siguiente" onClick={() => avanzar(1)} />
-        </motion.div>
-      )}
+    <div ref={raiz} className="csq-raiz">
+      <div
+        className={clases('csq', movil && 'csq-movil', className)}
+        style={{ containerType: 'inline-size', maxWidth: movil ? undefined : numero(anchoMaximo), ...variables, ...style }}
+        onMouseEnter={() => setPausado(true)}
+        onMouseLeave={() => setPausado(false)}
+        onFocusCapture={() => setPausado(true)}
+        onBlurCapture={() => setPausado(false)}
+      >
+        {controles && total > 1 && (
+          <motion.div className="csq-controles" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
+            <FlechaCarrusel atras etiqueta="Producto anterior" onClick={() => avanzar(-1)} />
+            <FlechaCarrusel etiqueta="Producto siguiente" onClick={() => avanzar(1)} />
+          </motion.div>
+        )}
 
-      <div className="csq-ventana" style={{ height: 'var(--csq-alto)' }}>
-        <div
-          role="tablist"
-          aria-label={etiqueta}
-          aria-orientation="horizontal"
-          onKeyDown={alPresionarTecla}
-          onPointerDown={alBajarPuntero}
-          onPointerMove={alMoverPuntero}
-          onPointerUp={alSoltarPuntero}
-          onPointerCancel={alSoltarPuntero}
-          onClickCapture={event => {
-            // Un deslizamiento no debe contar además como toque en un panel.
-            if (!evitarClick.current) return
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          className="csq-tira"
-          style={{ transform: mover, transition: transicionTira }}
-        >
-          {(() => {
-            // Centro de la fila visible (igual que "centroLetras" del
-            // título): cada panel entra desde el costado que le toca según
-            // cuán lejos está de este centro.
-            const centroTarjetas = (tarjetas.length - 1) / 2
+        <div className="csq-ventana" style={{ height: 'var(--csq-alto)' }}>
+          <div
+            role="tablist"
+            aria-label={etiqueta}
+            aria-orientation="horizontal"
+            onKeyDown={alPresionarTecla}
+            onPointerDown={alBajarPuntero}
+            onPointerMove={alMoverPuntero}
+            onPointerUp={alSoltarPuntero}
+            onPointerCancel={alSoltarPuntero}
+            onClickCapture={event => {
+              // Un deslizamiento no debe contar además como toque en un panel.
+              if (!evitarClick.current) return
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            className="csq-tira"
+            style={{ transform: mover, transition: transicionTira }}
+          >
+            {(() => {
+              // Centro de la fila visible (igual que "centroLetras" del
+              // título): cada panel entra desde el costado que le toca según
+              // cuán lejos está de este centro.
+              const centroTarjetas = (tarjetas.length - 1) / 2
 
-            return tarjetas.map((tarjeta, lugar) => {
-              const col = lugar + columna
-              const producto = productos[tarjeta.indice]
+              return tarjetas.map((tarjeta, lugar) => {
+                const col = lugar + columna
+                const producto = productos[tarjeta.indice]
 
-              return (
-                <PanelCarrusel
-                  key={tarjeta.key}
-                  ids={ids}
-                  tarjetaKey={tarjeta.key}
-                  producto={producto}
-                  esAbierto={col === 0}
-                  distancia={lugar - centroTarjetas}
-                  progresoEntrada={fuenteEntrada}
-                  reducido={reducido}
-                  onClick={() => col > 0 && avanzar(col)}
-                  primero={lugar === 0}
-                />
-              )
-            })
-          })()}
+                return (
+                  <PanelCarrusel
+                    key={tarjeta.key}
+                    ids={ids}
+                    tarjetaKey={tarjeta.key}
+                    producto={producto}
+                    esAbierto={col === 0}
+                    distancia={lugar - centroTarjetas}
+                    progresoEntrada={fuenteEntrada}
+                    reducido={reducido}
+                    onClick={() => col > 0 && avanzar(col)}
+                    primero={lugar === 0}
+                  />
+                )
+              })
+            })()}
+          </div>
         </div>
-      </div>
 
-      {total > 1 && (
-        <motion.div className="csq-puntos" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
-          {productos.map((producto, i) => (
-            <button
-              key={producto.id ?? i}
-              type="button"
-              className="csq-punto"
-              aria-label={`Ir al producto ${i + 1}`}
-              aria-current={i === abierto ? 'true' : undefined}
-              onClick={() => irA(i)}
-            />
-          ))}
+        {total > 1 && (
+          <motion.div className="csq-puntos" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
+            {productos.map((producto, i) => (
+              <button
+                key={producto.id ?? i}
+                type="button"
+                className="csq-punto"
+                aria-label={`Ir al producto ${i + 1}`}
+                aria-current={i === abierto ? 'true' : undefined}
+                onClick={() => irA(i)}
+              />
+            ))}
+          </motion.div>
+        )}
+
+        <motion.div id={`${ids}-panel`} role="tabpanel" aria-live="polite" className="csq-info" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
+          {productos.map((producto, i) => {
+            const mostrado = i === abierto
+            return (
+              <div
+                key={producto.id ?? i}
+                aria-hidden={!mostrado}
+                className="csq-info-item"
+                style={{
+                  opacity: mostrado ? 1 : 0,
+                  visibility: mostrado ? 'visible' : 'hidden',
+                  pointerEvents: mostrado ? 'auto' : 'none',
+                  transition: 'opacity var(--csq-ms) var(--csq-ease), visibility var(--csq-ms)',
+                }}
+              >
+                <p className="csq-info-texto">
+                  <span className="csq-info-nombre">{producto.nombre}</span>{' '}
+                  <span className="csq-info-precio">{precioPublico(producto.precio_venta, moneda)}</span>
+                </p>
+                <Link to={`/productos/${producto.slug}`} tabIndex={mostrado ? 0 : -1} className="csq-accion btn-public btn-madera">
+                  Ver producto
+                </Link>
+              </div>
+            )
+          })}
         </motion.div>
-      )}
-
-      <motion.div id={`${ids}-panel`} role="tabpanel" aria-live="polite" className="csq-info" style={{ opacity: reducido ? 1 : opacidadAuxiliar }}>
-        {productos.map((producto, i) => {
-          const mostrado = i === abierto
-          return (
-            <div
-              key={producto.id ?? i}
-              aria-hidden={!mostrado}
-              className="csq-info-item"
-              style={{
-                opacity: mostrado ? 1 : 0,
-                visibility: mostrado ? 'visible' : 'hidden',
-                pointerEvents: mostrado ? 'auto' : 'none',
-                transition: 'opacity var(--csq-ms) var(--csq-ease), visibility var(--csq-ms)',
-              }}
-            >
-              <p className="csq-info-texto">
-                <span className="csq-info-nombre">{producto.nombre}</span>{' '}
-                <span className="csq-info-precio">{precioPublico(producto.precio_venta, moneda)}</span>
-              </p>
-              <Link to={`/productos/${producto.slug}`} tabIndex={mostrado ? 0 : -1} className="csq-accion btn-public btn-madera">
-                Ver producto
-              </Link>
-            </div>
-          )
-        })}
-      </motion.div>
+      </div>
     </div>
   )
 }

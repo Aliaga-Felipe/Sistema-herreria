@@ -500,6 +500,7 @@
    puntos; con el dedo también se desliza. Misma paleta y tipografía que
    el resto del sitio.
    --------------------------------------------------------------------- */
+.csq-raiz { width: 100%; }
 .csq { width: 100%; margin-inline: auto; }
 
 .csq-controles { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
