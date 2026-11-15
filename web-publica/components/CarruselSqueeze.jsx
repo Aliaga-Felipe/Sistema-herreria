@@ -17,11 +17,15 @@ import { precioPublico } from '../api.js'
 //   indicadores de abajo.
 // - Con el dedo se puede deslizar (celular/tablet). Con el mouse NO se
 //   arrastra: en computadora se avanza haciendo clic en el próximo.
-// - En celular el principal es cuadrado y ocupa el 85 % del ancho (igual
-//   que en la versión 1.3.1). En computadora ocupa el 70 % del ancho de la
-//   sección, apaisado y con el alto limitado (para no llenar toda la
-//   pantalla en un monitor ancho), y el siguiente asoma en el resto, un
-//   poco más chico (ESCALA_SIGUIENTE).
+// - En celular el principal es cuadrado y ocupa el 85 % del ancho, con el
+//   siguiente asomando (igual que en la versión 1.3.1); al pasar, la tira
+//   se desliza.
+// - En computadora el principal ocupa el 72 % del ancho de la sección,
+//   apaisado y con el alto limitado (para no llenar toda la pantalla en un
+//   monitor ancho), y el siguiente se ve entero como una columna
+//   comprimida en el resto, como el formato "squeeze" de 1.3.1. Al pasar,
+//   el principal se cierra hacia la izquierda, la columna se abre hasta
+//   ser el nuevo principal y entra la columna del que sigue.
 //
 // No usa Tailwind/shadcn/TypeScript (este proyecto no los usa). Los
 // estilos viven en public.css (clases "csq-*") y usan la misma paleta y
@@ -39,15 +43,14 @@ const clases = (...partes) => partes.filter(Boolean).join(' ')
 // Ancho del contenedor (no de la ventana) por debajo del cual el carrusel
 // usa la separación de celular.
 const ANCHO_MOVIL = 640
-// Parte del ancho del carrusel que ocupa el producto principal (el resto
-// es lo que asoma del siguiente), en celular y en computadora.
+// Parte del ancho del carrusel que ocupa el producto principal: en
+// celular (el resto es lo que asoma del siguiente) y en computadora (el
+// resto es la columna comprimida del siguiente).
 const FRACCION_MOVIL = 0.85
-const FRACCION_ESCRITORIO = 0.7
-// Proporción (ancho / alto) del panel en computadora, antes de limitar el
-// alto con "alturaMaxima".
+const FRACCION_ESCRITORIO = 0.72
+// Proporción (ancho / alto) del principal en computadora, antes de limitar
+// el alto con "alturaMaxima".
 const RELACION_ESCRITORIO = 4 / 3
-// Tamaño del que asoma respecto del principal, en computadora.
-const ESCALA_SIGUIENTE = 0.82
 // Separación entre paneles en celular (más chica que la de computadora
 // para que el siguiente asome lo suficiente).
 const SEPARACION_MOVIL = 12
@@ -127,9 +130,11 @@ export default function CarruselSqueeze({
   const raiz = useRef(null)
   const anchoContenedor = useAnchoContenedor(raiz, total > 0)
   const movil = anchoContenedor !== null && anchoContenedor < ANCHO_MOVIL
-  // Hasta medir el contenedor no se sabe si es celular o computadora: el
-  // tamaño del que asoma se aplica sin animación hasta entonces, para que
-  // no se vea achicarse (o crecer) al cargar la página.
+  const movilRef = useRef(movil)
+  movilRef.current = movil
+  // Hasta medir el contenedor no se sabe si es celular o computadora: los
+  // anchos de los paneles se aplican sin animación hasta entonces, para
+  // que no se vean cambiar al cargar la página.
   const [medido, setMedido] = useState(false)
   useEffect(() => {
     if (anchoContenedor === null || medido) return
@@ -205,7 +210,7 @@ export default function CarruselSqueeze({
         // Si venía de un deslizamiento, la tira sigue desde donde la dejó
         // el dedo hasta su lugar nuevo, con la misma transición.
         setArrastre(0)
-      } else {
+      } else if (movilRef.current) {
         setTarjetas(tira => [
           ...Array.from({ length: -by }, (_, k) => ({ key: semilla.current++, indice: envolver(tira[0].indice - (-by - k)) })),
           ...tira,
@@ -215,6 +220,22 @@ export default function CarruselSqueeze({
         // El arrastre se suelta junto con el desplazamiento (y no antes)
         // para que la tira no salte al agregar el panel nuevo a la izquierda.
         temporizadores.current.push(window.setTimeout(() => { setDesplazado(0); setArrastre(0) }, 0))
+      } else {
+        // Computadora, hacia atrás: los paneles nuevos entran cerrados (con
+        // columna negativa, ancho 0) a la izquierda y, un instante después,
+        // se abren mientras el principal actual se comprime a columna.
+        setTarjetas(tira => [
+          ...Array.from({ length: -by }, (_, k) => ({ key: semilla.current++, indice: envolver(tira[0].indice - (-by - k)) })),
+          ...tira,
+        ])
+        columnaRef.current = by
+        setColumna(by)
+        setQuieto(true)
+        temporizadores.current.push(window.setTimeout(() => {
+          columnaRef.current = 0
+          setColumna(0)
+          setArrastre(0)
+        }, 30))
       }
       temporizadores.current.push(window.setTimeout(asentar, ms + 20))
     },
@@ -236,6 +257,12 @@ export default function CarruselSqueeze({
     if (by === undefined) return
     event.preventDefault()
     avanzar(by)
+    // El panel que tenía el foco se quita de la tira al terminar el
+    // movimiento: el foco pasa al nuevo principal para poder seguir con
+    // las flechas del teclado.
+    window.setTimeout(() => {
+      raiz.current?.querySelector('.csq-panel[aria-selected="true"]')?.focus({ preventScroll: true })
+    }, 0)
   }
 
   // Deslizar con el dedo: eventos de puntero sobre ".csq-tira". Solo con
@@ -283,14 +310,16 @@ export default function CarruselSqueeze({
 
   if (!total) return null
 
-  // Ancho del panel: con un solo producto, todo el ancho; si no, la
-  // fracción que corresponda (y el siguiente asoma en lo que sobra). En
-  // celular el alto sale del ancho (panel cuadrado, como en 1.3.1); en
-  // computadora el panel es apaisado y su alto queda limitado por
-  // "alturaMaxima". La foto se recorta centrada (object-fit: cover).
+  // Ancho del principal: con un solo producto, todo el ancho; si no, la
+  // fracción que corresponda. En celular el alto sale del ancho (panel
+  // cuadrado, como en 1.3.1) y el siguiente asoma en lo que sobra; en
+  // computadora el principal es apaisado, su alto queda limitado por
+  // "alturaMaxima" y lo que sobra es la columna del siguiente
+  // (--csq-columna). La foto se recorta centrada (object-fit: cover).
   const fraccion = total > 1 ? (movil ? FRACCION_MOVIL : FRACCION_ESCRITORIO) : 1
   const variables = {
     '--csq-panel': `${fraccion * 100}cqi`,
+    '--csq-columna': 'calc(100cqi - var(--csq-panel) - var(--csq-gap))',
     '--csq-alto': movil
       ? 'calc(var(--csq-panel) / var(--csq-relacion))'
       : `min(calc(var(--csq-panel) / ${RELACION_ESCRITORIO}), ${numero(alturaMaxima)})`,
@@ -299,12 +328,32 @@ export default function CarruselSqueeze({
     '--csq-ms': `${ms}ms`,
     '--csq-ease': 'cubic-bezier(0.16, 1, 0.3, 1)',
     '--csq-relacion': relacionImagen,
-    '--csq-hero': 'calc(var(--csq-alto) * var(--csq-relacion))',
+    // Ancho al que se dibuja la foto (siempre el del principal): así no se
+    // reescala mientras un panel se abre o se cierra, solo se ve más o
+    // menos de ella.
+    '--csq-hero': movil ? 'calc(var(--csq-alto) * var(--csq-relacion))' : 'var(--csq-panel)',
   }
 
-  // Cada paso de la tira corre un panel entero, más lo que lleva
-  // arrastrado el dedo.
-  const mover = `translateX(calc(${desplazado} * (var(--csq-panel) + var(--csq-gap)) + ${arrastre}px))`
+  // Ancho y margen de cada panel según su columna (0 = principal). En
+  // celular todos miden lo mismo y lo que se mueve es la tira; en
+  // computadora la tira queda quieta y se animan los anchos: los que ya
+  // pasaron (columna negativa) se cierran a 0, el principal se abre y los
+  // siguientes son columnas comprimidas (fuera de la vista desde la 2).
+  const anchoDe = col => {
+    if (movil) return 'var(--csq-panel)'
+    if (col < 0) return '0px'
+    return col === 0 ? 'var(--csq-panel)' : 'var(--csq-columna)'
+  }
+  const margenDe = (col, lugar) => {
+    if (lugar === 0) return 0
+    if (!movil && col <= 0) return 0
+    return 'var(--csq-gap)'
+  }
+
+  // En celular cada paso de la tira corre un panel entero; en los dos
+  // casos se suma lo que lleva arrastrado el dedo.
+  const pasos = movil ? desplazado : 0
+  const mover = `translateX(calc(${pasos} * (var(--csq-panel) + var(--csq-gap)) + ${arrastre}px))`
   const transicionTira = quieto || gesto.current?.arrastrando ? 'none' : `transform var(--csq-ms) var(--csq-ease)`
 
   // "raiz" ocupa todo el ancho disponible y es lo que se mide; el carrusel
@@ -368,9 +417,9 @@ export default function CarruselSqueeze({
                     progresoEntrada={fuenteEntrada}
                     reducido={reducido}
                     onClick={() => col > 0 && avanzar(col)}
-                    primero={lugar === 0}
-                  escala={movil || col === 0 ? 1 : ESCALA_SIGUIENTE}
-                  ms={medido ? ms : 0}
+                    ancho={anchoDe(col)}
+                    margenIzquierdo={margenDe(col, lugar)}
+                    sinTransicion={quieto || !medido}
                   />
                 )
               })
@@ -428,15 +477,16 @@ export default function CarruselSqueeze({
 /*                                 piezas                                */
 /* -------------------------------------------------------------------- */
 
-// Un panel de la tira. Todos miden lo mismo (--csq-panel); el que asoma a
-// la derecha se ve en parte y es clickeable. Además suma la entrada por
+// Un panel de la tira. El ancho y el margen los decide el carrusel (ver
+// anchoDe); en computadora se animan con una transición CSS. El que se ve
+// a la derecha (columna 1) es clickeable. Además suma la entrada por
 // scroll: mientras "progresoEntrada" va de 0 a 1, el panel se desplaza
 // desde el costado que le toca (según "distancia", su lugar en la fila
 // respecto del centro) hasta su posición final, con la misma curva de
 // opacidad que usa cada letra del título ([0, 0.85, 1] → [0, 0.4, 1]). Al
 // no recibir "progresoEntrada" el panel aparece directo, sin animación.
 function PanelCarrusel({
-  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, primero, escala, ms,
+  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, ancho, margenIzquierdo, sinTransicion,
 }) {
   const xInicial = distancia * 50
   const x = useTransform(progresoEntrada, [0, 1], [reducido ? 0 : xInicial, 0])
@@ -453,18 +503,15 @@ function PanelCarrusel({
       tabIndex={esAbierto ? 0 : -1}
       onClick={onClick}
       className="csq-panel"
-      // En computadora el que asoma se ve más chico y crece al pasar a ser
-      // el principal (y al revés), con la misma duración que la tira.
-      initial={false}
-      animate={{ scale: escala }}
-      transition={{ duration: ms / 1000, ease: [0.16, 1, 0.3, 1] }}
       style={{
-        originX: 0,
         x,
         opacity: opacidad,
-        width: 'var(--csq-panel)',
-        marginLeft: primero ? 0 : 'var(--csq-gap)',
+        width: ancho,
+        marginLeft: margenIzquierdo,
         borderRadius: 'var(--csq-radio)',
+        transitionProperty: 'width, margin-left',
+        transitionDuration: sinTransicion ? '0s' : 'var(--csq-ms)',
+        transitionTimingFunction: 'var(--csq-ease)',
       }}
     >
       <FotoPanel producto={producto} />
