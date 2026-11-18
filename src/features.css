@@ -399,7 +399,7 @@
   position: relative;
   border: 1px solid #3d3530;
   overflow: hidden;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 1;
 }
 
 .imagen-item img {

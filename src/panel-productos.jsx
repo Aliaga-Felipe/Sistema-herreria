@@ -618,7 +618,7 @@ function GestorImagenes({ productoId, imagenesIniciales, token }) {
     <div className="stage-edit">
       <div>
         <b>Fotos del producto</b>
-        <span>La primera foto marcada como principal es la que aparece en el catálogo. Formatos: JPG, PNG, WEBP o GIF, hasta 8 MB. Las fotos se guardan en formato vertical 4:5, a 1080×1350: si la foto tiene otra proporción, se recorta centrada (la vista previa de abajo muestra cómo va a quedar).</span>
+        <span>La primera foto marcada como principal es la que aparece en el catálogo. Formatos: JPG, PNG, WEBP o GIF, hasta 8 MB.</span>
       </div>
 
       {imagenes.length > 0 && (
