@@ -4,34 +4,20 @@ import sharp from 'sharp'
 // -----------------------------------------------------------------------
 // NORMALIZACIÓN DE FOTOS DE PRODUCTO (ticket #81)
 // Todas las fotos de producto se guardan en formato vertical 4:5, que es
-// la proporción en la que se muestran en la web pública y en el panel.
-// Si la foto no es 4:5 se recorta centrada; si es más ancha que
-// ANCHO_MAXIMO se achica (también baja el peso). Nunca se agranda una
-// foto chica. Se conserva el formato original (JPG, PNG, WEBP o GIF,
+// la proporción en la que se muestran en la web pública y en el panel,
+// siempre a la misma resolución: 1080×1350. Si la foto no es 4:5 se
+// recorta centrada, y después se escala a 1080×1350 (las grandes se
+// achican, lo que también baja el peso; las chicas se agrandan). Se
+// conserva el formato original (JPG, PNG, WEBP o GIF,
 // incluidos los GIF animados), así el nombre y la URL del archivo no
 // cambian.
 // Lo usan la subida de fotos (rutas/productos.js) y el script que
 // normaliza las fotos ya cargadas (scripts/normalizar-imagenes.js).
 // -----------------------------------------------------------------------
-export const RELACION_PRODUCTO = 4 / 5
-export const ANCHO_MAXIMO = 1600
+export const ANCHO_PRODUCTO = 1080
+export const ALTO_PRODUCTO = 1350
 
-// Margen para considerar que una foto ya está en 4:5 (por redondeo de
-// píxeles) y no volver a recomprimirla.
-const TOLERANCIA = 0.005
-
-// Medidas finales (ancho y alto) para una foto de ancho × alto.
-export const medidasNormalizadas = (ancho, alto) => {
-  let anchoRecorte = ancho
-  let altoRecorte = alto
-  if (ancho / alto > RELACION_PRODUCTO) anchoRecorte = Math.round(alto * RELACION_PRODUCTO)
-  else altoRecorte = Math.round(ancho / RELACION_PRODUCTO)
-  const anchoFinal = Math.min(anchoRecorte, ANCHO_MAXIMO)
-  return { ancho: anchoFinal, alto: Math.round(anchoFinal / RELACION_PRODUCTO) }
-}
-
-export const yaNormalizada = (ancho, alto) =>
-  ancho <= ANCHO_MAXIMO && Math.abs(ancho / alto - RELACION_PRODUCTO) <= TOLERANCIA
+export const yaNormalizada = (ancho, alto) => ancho === ANCHO_PRODUCTO && alto === ALTO_PRODUCTO
 
 const codificar = (imagen, formato) => {
   switch (formato) {
@@ -61,7 +47,7 @@ export async function normalizarImagenProducto(ruta) {
   if (!ancho || !alto) throw new Error('No se pudo leer el tamaño de la imagen.')
   if (yaNormalizada(ancho, alto) && (meta.orientation || 1) === 1) return { estado: 'sin-cambios', antes, despues: antes }
 
-  const despues = medidasNormalizadas(ancho, alto)
+  const despues = { ancho: ANCHO_PRODUCTO, alto: ALTO_PRODUCTO }
   const imagen = codificar(
     sharp(original, { animated: true })
       .rotate() // aplica la orientación del EXIF antes de recortar

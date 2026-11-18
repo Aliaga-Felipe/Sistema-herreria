@@ -3,11 +3,10 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { normalizarImagenProducto } from '../imagenes.js'
 
-// Script de uso único (ticket #81): pasa a 4:5 las fotos de producto que
+// Script de uso único (ticket #81): pasa a 1080×1350 (4:5) las fotos de producto que
 // ya estaban cargadas antes de que la subida las normalizara sola.
-// Recorta centrada cada foto de server/uploads/productos que no sea 4:5 y
-// achica las que superan los 1600 px de ancho. Las que ya están bien no
-// se tocan, así que se puede correr más de una vez sin problema.
+// Recorta centrada a 4:5 cada foto de server/uploads/productos y la deja
+// en 1080×1350. Las que ya están en 1080×1350 no se tocan, así que se puede correr más de una vez sin problema.
 //
 // Los archivos se reemplazan en su lugar (mismo nombre, misma URL), por
 // eso no hace falta tocar la base. Antes de reemplazar, guarda una copia
