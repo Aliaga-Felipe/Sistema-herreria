@@ -107,10 +107,9 @@ export default function CarruselSqueeze({
   progresoEntrada,
   // Alto máximo del carrusel en computadora.
   alturaMaxima = 'min(520px, 66vh)',
-  // Las fotos de producto son verticales 4:5 (ticket #81): es la
-  // proporción del panel en celular. En computadora el principal sigue
-  // siendo apaisado (RELACION_ESCRITORIO) y la foto se recorta centrada.
-  relacionImagen = 4 / 5,
+  // Los productos de este catálogo se muestran en cuadrado (misma
+  // proporción que las fotos del panel de producto).
+  relacionImagen = 1,
   separacion = 16,
   radio = 4,
   duracion = 900,
@@ -313,7 +312,7 @@ export default function CarruselSqueeze({
 
   // Ancho del principal: con un solo producto, todo el ancho; si no, la
   // fracción que corresponda. En celular el alto sale del ancho (panel
-  // 4:5, como las fotos) y el siguiente asoma en lo que sobra; en
+  // cuadrado, como en 1.3.1) y el siguiente asoma en lo que sobra; en
   // computadora el principal es apaisado, su alto queda limitado por
   // "alturaMaxima" y lo que sobra es la columna del siguiente
   // (--csq-columna). La foto se recorta centrada (object-fit: cover).
@@ -421,7 +420,6 @@ export default function CarruselSqueeze({
                     ancho={anchoDe(col)}
                     margenIzquierdo={margenDe(col, lugar)}
                     sinTransicion={quieto || !medido}
-                    fotoEntera={!movil}
                   />
                 )
               })
@@ -488,7 +486,7 @@ export default function CarruselSqueeze({
 // opacidad que usa cada letra del título ([0, 0.85, 1] → [0, 0.4, 1]). Al
 // no recibir "progresoEntrada" el panel aparece directo, sin animación.
 function PanelCarrusel({
-  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, ancho, margenIzquierdo, sinTransicion, fotoEntera,
+  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, ancho, margenIzquierdo, sinTransicion,
 }) {
   const xInicial = distancia * 50
   const x = useTransform(progresoEntrada, [0, 1], [reducido ? 0 : xInicial, 0])
@@ -516,7 +514,7 @@ function PanelCarrusel({
         transitionTimingFunction: 'var(--csq-ease)',
       }}
     >
-      <FotoPanel producto={producto} entera={fotoEntera} />
+      <FotoPanel producto={producto} />
 
       {producto.categoria_nombre && (
         <span
@@ -533,18 +531,10 @@ function PanelCarrusel({
 
 // La imagen se dibuja al tamaño del panel principal (--csq-hero) y
 // centrada, igual que en la versión 1.3.1 (así en celular se ve idéntica).
-// En computadora el panel es apaisado y la foto es 4:5 (ticket #81): para
-// no cortarla arriba y abajo se muestra entera ("entera"), centrada, con la
-// misma foto desenfocada y oscurecida de fondo a los costados.
-function FotoPanel({ producto, entera = false }) {
-  // Entera: la caja mide lo mismo que la foto a lo alto del panel (4:5), así
-  // en el principal se ve completa y en la columna del siguiente se recorta
-  // solo a los costados, sin saltos al abrirse o cerrarse.
-  const caja = entera
-    ? { width: 'calc(var(--csq-alto) * var(--csq-relacion))' }
-    : { width: 'var(--csq-hero)', minWidth: '100%' }
+function FotoPanel({ producto }) {
+  const caja = { width: 'var(--csq-hero)', minWidth: '100%' }
   if (producto.imagen_principal) {
-    const foto = (
+    return (
       <img
         src={producto.imagen_principal}
         alt={producto.nombre}
@@ -553,13 +543,6 @@ function FotoPanel({ producto, entera = false }) {
         className="csq-imagen"
         style={caja}
       />
-    )
-    if (!entera) return foto
-    return (
-      <>
-        <img src={producto.imagen_principal} alt="" aria-hidden="true" draggable={false} loading="lazy" className="csq-imagen-fondo" />
-        {foto}
-      </>
     )
   }
   return (
