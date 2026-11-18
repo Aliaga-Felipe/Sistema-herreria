@@ -145,3 +145,5 @@ vite.config.ts.timestamp-*
 # Fotos de productos subidas desde el panel (contenido de usuario, no código)
 server/uploads/productos/*
 !server/uploads/productos/.gitkeep
+# Copias de los originales que guarda server/scripts/normalizar-imagenes.js
+server/uploads/productos-originales-*/

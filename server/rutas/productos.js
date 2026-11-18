@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { pool } from '../db.js'
 import { asyncRoute, auth, decimal, fallo, leerConfiguracion, slugify } from '../comun.js'
 import { sincronizarEnSegundoPlano, sincronizarProducto } from '../meta-whatsapp.js'
+import { normalizarImagenProducto } from '../imagenes.js'
 
 const router = Router()
 
@@ -437,6 +438,16 @@ router.post('/:id/imagenes', auth(['admin']), (req, res, next) => {
   const producto = await pool.query('SELECT id FROM productos WHERE id = $1', [req.params.id])
   if (!producto.rows[0]) throw fallo('Producto no encontrado.', 404)
   if (!req.file) throw fallo('Adjuntá un archivo de imagen.')
+
+  // Recorta centrada a 4:5 y limita el ancho (ver server/imagenes.js). Si
+  // el archivo no es una imagen válida se descarta.
+  try {
+    await normalizarImagenProducto(req.file.path)
+  } catch (error) {
+    console.error(`[imagenes] No se pudo normalizar ${req.file.filename}:`, error.message)
+    fs.unlink(req.file.path, () => {})
+    throw fallo('No se pudo procesar la imagen. Probá con otro archivo JPG, PNG, WEBP o GIF.')
+  }
 
   const url = `/uploads/productos/${req.file.filename}`
   const existentes = await pool.query('SELECT COUNT(*)::int AS total, COALESCE(MAX(orden), 0)::int AS max_orden FROM producto_imagenes WHERE producto_id = $1', [req.params.id])

@@ -107,9 +107,10 @@ export default function CarruselSqueeze({
   progresoEntrada,
   // Alto máximo del carrusel en computadora.
   alturaMaxima = 'min(520px, 66vh)',
-  // Los productos de este catálogo se muestran en cuadrado (misma
-  // proporción que las fotos del panel de producto).
-  relacionImagen = 1,
+  // Las fotos de producto son verticales 4:5 (ticket #81): es la
+  // proporción del panel en celular. En computadora el principal sigue
+  // siendo apaisado (RELACION_ESCRITORIO) y la foto se recorta centrada.
+  relacionImagen = 4 / 5,
   separacion = 16,
   radio = 4,
   duracion = 900,
@@ -312,7 +313,7 @@ export default function CarruselSqueeze({
 
   // Ancho del principal: con un solo producto, todo el ancho; si no, la
   // fracción que corresponda. En celular el alto sale del ancho (panel
-  // cuadrado, como en 1.3.1) y el siguiente asoma en lo que sobra; en
+  // 4:5, como las fotos) y el siguiente asoma en lo que sobra; en
   // computadora el principal es apaisado, su alto queda limitado por
   // "alturaMaxima" y lo que sobra es la columna del siguiente
   // (--csq-columna). La foto se recorta centrada (object-fit: cover).

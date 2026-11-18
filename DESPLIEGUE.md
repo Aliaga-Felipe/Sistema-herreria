@@ -286,6 +286,22 @@ node server/scripts/aplicar-schema.js
 pm2 restart atelier
 ```
 
+### Una sola vez: pasar a 4:5 las fotos ya cargadas (ticket #81)
+
+Desde esta versión, cada foto de producto que se sube se recorta centrada
+a 4:5 y se achica a 1600 px de ancho como máximo. Las que ya estaban
+cargadas se normalizan una sola vez con un script (después de `npm ci`):
+
+```bash
+node server/scripts/normalizar-imagenes.js --prueba   # muestra qué cambiaría, sin tocar nada
+node server/scripts/normalizar-imagenes.js            # las normaliza
+```
+
+Los archivos se reemplazan con el mismo nombre (no hace falta tocar la
+base). Los originales quedan en `server/uploads/productos-originales-<fecha>/`:
+una vez revisada la web, esa carpeta se puede borrar. Se puede correr de
+nuevo sin problema: las fotos que ya están en 4:5 no se tocan.
+
 ## Comandos útiles
 
 | Para | Comando |
