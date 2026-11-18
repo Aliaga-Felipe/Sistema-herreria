@@ -421,6 +421,7 @@ export default function CarruselSqueeze({
                     ancho={anchoDe(col)}
                     margenIzquierdo={margenDe(col, lugar)}
                     sinTransicion={quieto || !medido}
+                    fotoEntera={!movil}
                   />
                 )
               })
@@ -487,7 +488,7 @@ export default function CarruselSqueeze({
 // opacidad que usa cada letra del título ([0, 0.85, 1] → [0, 0.4, 1]). Al
 // no recibir "progresoEntrada" el panel aparece directo, sin animación.
 function PanelCarrusel({
-  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, ancho, margenIzquierdo, sinTransicion,
+  ids, tarjetaKey, producto, esAbierto, distancia, progresoEntrada, reducido, onClick, ancho, margenIzquierdo, sinTransicion, fotoEntera,
 }) {
   const xInicial = distancia * 50
   const x = useTransform(progresoEntrada, [0, 1], [reducido ? 0 : xInicial, 0])
@@ -515,7 +516,7 @@ function PanelCarrusel({
         transitionTimingFunction: 'var(--csq-ease)',
       }}
     >
-      <FotoPanel producto={producto} />
+      <FotoPanel producto={producto} entera={fotoEntera} />
 
       {producto.categoria_nombre && (
         <span
@@ -532,10 +533,18 @@ function PanelCarrusel({
 
 // La imagen se dibuja al tamaño del panel principal (--csq-hero) y
 // centrada, igual que en la versión 1.3.1 (así en celular se ve idéntica).
-function FotoPanel({ producto }) {
-  const caja = { width: 'var(--csq-hero)', minWidth: '100%' }
+// En computadora el panel es apaisado y la foto es 4:5 (ticket #81): para
+// no cortarla arriba y abajo se muestra entera ("entera"), centrada, con la
+// misma foto desenfocada y oscurecida de fondo a los costados.
+function FotoPanel({ producto, entera = false }) {
+  // Entera: la caja mide lo mismo que la foto a lo alto del panel (4:5), así
+  // en el principal se ve completa y en la columna del siguiente se recorta
+  // solo a los costados, sin saltos al abrirse o cerrarse.
+  const caja = entera
+    ? { width: 'calc(var(--csq-alto) * var(--csq-relacion))' }
+    : { width: 'var(--csq-hero)', minWidth: '100%' }
   if (producto.imagen_principal) {
-    return (
+    const foto = (
       <img
         src={producto.imagen_principal}
         alt={producto.nombre}
@@ -544,6 +553,13 @@ function FotoPanel({ producto }) {
         className="csq-imagen"
         style={caja}
       />
+    )
+    if (!entera) return foto
+    return (
+      <>
+        <img src={producto.imagen_principal} alt="" aria-hidden="true" draggable={false} loading="lazy" className="csq-imagen-fondo" />
+        {foto}
+      </>
     )
   }
   return (
